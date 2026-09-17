@@ -60,6 +60,64 @@
     return { rows, rhythmRows };
   }
 
+  function blankMeasureModule() {
+    const width = slotsPerMeasure();
+    return {
+      notes: Array.from({ length: STRINGS }, () => Array(width).fill('')),
+      rhythm: {}
+    };
+  }
+
+  function flattenMeasureModules(rows, rhythmRows) {
+    const measures = [];
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      for (let measureIndex = 0; measureIndex < MEASURES; measureIndex++) {
+        measures.push(extractMeasure(rows, rhythmRows, rowIndex, measureIndex));
+      }
+    }
+    return measures;
+  }
+
+  function commitMeasureModules(measures, message, selectedFlatIndex = null) {
+    while (measures.length % MEASURES !== 0) measures.push(blankMeasureModule());
+    if (measures.length === 0) {
+      for (let i = 0; i < MEASURES; i++) measures.push(blankMeasureModule());
+    }
+    const rowCount = Math.max(1, Math.ceil(measures.length / MEASURES));
+    const rebuilt = buildRowsFromMeasures(measures, rowCount);
+    if (selectedFlatIndex !== null) {
+      const safeFlat = Math.max(0, Math.min(measures.length - 1, selectedFlatIndex));
+      selectedModule = {
+        type: 'measure',
+        rowIndex: Math.floor(safeFlat / MEASURES),
+        measureIndex: safeFlat % MEASURES
+      };
+    }
+    commitStructure(rebuilt.rows, rebuilt.rhythmRows, message);
+  }
+
+  function insertMeasureBeside(target, side) {
+    if (!target || target.type !== 'measure' || previewSong || scoreViewEnabled) return;
+    const rows = readRowsFromDom();
+    const rhythmRows = currentRhythmRows(rows.length);
+    const measures = flattenMeasureModules(rows, rhythmRows);
+    const flatIndex = target.rowIndex * MEASURES + target.measureIndex;
+    const insertIndex = flatIndex + (side === 'right' ? 1 : 0);
+    measures.splice(insertIndex, 0, blankMeasureModule());
+    commitMeasureModules(measures, side === 'right' ? '已在右方新增小節' : '已在左方新增小節', insertIndex);
+  }
+
+  function deleteMeasureModule(target) {
+    if (!target || target.type !== 'measure' || previewSong || scoreViewEnabled) return;
+    const rows = readRowsFromDom();
+    const rhythmRows = currentRhythmRows(rows.length);
+    const measures = flattenMeasureModules(rows, rhythmRows);
+    const flatIndex = target.rowIndex * MEASURES + target.measureIndex;
+    if (!measures[flatIndex]) return;
+    measures.splice(flatIndex, 1);
+    commitMeasureModules(measures, '已刪除小節', Math.min(flatIndex, Math.max(0, measures.length - 1)));
+  }
+
   function commitStructure(rows, rhythmRows, message) {
     const song = currentSong();
     if (!song || previewSong) return;
@@ -206,7 +264,11 @@
     };
     makeAction('複製', () => copySelectedModule(target));
     makeAction('貼上', () => pasteSelectedModule(target));
-    if (target.type === 'row') {
+    if (target.type === 'measure') {
+      makeAction('在左方新增', () => insertMeasureBeside(target, 'left'));
+      makeAction('在右方新增', () => insertMeasureBeside(target, 'right'));
+      makeAction('刪除', () => deleteMeasureModule(target), true);
+    } else if (target.type === 'row') {
       makeAction('在上方新增列', () => insertRowAt(target.rowIndex));
       makeAction('在下方新增列', () => insertRowAt(target.rowIndex + 1));
       makeAction('刪除列', () => deleteSelectedRow(target.rowIndex), true);
