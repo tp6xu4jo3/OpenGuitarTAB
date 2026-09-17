@@ -23,8 +23,8 @@
 .brand-name { font-size: 15px; font-weight: 900; }
 .brand-subtitle { margin-top: 2px; color: #8f8f8f; font-size: 10px; }
 .primary-nav { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.09); }
-.nav-button { min-height: 42px; display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; column-gap:10px; border:0; border-radius:8px; padding:0 12px; background:transparent; color:#b3b3b3; cursor:pointer; font-weight:750; text-align:left; }
+.nav-button { min-height:42px; display:grid; grid-template-columns:22px minmax(0,1fr); align-items:center; column-gap:10px; border:0; border-radius:8px; padding:0 12px; background:transparent; color:#b3b3b3; cursor:pointer; font-weight:750; text-align:left; }
 .nav-button:hover,.nav-button.active { background: #252525; color: #fff; }
-.nav-icon { width:24px; height:24px; display:grid; place-items:center; line-height:1; transform:none; }
-.nav-icon-catalog { font-size:24px; transform:translateY(-1px); }
-.nav-icon-library { font-size:20px; transform:translateY(-1px); }
+.nav-icon { width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
+.nav-icon svg { width:19px; height:19px; display:block; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; overflow:visible; }
+.nav-label { display:flex; align-items:center; min-height:22px; line-height:1; }
