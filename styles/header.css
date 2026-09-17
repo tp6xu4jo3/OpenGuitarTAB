@@ -15,7 +15,7 @@
 }
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  grid-template-columns: auto minmax(0,1fr) auto;
   gap: 18px;
   align-items: center;
 }
@@ -28,7 +28,7 @@
   flex-wrap: wrap;
 }
 .header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.editor-title-wrap { min-width: 0; display: flex; align-items: center; justify-content: center; text-align: center; }
+.editor-title-wrap { min-width: 0; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
 .editor-title-wrap h1 { margin: 0; font-size: clamp(24px, 3.2vw, 38px); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .save-button,.download-button { min-width: 74px; height: 43px; border-radius: 999px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .save-button { background: #111; color: #fff; box-shadow: 0 10px 22px rgba(0,0,0,.14); }
