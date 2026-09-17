@@ -75,7 +75,7 @@
       clearPlayhead();
       currentPlayhead = getInputsAt(row, position);
       currentPlayhead.forEach(input => input.classList.add('is-playing'));
-      if (!scoreViewEnabled) return;
+      if (!scoreViewEnabled || !isPlaying) return;
       const grid = document.querySelector(`.tab-grid[data-row="${row}"]`);
       if (!grid) return;
       const positions = positionsPerRow();
