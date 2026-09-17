@@ -8,6 +8,7 @@ const scripts = [
   './src/app-editor-core.js',
   './src/app-editor-stability.js',
   './src/app-editor-modules.js',
+  './src/app-editor-insert-zones.js',
   './src/app-audio.js',
   './src/app-playback.js',
   './src/app-library.js',
