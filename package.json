@@ -1,0 +1,8 @@
+{
+  "name": "guitar-tab-maker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/song-codec.test.mjs"
+  }
+}
