@@ -75,11 +75,20 @@
       clearPlayhead();
       currentPlayhead = getInputsAt(row, position);
       currentPlayhead.forEach(input => input.classList.add('is-playing'));
+      if (!scoreViewEnabled) return;
+      const grid = document.querySelector(`.tab-grid[data-row="${row}"]`);
+      if (!grid) return;
+      const positions = positionsPerRow();
+      const playhead = makeDiv('playhead-column');
+      playhead.style.left = `${((position + 1) / positions) * 100}%`;
+      playhead.style.width = `${Math.max(0.8, (100 / positions) * 1.35)}%`;
+      playhead.setAttribute('aria-hidden', 'true');
+      grid.appendChild(playhead);
     }
 
     function clearPlayhead() {
-      if (!currentPlayhead) return;
-      currentPlayhead.forEach(input => input.classList.remove('is-playing'));
+      if (currentPlayhead) currentPlayhead.forEach(input => input.classList.remove('is-playing'));
+      document.querySelectorAll('.playhead-column').forEach(playhead => playhead.remove());
       currentPlayhead = null;
     }
 
