@@ -59,12 +59,12 @@
               <span class="mode-toggle-label">看譜模式</span>
               <span class="mode-switch" aria-hidden="true"><span class="mode-switch-thumb"></span></span>
             </button>
-            <div class="meter-badge" id="meterBadge" aria-label="目前曲譜拍數">每小節 4 拍</div>
             <div class="capo-box"><label for="capoInput">變調夾</label><input id="capoInput" type="number" min="0" max="12" step="1" value="0" inputmode="numeric" aria-label="變調夾品數" /><span class="progress-label">品</span></div>
             <div class="tempo-box"><label for="tempoInput">BPM</label><input id="tempoInput" type="number" min="30" max="300" step="1" value="120" inputmode="numeric" aria-label="播放速度 BPM" /></div>
             <div class="progress-box"><input id="playProgress" type="range" min="0" value="0" aria-label="播放進度" /><span class="progress-label" id="progressLabel">第 1 列 / 第 1 格</span></div>
             <button class="play-button" id="playButton" type="button" aria-label="播放 TAB 譜">播放</button>
           </div>
+          <template id="meterBadge"></template>
         </div>
       </header>
       <main><section class="sheet" aria-label="吉他 TAB 編輯區"><div id="tabArea"></div><div class="actions"><button class="row-button remove-row" id="removeRow" type="button" aria-label="刪除最下面一列">−</button><button class="row-button add-row" id="addRow" type="button" aria-label="新增一列">+</button></div></section></main>
