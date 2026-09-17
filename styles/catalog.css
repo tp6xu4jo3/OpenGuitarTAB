@@ -54,18 +54,18 @@
   position:absolute;
   left:50%;
   top:50%;
-  width:20px;
-  height:20px;
+  width:24px;
+  height:24px;
   transform:translate(-50%,-50%);
   background-position:center;
   background-repeat:no-repeat;
-  background-size:20px 20px;
+  background-size:24px 24px;
 }
 .back-button::before {
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7 7 12l5 5M7 12h10' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12.5 5.5 6 12l6.5 6.5M6.5 12H19' fill='none' stroke='%23000' stroke-width='2.35' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .add-preview-button::before {
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7v10M7 12h10' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 5.5v13M5.5 12h13' fill='none' stroke='%23000' stroke-width='2.35' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 .back-button:hover,.back-button:focus-visible,.add-preview-button:hover,.add-preview-button:focus-visible { background:#3be477; transform:translateY(-1px); outline:none; }
 .add-preview-button[hidden] { display:none !important; }
