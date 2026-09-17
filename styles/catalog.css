@@ -31,13 +31,13 @@
   box-sizing:border-box;
   appearance:none;
   -webkit-appearance:none;
+  position:relative;
   width:42px;
   min-width:42px;
   height:42px;
   min-height:42px;
   flex:0 0 42px;
-  display:inline-grid;
-  place-items:center;
+  display:block;
   margin:0;
   padding:0;
   border:0;
@@ -45,21 +45,28 @@
   background:#1ed760;
   color:#000;
   box-shadow:none;
-  line-height:1;
+  font-size:0;
+  line-height:0;
   transition:background .15s ease,transform .15s ease;
 }
-.back-button { position:relative; font-size:0; }
-.back-button::before {
+.back-button::before,.add-preview-button::before {
   content:'';
   position:absolute;
-  inset:0;
-  margin:auto;
+  left:50%;
+  top:50%;
   width:20px;
   height:20px;
-  background:center/20px 20px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14.5 5.5 8 12l6.5 6.5M8.5 12H19' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  transform:translate(-50%,-50%);
+  background-position:center;
+  background-repeat:no-repeat;
+  background-size:20px 20px;
 }
-.add-preview-button { position:relative; font-size:0; }
-.add-preview-button::before { content:'+'; display:block; font-size:20px; font-weight:500; line-height:1; transform:translateY(.5px); }
+.back-button::before {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7 7 12l5 5M7 12h10' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.add-preview-button::before {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7v10M7 12h10' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
 .back-button:hover,.back-button:focus-visible,.add-preview-button:hover,.add-preview-button:focus-visible { background:#3be477; transform:translateY(-1px); outline:none; }
 .add-preview-button[hidden] { display:none !important; }
 .add-preview-button::after { content:attr(data-tooltip); position:absolute; top:calc(100% + 9px); left:50%; z-index:1200; transform:translate(-50%,-4px); padding:7px 11px; border-radius:7px; background:#111; color:#fff; font-size:14px; font-weight:750; line-height:1.15; white-space:nowrap; opacity:0; pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.25); transition:opacity .14s ease,transform .14s ease; }
