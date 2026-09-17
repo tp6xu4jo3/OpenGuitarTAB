@@ -1,0 +1,9 @@
+.measure-module-badge{display:none!important}
+.measure-module-hitbox.drop-before,.measure-module-hitbox.drop-after{transform:none!important;box-shadow:none!important}
+.measure-module-hitbox.drop-before::after,.measure-module-hitbox.drop-after::after{opacity:0!important}
+.measure-module-hitbox.measure-insert-shift{transform:translateX(8px)!important}
+.measure-insert-boundary{position:absolute;top:0;height:var(--staff-height);z-index:12;pointer-events:none;background:transparent}
+.measure-drag-active .measure-module-hitbox{pointer-events:none}
+.measure-drag-active .measure-insert-boundary{pointer-events:auto}
+.measure-insert-boundary::after{content:'';position:absolute;top:0;bottom:0;left:var(--boundary-line-x);width:3px;border-radius:2px;background:#1ed760;transform:translateX(-50%);opacity:0;pointer-events:none}
+.measure-insert-boundary.is-active::after{opacity:1}
