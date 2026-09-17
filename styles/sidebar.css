@@ -24,7 +24,8 @@
 .brand-subtitle { margin-top: 2px; color: #8f8f8f; font-size: 10px; }
 .primary-nav { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.09); }
 .nav-button { min-height:42px; display:grid; grid-template-columns:22px minmax(0,1fr); align-items:center; column-gap:10px; border:0; border-radius:8px; padding:0 12px; background:transparent; color:#b3b3b3; cursor:pointer; font-weight:750; text-align:left; }
-.nav-button:hover,.nav-button.active { background: #252525; color: #fff; }
-.nav-icon { width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
-.nav-icon svg { width:19px; height:19px; display:block; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; overflow:visible; }
-.nav-label { display:flex; align-items:center; min-height:22px; line-height:1; }
+.nav-button:hover,.nav-button.active { background:#252525; color:#fff; }
+.nav-icon { width:22px; height:22px; display:grid; place-items:center; color:inherit; }
+.nav-icon svg { width:18px; height:18px; display:block; overflow:visible; fill:none !important; stroke:currentColor !important; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+.nav-icon svg path,.nav-icon svg circle,.nav-icon svg line,.nav-icon svg polyline { fill:none !important; stroke:currentColor !important; }
+.nav-label { display:flex; align-items:center; min-height:22px; line-height:22px; }
