@@ -102,8 +102,8 @@
       content.classList.toggle('score-view', scoreViewEnabled);
       rhythmToggleButton.setAttribute('aria-pressed', String(scoreViewEnabled));
       const label = rhythmToggleButton.querySelector('.mode-toggle-label');
-      if (label) label.textContent = scoreViewEnabled ? '看譜模式' : '編輯模式';
-      rhythmToggleButton.setAttribute('aria-label', scoreViewEnabled ? '目前為看譜模式，切換至編輯模式' : '目前為編輯模式，切換至看譜模式');
+      if (label) label.textContent = '看譜模式';
+      rhythmToggleButton.setAttribute('aria-label', scoreViewEnabled ? '看譜模式已開啟，關閉看譜模式' : '看譜模式已關閉，開啟看譜模式');
     }
 
     function renderRows(rows) {
