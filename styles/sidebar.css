@@ -25,3 +25,6 @@
 .primary-nav { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.09); }
 .nav-button { min-height: 42px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 8px; padding: 0 12px; background: transparent; color: #b3b3b3; cursor: pointer; font-weight: 750; text-align: left; }
 .nav-button:hover,.nav-button.active { background: #252525; color: #fff; }
+.nav-icon { width: 20px; height: 20px; flex: 0 0 20px; display: grid; place-items: center; line-height: 1; font-size: 19px; }
+.nav-icon-catalog { font-size: 22px; transform: translateY(-1px); }
+.nav-icon-library { font-size: 20px; }
