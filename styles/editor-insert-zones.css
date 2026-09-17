@@ -7,3 +7,8 @@
 .measure-drag-active .measure-insert-boundary{pointer-events:auto}
 .measure-insert-boundary::after{content:'';position:absolute;top:0;bottom:0;left:var(--boundary-line-x);width:3px;border-radius:2px;background:#1ed760;transform:translateX(-50%);opacity:0;pointer-events:none}
 .measure-insert-boundary.is-active::after{opacity:1}
+.row-drag-active .editor-row-module{pointer-events:none}
+.row-drag-active .row-insert-zone{height:34px;pointer-events:auto}
+.row-drag-active .row-insert-zone::before{left:96px;right:8px;height:3px;border-radius:2px;background:transparent}
+.row-drag-active .row-insert-zone.is-drag-target::before{background:#1ed760}
+.row-drag-active .row-insert-button{opacity:0!important;pointer-events:none!important}
