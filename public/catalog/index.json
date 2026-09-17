@@ -1,0 +1,18 @@
+[
+  {"id":"song-mu2ssuso-ocyrvb","name":"lemon","tempo":80,"capo":4,"beatsPerMeasure":4,"file":"./songs/song-mu2ssuso-ocyrvb.json"},
+  {"id":"song-suzume-no-tabimichi-20260828","name":"鈴芽之旅","tempo":78,"capo":5,"beatsPerMeasure":4,"file":"./songs/song-suzume-no-tabimichi-20260828.json"},
+  {"id":"song-mta0ejfe-mnjhvq","name":"唯一","tempo":72,"capo":1,"beatsPerMeasure":4,"file":"./songs/song-mta0ejfe-mnjhvq.json"},
+  {"id":"song-msrlpq0g-gb7lmz","name":"未命名曲譜 1","tempo":120,"capo":4,"beatsPerMeasure":4,"file":"./songs/song-msrlpq0g-gb7lmz.json"},
+  {"id":"song-msg67k38-kfug70","name":"七里香","tempo":70,"capo":3,"beatsPerMeasure":4,"file":"./songs/song-msg67k38-kfug70.json"},
+  {"id":"song-ms7ji7hq-n30feg","name":"花人局","tempo":120,"capo":6,"beatsPerMeasure":4,"file":"./songs/song-ms7ji7hq-n30feg.json"},
+  {"id":"song-mrxd7847-7hu4jg","name":"夜紛い","tempo":175,"capo":0,"beatsPerMeasure":4,"file":"./songs/song-mrxd7847-7hu4jg.json"},
+  {"id":"song-mrgjuj79-fj686z","name":"好きだから","tempo":75,"capo":0,"beatsPerMeasure":4,"file":"./songs/song-mrgjuj79-fj686z.json"},
+  {"id":"song-mrfghbrw-88afaz","name":"ocean eyes","tempo":70,"capo":0,"beatsPerMeasure":4,"file":"./songs/song-mrfghbrw-88afaz.json"},
+  {"id":"seed-uploaded-image-draft-v1","name":"more then words","tempo":120,"capo":1,"beatsPerMeasure":4,"file":"./songs/seed-uploaded-image-draft-v1.json"},
+  {"id":"song-nichijou-19ff0eaf6d4","name":"日常","tempo":61,"capo":0,"beatsPerMeasure":4,"file":"./songs/song-nichijou-19ff0eaf6d4.json"},
+  {"id":"song-shasi-nage-shijiazhuangren-20260916","name":"殺死那個石家莊人","tempo":90,"capo":3,"beatsPerMeasure":4,"file":"./songs/song-shasi-nage-shijiazhuangren-20260916.json"},
+  {"id":"song-cai-ershisan-20260917","name":"才二十三","tempo":80,"capo":0,"beatsPerMeasure":3,"file":"./songs/song-cai-ershisan-20260917.json"},
+  {"id":"song-anjing-20260917","name":"安靜","artist":"周杰倫","tempo":74,"capo":3,"beatsPerMeasure":4,"file":"./songs/song-anjing-20260917.json"},
+  {"id":"song-yongbao-20260917","name":"擁抱","artist":"五月天","tempo":60,"capo":0,"beatsPerMeasure":4,"file":"./songs/song-yongbao-20260917.json"},
+  {"id":"song-ezuoju-20260917","name":"惡作劇","artist":"王藍茵","tempo":68,"capo":3,"beatsPerMeasure":4,"file":"./songs/song-ezuoju-20260917.json"}
+]
