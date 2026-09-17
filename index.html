@@ -15,8 +15,14 @@
         <div><div class="brand-name">OpenGuitarTAB</div><div class="brand-subtitle">Guitar TAB Studio</div></div>
       </div>
       <nav class="primary-nav" aria-label="網站導覽">
-        <button class="nav-button" id="catalogNavButton" type="button"><span class="nav-icon nav-icon-catalog" aria-hidden="true">⌂</span><span>公共曲庫</span></button>
-        <button class="nav-button" id="libraryNavButton" type="button"><span class="nav-icon nav-icon-library" aria-hidden="true">♫</span><span>個人曲譜櫃</span></button>
+        <button class="nav-button" id="catalogNavButton" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9.5V20.5h13V9.5"/><path d="M9.5 20.5v-6h5v6"/></svg></span>
+          <span class="nav-label">公共曲庫</span>
+        </button>
+        <button class="nav-button" id="libraryNavButton" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+          <span class="nav-label">個人曲譜櫃</span>
+        </button>
       </nav>
       <div class="sidebar-head"><div class="sidebar-title">我的曲譜</div><button class="new-song-button" id="newSongButton" type="button" aria-label="新增空白曲譜">+</button></div>
       <div class="song-list" id="songList"></div>
@@ -44,7 +50,7 @@
             <div class="header-actions">
               <button class="save-button" id="saveSongButton" type="button">儲存</button>
               <button class="download-button" id="downloadSongButton" type="button">下載</button>
-              <button class="add-preview-button" id="addPreviewSongButton" type="button" hidden aria-label="加入曲譜櫃" title="加入曲譜櫃" data-tooltip="加入曲譜櫃">+</button>
+              <button class="add-preview-button" id="addPreviewSongButton" type="button" hidden aria-label="加入曲譜櫃" data-tooltip="加入曲譜櫃">+</button>
             </div>
           </div>
           <div class="editor-title-wrap"><h1 id="editorTitle">吉他 TAB 譜製作器</h1><span class="preview-badge" id="previewBadge" hidden>預覽</span></div>
