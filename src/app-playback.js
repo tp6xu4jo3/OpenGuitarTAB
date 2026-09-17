@@ -103,6 +103,7 @@
       }
       isPlaying = false;
       lastCenteredPlaybackRow = -1;
+      clearPlayhead();
       if (stopVoices) stopAllStringVoices();
       if (resetButton) {
         playButton.textContent = '播放';
