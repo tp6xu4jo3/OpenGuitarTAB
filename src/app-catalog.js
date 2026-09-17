@@ -98,17 +98,32 @@
         tempoInput.value = clamp(Number(previewSong.tempo) || 120, 30, 300);
         capoInput.value = clamp(Math.round(Number(previewSong.capo) || 0), 0, 12);
         meterBadge.textContent = `每小節 ${activeBeatsPerMeasure} 拍`;
-        editorTitle.textContent = `${previewSong.name || '曲譜'} · 預覽`;
-        saveSongButton.hidden = true; downloadSongButton.hidden = true; addPreviewSongButton.hidden = false;
-        setScoreViewEnabled(true); renderRows(previewSong.rows); showPage('editor');
+        editorTitle.textContent = previewSong.name || '曲譜';
+        const previewBadge = document.getElementById('previewBadge');
+        if (previewBadge) previewBadge.hidden = false;
+        saveSongButton.hidden = true;
+        downloadSongButton.hidden = true;
+        addPreviewSongButton.hidden = false;
+        rhythmToggleButton.hidden = true;
+        setScoreViewEnabled(true);
+        renderRows(previewSong.rows);
+        showPage('editor');
       } catch (error) { console.error(error); showToast('曲譜預覽載入失敗'); setRoute('#/catalog'); }
     }
 
     function openLocalEditor(id) {
       previewSong = null;
-      saveSongButton.hidden = false; downloadSongButton.hidden = false; addPreviewSongButton.hidden = true;
+      saveSongButton.hidden = false;
+      downloadSongButton.hidden = false;
+      addPreviewSongButton.hidden = true;
+      rhythmToggleButton.hidden = false;
+      const previewBadge = document.getElementById('previewBadge');
+      if (previewBadge) previewBadge.hidden = true;
+      setScoreViewEnabled(false);
       loadSong(id);
-      const song = currentSong(); editorTitle.textContent = song?.name || '吉他 TAB 譜製作器'; showPage('editor');
+      const song = currentSong();
+      editorTitle.textContent = song?.name || '吉他 TAB 譜製作器';
+      showPage('editor');
     }
 
     function handleRoute() {
