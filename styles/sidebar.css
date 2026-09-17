@@ -1,0 +1,27 @@
+.app-shell { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: 100vh; }
+.sidebar { position: sticky; top: 0; height: 100vh; background: #151515; color: #fff; padding: 16px 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 8px; }
+.sidebar-title { font-size: 17px; font-weight: 800; letter-spacing: .05em; }
+.new-song-button,.save-button,.play-button,.rhythm-toggle-button,.row-tool,.song-menu-action,.row-button { border: none; cursor: pointer; }
+.new-song-button { width: 34px; height: 34px; border-radius: 999px; background: #2d2d2d; color: #fff; font-size: 22px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.new-song-button:hover,.new-song-button:focus-visible { background: #3a3a3a; outline: none; }
+.song-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 2px; }
+.song-item { position: relative; min-height: 42px; border-radius: 10px; display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 4px; color: #e9e9e9; background: transparent; user-select: none; }
+.song-item.active { background: #2c2c2c; }
+.song-item:hover { background: #252525; }
+.song-load-button { border: none; background: transparent; color: inherit; cursor: pointer; text-align: left; padding: 10px 8px 10px 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 10px; }
+.song-more-button { opacity: 0; width: 28px; height: 28px; border-radius: 999px; border: none; background: transparent; color: #fff; cursor: pointer; font-size: 22px; display: inline-flex; align-items: center; justify-content: center; }
+.song-item:hover .song-more-button,.song-more-button:focus-visible,.song-more-button.open { opacity: 1; }
+.song-more-button:hover { background: #3a3a3a; }
+.song-menu { position: fixed; z-index: 1000; left: 0; top: 0; min-width: 128px; border: 1px solid #333; border-radius: 12px; background: #202020; box-shadow: 0 16px 35px rgba(0,0,0,.35); padding: 6px; display: none; }
+.song-menu.open { display: block; }
+.song-menu-action { width: 100%; display: block; text-align: left; border-radius: 8px; padding: 9px 10px; background: transparent; color: #fff; font-size: 14px; }
+.song-menu-action:hover { background: #333; }
+.song-menu-action.danger { color: #ffb4b4; }
+.brand-row { display: flex; align-items: center; gap: 10px; padding: 4px 5px 12px; }
+.brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: #1ed760; color: #050505; font-weight: 950; letter-spacing: -.05em; }
+.brand-name { font-size: 15px; font-weight: 900; }
+.brand-subtitle { margin-top: 2px; color: #8f8f8f; font-size: 10px; }
+.primary-nav { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.09); }
+.nav-button { min-height: 42px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 8px; padding: 0 12px; background: transparent; color: #b3b3b3; cursor: pointer; font-weight: 750; text-align: left; }
+.nav-button:hover,.nav-button.active { background: #252525; color: #fff; }
