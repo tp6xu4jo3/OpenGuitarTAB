@@ -37,15 +37,22 @@
     </section>
 
     <div class="content score-view page-view editor-view" id="editorView" hidden>
-      <header>
+      <header class="editor-header">
         <div class="topbar">
-          <div class="title-row">
+          <div class="header-left">
             <button class="back-button" id="editorBackButton" type="button">←</button>
-            <div class="header-actions"><button class="save-button" id="saveSongButton" type="button">儲存</button><button class="download-button" id="downloadSongButton" type="button">下載</button><button class="add-preview-button" id="addPreviewSongButton" type="button" hidden>＋ 加入曲譜櫃</button></div>
-            <div><h1 id="editorTitle">吉他 TAB 譜製作器</h1></div>
+            <div class="header-actions">
+              <button class="save-button" id="saveSongButton" type="button">儲存</button>
+              <button class="download-button" id="downloadSongButton" type="button">下載</button>
+              <button class="add-preview-button" id="addPreviewSongButton" type="button" hidden>＋ 加入曲譜櫃</button>
+            </div>
           </div>
+          <div class="editor-title-wrap"><h1 id="editorTitle">吉他 TAB 譜製作器</h1></div>
           <div class="play-panel" aria-label="播放控制">
-            <button class="rhythm-toggle-button" id="rhythmToggleButton" type="button" aria-pressed="true">看譜模式：開</button>
+            <button class="mode-toggle-button" id="rhythmToggleButton" type="button" aria-pressed="true" aria-label="目前為看譜模式，切換至編輯模式">
+              <span class="mode-toggle-label">看譜模式</span>
+              <span class="mode-switch" aria-hidden="true"><span class="mode-switch-thumb"></span></span>
+            </button>
             <div class="meter-badge" id="meterBadge" aria-label="目前曲譜拍數">每小節 4 拍</div>
             <div class="capo-box"><label for="capoInput">變調夾</label><input id="capoInput" type="number" min="0" max="12" step="1" value="0" inputmode="numeric" aria-label="變調夾品數" /><span class="progress-label">品</span></div>
             <div class="tempo-box"><label for="tempoInput">BPM</label><input id="tempoInput" type="number" min="30" max="300" step="1" value="120" inputmode="numeric" aria-label="播放速度 BPM" /></div>
