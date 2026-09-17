@@ -13,7 +13,7 @@ OpenGuitarTAB是純前端吉他TAB編輯與共享平台，可直接部署至GitH
 - `public/catalog/index.json`作為輕量曲庫索引
 - CSS依功能模組化
 
-### Phase 2 — Catalog UI（進行中）
+### Phase 2 — Catalog UI
 - Spotify風格深色導覽與曲譜卡片
 - `#/catalog`公共曲庫首頁
 - 公共曲譜搜尋
@@ -21,6 +21,14 @@ OpenGuitarTAB是純前端吉他TAB編輯與共享平台，可直接部署至GitH
 - 一鍵加入個人曲譜櫃
 - `#/library`個人曲譜櫃
 - `#/editor/:id`編輯器Hash路由
+- 編輯器／播放／曲庫／Catalog程式模組化
+
+### 下一階段 — Google Cloud Sync
+- Google Identity Services登入
+- Google Drive `drive.file`授權
+- 個人曲譜一歌一JSON同步
+- localStorage離線快取與雲端同步
+- 衝突處理
 
 ## 本機預覽
 
