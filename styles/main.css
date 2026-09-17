@@ -4,5 +4,6 @@
 @import './header.css';
 @import './sheet.css';
 @import './editor-modules.css';
+@import './editor-insert-zones.css';
 @import './modals.css';
 @import './responsive.css';
