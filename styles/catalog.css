@@ -27,7 +27,12 @@
 .card-secondary-button:hover { border-color:#fff; }
 .primary-action { min-height:44px; margin-top:24px; padding:0 20px; border-radius:999px; }
 .empty-state { grid-column:1/-1; padding:40px 0; color:#a7a7a7; }
-.back-button { width:43px; height:43px; flex:0 0 43px; border-radius:999px; font-size:21px; box-shadow:0 8px 18px rgba(30,215,96,.18); transition:background .15s ease,transform .15s ease; }
+.back-button { width:43px; height:43px; flex:0 0 43px; display:inline-grid; place-items:center; padding:0; border-radius:999px; font-size:0; line-height:1; box-shadow:0 8px 18px rgba(30,215,96,.18); transition:background .15s ease,transform .15s ease; }
+.back-button::before { content:'←'; display:block; font-size:21px; line-height:1; transform:translateY(-1px); }
 .back-button:hover,.back-button:focus-visible { transform:translateY(-1px); outline:none; }
-.add-preview-button { height:43px; padding:0 17px; border-radius:999px; }
+.add-preview-button { position:relative; width:43px; min-width:43px; height:43px; min-height:43px; flex:0 0 43px; display:inline-grid; place-items:center; padding:0; border-radius:999px; font-size:24px; line-height:1; box-shadow:0 8px 18px rgba(30,215,96,.18); transition:background .15s ease,transform .15s ease; }
+.add-preview-button[hidden] { display:none !important; }
+.add-preview-button:hover,.add-preview-button:focus-visible { transform:translateY(-1px); outline:none; }
+.add-preview-button::after { content:attr(data-tooltip); position:absolute; top:calc(100% + 9px); left:50%; z-index:1200; transform:translate(-50%,-4px); padding:6px 9px; border-radius:7px; background:#111; color:#fff; font-size:12px; font-weight:700; line-height:1; white-space:nowrap; opacity:0; pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.25); transition:opacity .14s ease,transform .14s ease; }
+.add-preview-button:hover::after,.add-preview-button:focus-visible::after { opacity:1; transform:translate(-50%,0); }
 @media (max-width:900px) { .catalog-hero { align-items:stretch; flex-direction:column; } .catalog-search { width:100%; } }
