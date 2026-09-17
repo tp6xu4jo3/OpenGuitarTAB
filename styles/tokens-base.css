@@ -1,0 +1,23 @@
+:root {
+  --sidebar-width: 248px;
+  --line-color: #222;
+  --soft-line: #d7d7d7;
+  --focus: #2563eb;
+  --slot-size: 24px;
+  --small-slot-size: 15px;
+  --value-width: 42px;
+  --value-height: 34px;
+  --note-font-size: 30px;
+  --row-height: 32px;
+  --staff-height: calc(var(--row-height) * 6);
+  --rhythm-height: 58px;
+  --stem-end: 35px;
+  --system-height: calc(var(--staff-height) + var(--rhythm-height));
+  --surface: #fff;
+  --background: #f6f6f3;
+  --muted: #666;
+  --border: #e3e3df;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #090909; color: #111; }
+button, input { font: inherit; }
