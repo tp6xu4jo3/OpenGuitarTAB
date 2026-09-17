@@ -16,14 +16,17 @@
 .content.edit-view .tab-grid{overflow:visible;border-radius:12px;transition:box-shadow .18s ease}
 .content.edit-view .cell,.content.edit-view .small-cell{pointer-events:none;z-index:4}
 .content.edit-view .note-input{position:relative;z-index:7;pointer-events:auto}
-.measure-module-hitbox{position:absolute;top:0;height:var(--staff-height);z-index:3;box-sizing:border-box;border:1px solid transparent;border-radius:10px;background:rgba(30,215,96,0);cursor:grab;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s cubic-bezier(.2,.8,.2,1)}
-.measure-module-hitbox:hover{background:rgba(30,215,96,.045);border-color:rgba(30,215,96,.28)}
+.measure-module-hitbox{position:absolute;top:0;height:var(--staff-height);z-index:3;box-sizing:border-box;border:1px solid transparent;border-radius:10px;background:transparent;cursor:grab;transition:transform .16s cubic-bezier(.2,.8,.2,1)}
+.measure-module-hitbox:hover{background:transparent;border-color:transparent}
 .measure-module-hitbox:active{cursor:grabbing}
-.measure-module-hitbox.is-selected{background:rgba(30,215,96,.07);border-color:rgba(30,215,96,.55);box-shadow:inset 0 0 0 1px rgba(30,215,96,.12)}
+.measure-module-hitbox.is-selected{background:transparent;border-color:transparent;box-shadow:none}
 .measure-module-hitbox.is-dragging{opacity:.28}
-.measure-module-hitbox.drop-before{transform:translateX(8px);box-shadow:inset 4px 0 0 #1ed760}
+.measure-module-hitbox::after{content:'';position:absolute;top:0;bottom:0;width:3px;border-radius:2px;background:#1ed760;opacity:0;pointer-events:none;z-index:2}
+.measure-module-hitbox.drop-before{transform:translateX(8px);box-shadow:none}
+.measure-module-hitbox.drop-before::after{left:-6px;opacity:1}
 .measure-module-hitbox.drop-before~.measure-module-hitbox{transform:translateX(8px)}
-.measure-module-hitbox.drop-after{box-shadow:inset -4px 0 0 #1ed760}
+.measure-module-hitbox.drop-after{box-shadow:none}
+.measure-module-hitbox.drop-after::after{right:-2px;opacity:1}
 .measure-module-hitbox.drop-after~.measure-module-hitbox{transform:translateX(8px)}
 .measure-module-badge{position:absolute;top:5px;left:50%;transform:translateX(-50%) translateY(-3px);min-width:22px;height:18px;padding:0 5px;display:grid;place-items:center;border-radius:999px;background:#1ed760;color:#083416;font-size:10px;font-weight:900;opacity:0;pointer-events:none;transition:opacity .14s ease,transform .14s ease}
 .measure-module-hitbox:hover .measure-module-badge,.measure-module-hitbox.is-selected .measure-module-badge,.measure-module-hitbox.is-dragging .measure-module-badge{opacity:1;transform:translateX(-50%) translateY(0)}
