@@ -28,8 +28,9 @@
   flex-wrap: wrap;
 }
 .header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.editor-title-wrap { min-width: 0; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
+.editor-title-wrap { min-width: 0; display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; text-align: left; }
 .editor-title-wrap h1 { margin: 0; font-size: clamp(24px, 3.2vw, 38px); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-badge { flex: 0 0 auto; color: #1ed760; font-size: 13px; font-weight: 850; line-height: 1; letter-spacing: .04em; white-space: nowrap; }
 .save-button,.download-button { min-width: 74px; height: 43px; border-radius: 999px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .save-button { background: #111; color: #fff; box-shadow: 0 10px 22px rgba(0,0,0,.14); }
 .download-button { border: 1px solid #cfcfcf; background: #fff; color: #111; }
