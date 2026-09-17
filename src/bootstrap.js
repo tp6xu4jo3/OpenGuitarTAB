@@ -5,7 +5,9 @@ Object.assign(window, { compactSong, deserializeSong, readLocalLibrary, writeLoc
 
 const scripts = [
   './src/app-runtime.js',
-  './src/app-editor.js',
+  './src/app-editor-core.js',
+  './src/app-audio.js',
+  './src/app-playback.js',
   './src/app-library.js',
   './src/app-catalog.js'
 ];
