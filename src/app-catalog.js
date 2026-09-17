@@ -104,8 +104,8 @@
         saveSongButton.hidden = true;
         downloadSongButton.hidden = true;
         addPreviewSongButton.hidden = false;
-        rhythmToggleButton.hidden = true;
         setScoreViewEnabled(true);
+        if (rhythmToggleButton.isConnected) rhythmToggleButton.remove();
         renderRows(previewSong.rows);
         showPage('editor');
       } catch (error) { console.error(error); showToast('曲譜預覽載入失敗'); setRoute('#/catalog'); }
@@ -116,7 +116,7 @@
       saveSongButton.hidden = false;
       downloadSongButton.hidden = false;
       addPreviewSongButton.hidden = true;
-      rhythmToggleButton.hidden = false;
+      if (!rhythmToggleButton.isConnected) meterBadge.before(rhythmToggleButton);
       const previewBadge = document.getElementById('previewBadge');
       if (previewBadge) previewBadge.hidden = true;
       setScoreViewEnabled(false);
