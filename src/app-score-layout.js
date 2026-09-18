@@ -28,6 +28,7 @@
     grid.dataset.scoreSegment = 'true';
     grid.style.width = '100%';
     grid.style.minWidth = '0';
+    grid.style.maxWidth = '100%';
     return grid;
   }
 
@@ -87,7 +88,7 @@
     return groups;
   }
 
-  function hasVisualCollision(container, gap = 2) {
+  function hasVisualCollision(container, gap = 1.5) {
     for (const inputs of filledInputsByString(container).values()) {
       for (let index = 1; index < inputs.length; index++) {
         const previous = inputs[index - 1].getBoundingClientRect();
@@ -102,35 +103,57 @@
     grids.forEach(grid => grid.style.setProperty('--adaptive-note-size', `${size}px`));
   }
 
+  function applyNoteScaleX(grids, scale) {
+    grids.forEach(grid => grid.style.setProperty('--adaptive-note-scale-x', String(scale)));
+  }
+
   function setCollisionState(grids, scaled) {
     grids.forEach(grid => { grid.dataset.noteCollisionScaled = scaled ? 'true' : 'false'; });
   }
 
-  function fitCollisionContainer(container, grids, baseSize, minimumSize) {
+  function fitCollisionContainer(container, grids, baseSize, preferredFloor, hardFloor) {
     if (!(container instanceof HTMLElement) || grids.length === 0) return;
+
     container.style.removeProperty('min-width');
-    grids.forEach(grid => grid.style.removeProperty('min-width'));
-    applyNoteSize(grids, baseSize);
+    container.style.maxWidth = '100%';
+    grids.forEach(grid => {
+      grid.style.removeProperty('min-width');
+      grid.style.maxWidth = '100%';
+    });
+
+    let size = baseSize;
+    let scaleX = 1;
+    applyNoteSize(grids, size);
+    applyNoteScaleX(grids, scaleX);
     setCollisionState(grids, false);
 
     if (container.querySelectorAll('.note-input.has-value').length < 2) return;
 
-    let size = baseSize;
-    while (size > minimumSize && hasVisualCollision(container)) {
+    // First preserve normal glyph proportions and only reduce to a readable floor.
+    while (size > preferredFloor && hasVisualCollision(container)) {
       size -= 1;
       applyNoteSize(grids, size);
     }
 
-    if (size < baseSize) setCollisionState(grids, true);
-
-    if (hasVisualCollision(container)) {
-      const initialWidth = container.getBoundingClientRect().width;
-      let growth = 1;
-      while (growth < 2.4 && hasVisualCollision(container)) {
-        growth += 0.05;
-        container.style.minWidth = `${Math.ceil(initialWidth * growth)}px`;
-      }
+    // If the row is still dense, keep text height readable and condense horizontally.
+    while (scaleX > 0.62 && hasVisualCollision(container)) {
+      scaleX = Math.max(0.62, Number((scaleX - 0.04).toFixed(2)));
+      applyNoteScaleX(grids, scaleX);
     }
+
+    // Only use the lower font-size floor when horizontal condensing alone is not enough.
+    while (size > hardFloor && hasVisualCollision(container)) {
+      size -= 1;
+      applyNoteSize(grids, size);
+    }
+
+    // Final fallback stays inside the viewport; never grow the score wider than the sheet.
+    while (scaleX > 0.48 && hasVisualCollision(container)) {
+      scaleX = Math.max(0.48, Number((scaleX - 0.02).toFixed(2)));
+      applyNoteScaleX(grids, scaleX);
+    }
+
+    setCollisionState(grids, size < baseSize || scaleX < 1);
   }
 
   function fitAllNoteCollisions() {
@@ -138,13 +161,19 @@
     if (scoreViewEnabled) {
       tabArea.querySelectorAll('.score-grid-pair').forEach(pair => {
         scorePairs.add(pair);
-        fitCollisionContainer(pair, Array.from(pair.querySelectorAll(':scope > .tab-grid')), 30, 9);
+        fitCollisionContainer(pair, Array.from(pair.querySelectorAll(':scope > .tab-grid')), 30, 18, 14);
       });
     }
 
     tabArea.querySelectorAll('.tab-grid').forEach(grid => {
       if (scoreViewEnabled && grid.closest('.score-grid-pair') && scorePairs.has(grid.closest('.score-grid-pair'))) return;
-      fitCollisionContainer(grid, [grid], scoreViewEnabled ? 30 : 24, scoreViewEnabled ? 9 : 10);
+      fitCollisionContainer(
+        grid,
+        [grid],
+        scoreViewEnabled ? 30 : 24,
+        scoreViewEnabled ? 18 : 16,
+        scoreViewEnabled ? 14 : 13
+      );
     });
   }
 
