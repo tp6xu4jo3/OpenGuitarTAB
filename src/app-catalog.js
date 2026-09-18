@@ -18,13 +18,28 @@
       card.className = 'song-card';
       const art = document.createElement('div');
       art.className = 'song-card-art';
-      art.textContent = (song.name || 'TAB').trim().slice(0, 2).toUpperCase();
+      const fallbackArt = document.createElement('span');
+      fallbackArt.className = 'song-card-art-fallback';
+      fallbackArt.textContent = (song.name || 'TAB').trim().slice(0, 2).toUpperCase();
+      art.appendChild(fallbackArt);
+      if (song.cover) {
+        const image = document.createElement('img');
+        image.className = 'song-card-art-image';
+        image.src = song.cover;
+        image.alt = song.album ? `${song.album} 封面` : `${song.name || '曲譜'} 封面`;
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.addEventListener('load', () => art.classList.add('has-image'));
+        image.addEventListener('error', () => image.remove());
+        art.appendChild(image);
+      }
       const body = document.createElement('div');
       body.className = 'song-card-body';
       const title = document.createElement('h3');
       title.textContent = song.name || '未命名曲譜';
       const artist = document.createElement('p');
       artist.textContent = song.artist || (publicSong ? 'OpenGuitarTAB 公共曲譜' : '我的曲譜');
+      if (song.album) artist.title = song.album;
       const meta = document.createElement('div');
       meta.className = 'song-card-meta';
       meta.innerHTML = `<span>${Number(song.tempo) || 120} BPM</span><span>Capo ${Number(song.capo) || 0}</span>`;
@@ -43,7 +58,7 @@
 
     function renderCatalog() {
       const query = catalogSearchInput.value.trim().toLocaleLowerCase();
-      const filtered = catalogSongs.filter(song => !query || [song.name, song.artist].filter(Boolean).some(value => String(value).toLocaleLowerCase().includes(query)));
+      const filtered = catalogSongs.filter(song => !query || [song.name, song.artist, song.album].filter(Boolean).some(value => String(value).toLocaleLowerCase().includes(query)));
       catalogGrid.innerHTML = '';
       filtered.forEach(song => catalogGrid.appendChild(songCard(song, { publicSong: true })));
       catalogCount.textContent = `${filtered.length} 首`;
@@ -75,7 +90,13 @@
     async function fetchCatalogSong(meta) {
       const response = await fetch(new URL(meta.file, catalogBaseUrl), { cache: 'no-store' });
       if (!response.ok) throw new Error(`Song load failed: ${response.status}`);
-      return normalizeSongRecord(deserializeSong(await response.text()));
+      const source = normalizeSongRecord(deserializeSong(await response.text()));
+      return normalizeSongRecord({
+        ...source,
+        artist: source.artist || meta.artist,
+        album: source.album || meta.album,
+        cover: source.cover || meta.cover
+      });
     }
 
     async function addCatalogSong(meta) {
