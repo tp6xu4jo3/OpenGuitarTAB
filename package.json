@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/song-codec.test.mjs"
+    "test": "node tests/song-codec.test.mjs",
+    "hash-password": "node scripts/hash-password.mjs"
   }
 }
