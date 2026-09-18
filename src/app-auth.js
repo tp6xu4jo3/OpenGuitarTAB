@@ -69,10 +69,11 @@
       state.user = result.user;
       updateSessionUi();
       closeLoginModal();
-      window.dispatchEvent(new CustomEvent('opentab:auth-changed', { detail: { user: state.user } }));
-      const route = state.pendingRoute;
+      const pendingRoute = state.pendingRoute;
       state.pendingRoute = null;
-      if (route && typeof setRoute === 'function') setRoute(route);
+      window.dispatchEvent(new CustomEvent('opentab:auth-changed', {
+        detail: { user: state.user, pendingRoute }
+      }));
     } catch (error) {
       console.error(error);
       loginError.textContent = error?.message === 'INVALID_CREDENTIALS' ? '帳號或密碼錯誤' : '登入失敗，請確認後端設定。';
@@ -87,8 +88,7 @@
     state.user = null;
     state.pendingRoute = null;
     updateSessionUi();
-    window.dispatchEvent(new CustomEvent('opentab:auth-changed', { detail: { user: null } }));
-    if (typeof setRoute === 'function') setRoute('#/catalog');
+    window.dispatchEvent(new CustomEvent('opentab:auth-changed', { detail: { user: null, pendingRoute: '#/catalog' } }));
   }
 
   loginForm.addEventListener('submit', submitLogin);
