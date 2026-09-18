@@ -6,11 +6,13 @@ Object.assign(window, { compactSong, deserializeSong, readLocalLibrary, writeLoc
 const scripts = [
   './src/app-runtime.js',
   './src/app-editor-core.js',
+  './src/app-row-layout.js',
   './src/app-editor-stability.js',
   './src/app-editor-modules.js',
   './src/app-editor-insert-zones.js',
   './src/app-editor-row-controls.js',
   './src/app-audio.js',
+  './src/app-row-playback.js',
   './src/app-playback.js',
   './src/app-library.js',
   './src/app-catalog.js'
