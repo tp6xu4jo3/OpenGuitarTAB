@@ -1,14 +1,12 @@
 (() => {
-  const SCORE_LAYOUT_KEY = 'openguitartab:score-measures-per-line';
-  const SCORE_LAYOUT_VALUES = [8, 4, 2];
+  const SCORE_LAYOUT_KEY = 'openguitartab:score-measures-per-line:v2';
+  const SCORE_LAYOUT_VALUES = [8, 4];
   const baseRenderRows = renderRows;
   const baseSetScoreViewEnabled = setScoreViewEnabled;
   const baseHighlightPlayhead = highlightPlayhead;
 
   let scoreMeasuresPerLine = Number(localStorage.getItem(SCORE_LAYOUT_KEY));
-  if (!SCORE_LAYOUT_VALUES.includes(scoreMeasuresPerLine)) {
-    scoreMeasuresPerLine = window.matchMedia('(max-width: 980px)').matches ? 2 : 4;
-  }
+  if (!SCORE_LAYOUT_VALUES.includes(scoreMeasuresPerLine)) scoreMeasuresPerLine = 8;
 
   function hydrateGrid(grid, rowValues) {
     grid.querySelectorAll('.note-input').forEach(input => {
@@ -21,87 +19,23 @@
     });
   }
 
-  function rebuildBeatGuides(grid, measureCount) {
-    grid.querySelectorAll('.beat-guide').forEach(line => line.remove());
-    const totalBeats = measureCount * activeBeatsPerMeasure;
-    for (let guide = 1; guide < totalBeats; guide++) {
-      if (guide % activeBeatsPerMeasure === 0) continue;
-      const line = makeDiv('beat-guide');
-      line.style.setProperty('--guide-percent', `${(guide / totalBeats) * 100}%`);
-      grid.appendChild(line);
-    }
-  }
-
-  function trimGrid(grid, rowIndex, startMeasure, measureCount) {
-    const measureSlots = slotsPerMeasure();
-    const measureSteps = stepsPerMeasure();
-    const startPosition = startMeasure * measureSlots;
-    const positionCount = measureCount * measureSlots;
-    const endPosition = startPosition + positionCount;
-    const startStep = startMeasure * measureSteps;
-    const visibleSteps = measureCount * measureSteps;
-
-    grid.dataset.measureStart = String(startMeasure);
+  function prepareWholeRowGrid(grid, rowIndex) {
+    const measureCount = rowMeasureCount(rowIndex);
+    grid.dataset.measureStart = '0';
     grid.dataset.measureCount = String(measureCount);
-    grid.dataset.positionStart = String(startPosition);
-    grid.dataset.positionCount = String(positionCount);
+    grid.dataset.positionStart = '0';
+    grid.dataset.positionCount = String(measureCount * slotsPerMeasure());
     grid.dataset.scoreSegment = 'true';
-    grid.style.setProperty('--steps', visibleSteps);
     grid.style.width = '100%';
-
-    grid.querySelectorAll('.cell').forEach(cell => {
-      const input = cell.querySelector('.note-input');
-      if (!input) return;
-      const position = Number(input.dataset.position);
-      if (position < startPosition || position >= endPosition) {
-        cell.remove();
-        return;
-      }
-      const originalStep = Number(input.dataset.step);
-      if (Number.isFinite(originalStep)) cell.style.gridColumn = String(originalStep - startStep + 1);
-    });
-
-    grid.querySelectorAll('.small-cell').forEach(cell => {
-      const input = cell.querySelector('.note-input');
-      if (!input) return;
-      const position = Number(input.dataset.position);
-      if (position < startPosition || position >= endPosition) {
-        cell.remove();
-        return;
-      }
-      const localPosition = position - startPosition;
-      const localStep = Math.floor(localPosition / 2);
-      cell.style.left = `${((localStep + 1) / visibleSteps) * 100}%`;
-    });
-
-    grid.querySelectorAll('.measure-line').forEach(line => line.remove());
-    for (let index = 0; index <= measureCount; index++) {
-      const line = makeDiv('measure-line');
-      line.style.setProperty('--measure-index', String(index));
-      line.style.left = `${(index / measureCount) * 100}%`;
-      if (index === 0) line.classList.add('first');
-      if (index === measureCount) line.classList.add('last');
-      grid.appendChild(line);
-    }
-
-    grid.querySelectorAll('.measure-module-hitbox,.measure-insert-boundary').forEach(node => node.remove());
-    rebuildBeatGuides(grid, measureCount);
-    grid.dataset.row = String(rowIndex);
+    grid.style.minWidth = '0';
+    return grid;
   }
 
-  function makeScoreGrid(rowIndex, rowCount, rowValues, startMeasure = 0, measureCount = rowMeasureCount(rowIndex)) {
+  function makeScoreGrid(rowIndex, rowCount, rowValues) {
     const system = createTabSystem(rowIndex, rowCount);
     const grid = system.querySelector('.tab-grid');
     if (!grid) return null;
-    if (startMeasure !== 0 || measureCount !== rowMeasureCount(rowIndex)) {
-      trimGrid(grid, rowIndex, startMeasure, measureCount);
-    } else {
-      grid.dataset.measureStart = '0';
-      grid.dataset.measureCount = String(measureCount);
-      grid.dataset.positionStart = '0';
-      grid.dataset.positionCount = String(measureCount * slotsPerMeasure());
-      grid.style.width = '100%';
-    }
+    prepareWholeRowGrid(grid, rowIndex);
     hydrateGrid(grid, rowValues);
     return grid;
   }
@@ -129,21 +63,9 @@
           .map(index => makeScoreGrid(index, rowCount, normalized[index]));
         appendScoreSystem(grids, `score-8-${Math.floor(rowIndex / 2)}`, 8);
       }
-    } else if (scoreMeasuresPerLine === 4) {
-      normalized.forEach((row, rowIndex) => {
-        appendScoreSystem([makeScoreGrid(rowIndex, rowCount, row)], `score-4-${rowIndex}`, 4);
-      });
     } else {
       normalized.forEach((row, rowIndex) => {
-        const count = rowMeasureCount(rowIndex);
-        for (let start = 0; start < count; start += 2) {
-          const countHere = Math.min(2, count - start);
-          appendScoreSystem(
-            [makeScoreGrid(rowIndex, rowCount, row, start, countHere)],
-            `score-2-${rowIndex}-${start}`,
-            2
-          );
-        }
+        appendScoreSystem([makeScoreGrid(rowIndex, rowCount, row)], `score-4-${rowIndex}`, 4);
       });
     }
 
@@ -151,39 +73,62 @@
     updateRemoveRowButton();
     updateProgressRange();
     setProgressIndex(Math.min(playIndex, totalSlots() - 1), true, true);
-    requestAnimationFrame(scaleAllGrids);
+    requestAnimationFrame(fitAllNoteCollisions);
   }
 
-  function getGridPositionCount(grid) {
-    const explicit = Number(grid.dataset.positionCount);
-    if (Number.isFinite(explicit) && explicit > 0) return explicit;
-    const row = Number(grid.dataset.row);
-    return typeof rowPositionCount === 'function' && Number.isInteger(row)
-      ? rowPositionCount(row)
-      : positionsPerRow();
+  function filledInputsByString(grid) {
+    const groups = new Map();
+    grid.querySelectorAll('.note-input.has-value').forEach(input => {
+      const string = Number(input.dataset.string);
+      if (!groups.has(string)) groups.set(string, []);
+      groups.get(string).push(input);
+    });
+    groups.forEach(inputs => inputs.sort((a, b) => Number(a.dataset.position) - Number(b.dataset.position)));
+    return groups;
   }
 
-  function scaleGridNotes(grid) {
+  function gridHasCollision(grid, gap = 2) {
+    for (const inputs of filledInputsByString(grid).values()) {
+      for (let index = 1; index < inputs.length; index++) {
+        const previous = inputs[index - 1].getBoundingClientRect();
+        const current = inputs[index].getBoundingClientRect();
+        if (previous.right + gap > current.left) return true;
+      }
+    }
+    return false;
+  }
+
+  function fitGridNoteCollisions(grid) {
     if (!(grid instanceof HTMLElement)) return;
-    const positionCount = getGridPositionCount(grid);
-    const width = grid.getBoundingClientRect().width;
-    if (!width || !positionCount) return;
-
+    const filled = grid.querySelectorAll('.note-input.has-value');
     const baseSize = scoreViewEnabled ? 30 : 24;
-    const pitch = width / positionCount;
-    // Two-digit TAB values are roughly 1.25–1.35em wide. Keep a small gap so adjacent values never touch.
-    const fitted = Math.floor((pitch - 2) / 1.32);
-    const fontSize = Math.max(10, Math.min(baseSize, fitted));
-    grid.style.setProperty('--adaptive-note-size', `${fontSize}px`);
+    const minimumSize = scoreViewEnabled ? 9 : 10;
 
-    // Below the legibility floor, preserve readable text and let the sheet scroll instead of overlapping notes.
-    const minimumPitch = 10 * 1.32 + 2;
-    const minimumWidth = Math.ceil(positionCount * minimumPitch);
-    grid.style.minWidth = width < minimumWidth ? `${minimumWidth}px` : '';
+    grid.style.removeProperty('min-width');
+    grid.style.setProperty('--adaptive-note-size', `${baseSize}px`);
+    grid.dataset.noteCollisionScaled = 'false';
+    if (filled.length < 2) return;
+
+    let size = baseSize;
+    while (size > minimumSize && gridHasCollision(grid)) {
+      size -= 1;
+      grid.style.setProperty('--adaptive-note-size', `${size}px`);
+    }
+
+    if (size < baseSize) grid.dataset.noteCollisionScaled = 'true';
+
+    if (gridHasCollision(grid)) {
+      const width = grid.getBoundingClientRect().width;
+      let growth = 1;
+      while (growth < 2.2 && gridHasCollision(grid)) {
+        growth += 0.05;
+        grid.style.minWidth = `${Math.ceil(width * growth)}px`;
+      }
+    }
   }
 
-  function scaleAllGrids() {
-    tabArea.querySelectorAll('.tab-grid').forEach(scaleGridNotes);
+  function fitAllNoteCollisions() {
+    tabArea.querySelectorAll('.tab-grid').forEach(fitGridNoteCollisions);
   }
 
   function ensureScoreLayoutControl() {
@@ -240,28 +185,28 @@
       return;
     }
     baseRenderRows(rows);
-    requestAnimationFrame(scaleAllGrids);
+    requestAnimationFrame(fitAllNoteCollisions);
   };
 
   setScoreViewEnabled = function setScoreViewEnabledWithLayout(enabled) {
     baseSetScoreViewEnabled(enabled);
     ensureScoreLayoutControl();
     updateScoreLayoutControl();
+    requestAnimationFrame(fitAllNoteCollisions);
   };
 
-  highlightPlayhead = function highlightPlayheadWithScoreSegments(row, position) {
+  highlightPlayhead = function highlightPlayheadWithScoreRows(row, position) {
     baseHighlightPlayhead(row, position);
     if (!scoreViewEnabled || !isPlaying) return;
 
     document.querySelectorAll('.playhead-column').forEach(node => node.remove());
-    const candidates = Array.from(document.querySelectorAll(`.note-input[data-row="${row}"][data-position="${position}"]`));
-    const input = candidates.find(node => node.closest('.tab-grid'));
+    const input = Array.from(document.querySelectorAll(`.note-input[data-row="${row}"][data-position="${position}"]`))
+      .find(node => node.closest('.tab-grid'));
     const grid = input?.closest('.tab-grid');
     if (!grid) return;
 
-    const startPosition = Number(grid.dataset.positionStart) || 0;
-    const positionCount = getGridPositionCount(grid);
-    const localPosition = position - startPosition;
+    const positionCount = Number(grid.dataset.positionCount) || rowPositionCount(row);
+    const localPosition = position - (Number(grid.dataset.positionStart) || 0);
     if (localPosition < 0 || localPosition >= positionCount) return;
 
     const playhead = makeDiv('playhead-column');
@@ -271,10 +216,10 @@
     grid.appendChild(playhead);
   };
 
-  const resizeObserver = new ResizeObserver(() => scaleAllGrids());
+  const resizeObserver = new ResizeObserver(() => requestAnimationFrame(fitAllNoteCollisions));
   resizeObserver.observe(document.querySelector('.sheet') || tabArea);
 
   ensureScoreLayoutControl();
   updateScoreLayoutControl();
-  requestAnimationFrame(scaleAllGrids);
+  requestAnimationFrame(fitAllNoteCollisions);
 })();
