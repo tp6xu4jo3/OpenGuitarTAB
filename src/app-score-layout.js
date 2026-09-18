@@ -1,12 +1,17 @@
 (() => {
   const SCORE_LAYOUT_KEY = 'openguitartab:score-measures-per-line:v2';
   const SCORE_LAYOUT_VALUES = [8, 4];
+  const compactQuery = window.matchMedia('(max-width: 980px)');
   const baseRenderRows = renderRows;
   const baseSetScoreViewEnabled = setScoreViewEnabled;
   const baseHighlightPlayhead = highlightPlayhead;
 
   let scoreMeasuresPerLine = Number(localStorage.getItem(SCORE_LAYOUT_KEY));
   if (!SCORE_LAYOUT_VALUES.includes(scoreMeasuresPerLine)) scoreMeasuresPerLine = 8;
+
+  function isCompactScoreLayout() {
+    return compactQuery.matches;
+  }
 
   function hydrateGrid(grid, rowValues) {
     grid.querySelectorAll('.note-input').forEach(input => {
@@ -116,7 +121,7 @@
   function updateScoreLayoutControl() {
     const control = document.getElementById('scoreLayoutControl');
     if (!control) return;
-    control.hidden = !scoreViewEnabled;
+    control.hidden = !scoreViewEnabled || isCompactScoreLayout();
     control.querySelectorAll('.score-layout-option').forEach(button => {
       const active = Number(button.dataset.value) === scoreMeasuresPerLine;
       button.classList.toggle('is-active', active);
@@ -126,6 +131,14 @@
 
   renderRows = function renderRowsWithScoreLayout(rows) {
     if (scoreViewEnabled) {
+      // Compact widths intentionally return to the original responsive renderer.
+      // app-adaptive-measures.js then splits each logical 4-measure row into 2+2,
+      // keeping the page itself inside the viewport. The density fitter runs after
+      // this render and keeps the newer note-size logic on each resulting grid.
+      if (isCompactScoreLayout()) {
+        baseRenderRows(rows);
+        return;
+      }
       renderScoreRows(rows);
       return;
     }
@@ -158,6 +171,10 @@
     playhead.setAttribute('aria-hidden', 'true');
     grid.appendChild(playhead);
   };
+
+  compactQuery.addEventListener('change', () => {
+    updateScoreLayoutControl();
+  });
 
   ensureScoreLayoutControl();
   updateScoreLayoutControl();
