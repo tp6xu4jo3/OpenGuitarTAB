@@ -21,6 +21,19 @@
     return Array.from(layer.children).find(child => child.dataset.noteKey === key) || null;
   }
 
+  function gridPositionMetrics(grid, input) {
+    const rowIndex = Number(input.dataset.row);
+    const startPosition = Number(grid.dataset.positionStart) || 0;
+    let positionCount = Number(grid.dataset.positionCount);
+
+    if (!Number.isFinite(positionCount) || positionCount <= 0) {
+      if (typeof rowPositionCount === 'function' && Number.isInteger(rowIndex)) positionCount = rowPositionCount(rowIndex);
+      else positionCount = positionsPerRow();
+    }
+
+    return { startPosition, positionCount };
+  }
+
   function syncInputBackground(input) {
     if (!(input instanceof HTMLInputElement) || !input.classList.contains('note-input')) return;
 
@@ -32,11 +45,21 @@
     const position = Number(input.dataset.position);
     if (!Number.isInteger(string) || !Number.isInteger(position)) return;
 
+    const value = String(input.value || '');
+    const hasValue = input.classList.contains('has-value') && value.length > 0;
+    input.dataset.noteLength = hasValue ? String(Math.min(2, value.length)) : '0';
+
     const key = backgroundKey(input);
     let background = findBackground(layer, key);
-    const hasValue = input.classList.contains('has-value') && String(input.value || '').length > 0;
 
     if (!hasValue) {
+      background?.remove();
+      return;
+    }
+
+    const { startPosition, positionCount } = gridPositionMetrics(grid, input);
+    const localPosition = position - startPosition;
+    if (localPosition < 0 || localPosition >= positionCount) {
       background?.remove();
       return;
     }
@@ -47,7 +70,7 @@
       layer.appendChild(background);
     }
 
-    background.style.setProperty('--note-x', `${((position + 1) / positionsPerRow()) * 100}%`);
+    background.style.setProperty('--note-x', `${((localPosition + 1) / positionCount) * 100}%`);
     background.style.setProperty('--string-index', String(string));
   }
 
@@ -58,9 +81,7 @@
     const liveKeys = new Set();
 
     grid.querySelectorAll('.note-input').forEach(input => {
-      if (input.classList.contains('has-value') && String(input.value || '').length > 0) {
-        liveKeys.add(backgroundKey(input));
-      }
+      if (input.classList.contains('has-value') && String(input.value || '').length > 0) liveKeys.add(backgroundKey(input));
       syncInputBackground(input);
     });
 
@@ -99,6 +120,10 @@
     childList: true,
     attributes: true,
     attributeFilter: ['class']
+  });
+
+  tabArea.addEventListener('input', event => {
+    if (event.target instanceof HTMLInputElement && event.target.classList.contains('note-input')) syncInputBackground(event.target);
   });
 
   syncAllBackgrounds();
