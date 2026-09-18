@@ -6,3 +6,9 @@ Thumbs.db
 
 # local temp
 *.tmp
+
+# secrets / local deployment config
+.env
+.env.*
+!.env.example
+.vercel/
