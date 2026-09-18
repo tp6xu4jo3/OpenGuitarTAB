@@ -76,19 +76,19 @@
     requestAnimationFrame(fitAllNoteCollisions);
   }
 
-  function filledInputsByString(grid) {
+  function filledInputsByString(container) {
     const groups = new Map();
-    grid.querySelectorAll('.note-input.has-value').forEach(input => {
+    container.querySelectorAll('.note-input.has-value').forEach(input => {
       const string = Number(input.dataset.string);
       if (!groups.has(string)) groups.set(string, []);
       groups.get(string).push(input);
     });
-    groups.forEach(inputs => inputs.sort((a, b) => Number(a.dataset.position) - Number(b.dataset.position)));
+    groups.forEach(inputs => inputs.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left));
     return groups;
   }
 
-  function gridHasCollision(grid, gap = 2) {
-    for (const inputs of filledInputsByString(grid).values()) {
+  function hasVisualCollision(container, gap = 2) {
+    for (const inputs of filledInputsByString(container).values()) {
       for (let index = 1; index < inputs.length; index++) {
         const previous = inputs[index - 1].getBoundingClientRect();
         const current = inputs[index].getBoundingClientRect();
@@ -98,37 +98,54 @@
     return false;
   }
 
-  function fitGridNoteCollisions(grid) {
-    if (!(grid instanceof HTMLElement)) return;
-    const filled = grid.querySelectorAll('.note-input.has-value');
-    const baseSize = scoreViewEnabled ? 30 : 24;
-    const minimumSize = scoreViewEnabled ? 9 : 10;
+  function applyNoteSize(grids, size) {
+    grids.forEach(grid => grid.style.setProperty('--adaptive-note-size', `${size}px`));
+  }
 
-    grid.style.removeProperty('min-width');
-    grid.style.setProperty('--adaptive-note-size', `${baseSize}px`);
-    grid.dataset.noteCollisionScaled = 'false';
-    if (filled.length < 2) return;
+  function setCollisionState(grids, scaled) {
+    grids.forEach(grid => { grid.dataset.noteCollisionScaled = scaled ? 'true' : 'false'; });
+  }
+
+  function fitCollisionContainer(container, grids, baseSize, minimumSize) {
+    if (!(container instanceof HTMLElement) || grids.length === 0) return;
+    container.style.removeProperty('min-width');
+    grids.forEach(grid => grid.style.removeProperty('min-width'));
+    applyNoteSize(grids, baseSize);
+    setCollisionState(grids, false);
+
+    if (container.querySelectorAll('.note-input.has-value').length < 2) return;
 
     let size = baseSize;
-    while (size > minimumSize && gridHasCollision(grid)) {
+    while (size > minimumSize && hasVisualCollision(container)) {
       size -= 1;
-      grid.style.setProperty('--adaptive-note-size', `${size}px`);
+      applyNoteSize(grids, size);
     }
 
-    if (size < baseSize) grid.dataset.noteCollisionScaled = 'true';
+    if (size < baseSize) setCollisionState(grids, true);
 
-    if (gridHasCollision(grid)) {
-      const width = grid.getBoundingClientRect().width;
+    if (hasVisualCollision(container)) {
+      const initialWidth = container.getBoundingClientRect().width;
       let growth = 1;
-      while (growth < 2.2 && gridHasCollision(grid)) {
+      while (growth < 2.4 && hasVisualCollision(container)) {
         growth += 0.05;
-        grid.style.minWidth = `${Math.ceil(width * growth)}px`;
+        container.style.minWidth = `${Math.ceil(initialWidth * growth)}px`;
       }
     }
   }
 
   function fitAllNoteCollisions() {
-    tabArea.querySelectorAll('.tab-grid').forEach(fitGridNoteCollisions);
+    const scorePairs = new Set();
+    if (scoreViewEnabled) {
+      tabArea.querySelectorAll('.score-grid-pair').forEach(pair => {
+        scorePairs.add(pair);
+        fitCollisionContainer(pair, Array.from(pair.querySelectorAll(':scope > .tab-grid')), 30, 9);
+      });
+    }
+
+    tabArea.querySelectorAll('.tab-grid').forEach(grid => {
+      if (scoreViewEnabled && grid.closest('.score-grid-pair') && scorePairs.has(grid.closest('.score-grid-pair'))) return;
+      fitCollisionContainer(grid, [grid], scoreViewEnabled ? 30 : 24, scoreViewEnabled ? 9 : 10);
+    });
   }
 
   function ensureScoreLayoutControl() {
@@ -216,8 +233,10 @@
     grid.appendChild(playhead);
   };
 
-  const resizeObserver = new ResizeObserver(() => requestAnimationFrame(fitAllNoteCollisions));
+  const scheduleFit = () => requestAnimationFrame(fitAllNoteCollisions);
+  const resizeObserver = new ResizeObserver(scheduleFit);
   resizeObserver.observe(document.querySelector('.sheet') || tabArea);
+  window.addEventListener('resize', scheduleFit);
 
   ensureScoreLayoutControl();
   updateScoreLayoutControl();
