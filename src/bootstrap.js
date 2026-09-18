@@ -7,6 +7,7 @@ const scripts = [
   './src/app-runtime.js',
   './src/app-editor-core.js',
   './src/app-row-layout.js',
+  './src/app-measure-lines.js',
   './src/app-editor-stability.js',
   './src/app-editor-modules.js',
   './src/app-editor-insert-zones.js',
