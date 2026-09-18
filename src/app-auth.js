@@ -17,15 +17,9 @@
   function updateSessionUi() {
     if (!sidebarSession) return;
     sidebarSession.innerHTML = '';
-    if (!state.user) {
-      const login = document.createElement('button');
-      login.type = 'button';
-      login.className = 'sidebar-login-button';
-      login.textContent = '登入';
-      login.addEventListener('click', () => openLoginModal());
-      sidebarSession.appendChild(login);
-      return;
-    }
+    sidebarSession.hidden = !state.user;
+    if (!state.user) return;
+
     const identity = document.createElement('span');
     identity.className = 'sidebar-session-name';
     identity.textContent = `${state.user.username} · ${roleLabel(state.user.role)}`;
