@@ -24,7 +24,7 @@ const scripts = [
   './src/app-row-playback.js',
   './src/app-adaptive-measures.js',
   './src/app-score-layout.js',
-  './src/app-two-digit-fit.js',
+  './src/app-density-fit-v2.js',
   './src/app-playback.js',
   './src/app-library.js',
   './src/catalog/drive-catalog-service.js',
