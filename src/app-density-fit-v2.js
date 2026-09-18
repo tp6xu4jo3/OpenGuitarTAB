@@ -1,4 +1,6 @@
 (() => {
+  const SCORE_MAX_FONT_SIZE = 20;
+  const MIN_TWO_DIGIT_SCALE = 0.58;
   const measureCanvas = document.createElement('canvas');
   const measureContext = measureCanvas.getContext('2d');
   const widthCache = new Map();
@@ -14,7 +16,7 @@
   function scoreBaseFontSize(gridRect, positionCount) {
     if (!gridRect.width || !positionCount) return 18;
     const pitch = gridRect.width / positionCount;
-    return Math.max(11, Math.min(30, Math.floor((pitch - 0.35) / 0.56)));
+    return Math.max(11, Math.min(SCORE_MAX_FONT_SIZE, Math.floor((pitch - 0.35) / 0.56)));
   }
 
   function fontDescriptor(sample, size) {
@@ -48,6 +50,11 @@
     return filled.map(input => `${input.dataset.string}:${input.dataset.position}:${input.value}`).join('|');
   }
 
+  function resetTwoDigitFit(input) {
+    input.style.removeProperty('--two-digit-scale-x');
+    input.removeAttribute('data-two-digit-scaled');
+  }
+
   function fitScoreGrid(grid, force = false) {
     const gridRect = grid.getBoundingClientRect();
     const positionCount = positionCountForGrid(grid);
@@ -73,8 +80,7 @@
     const byString = new Map();
 
     filled.forEach(input => {
-      input.style.removeProperty('--two-digit-font-size');
-      input.removeAttribute('data-two-digit-scaled');
+      resetTwoDigitFit(input);
       const string = Number(input.dataset.string);
       if (!byString.has(string)) byString.set(string, []);
       byString.get(string).push(input);
@@ -108,8 +114,9 @@
         constrainAgainst(notes[index + 1]);
 
         if (maxWidth >= naturalWidth - 0.1) return;
-        const fitted = Math.max(9, Math.min(baseSize, Math.floor(baseSize * (maxWidth / naturalWidth))));
-        note.input.style.setProperty('--two-digit-font-size', `${fitted}px`);
+        const scale = Math.max(MIN_TWO_DIGIT_SCALE, Math.min(1, maxWidth / naturalWidth));
+        if (scale >= 0.995) return;
+        note.input.style.setProperty('--two-digit-scale-x', scale.toFixed(3));
         note.input.dataset.twoDigitScaled = 'true';
       });
     });
@@ -120,10 +127,7 @@
   function clearEditGrid(grid) {
     fitState.delete(grid);
     grid.style.removeProperty('--score-note-font-size');
-    grid.querySelectorAll('.note-input[data-two-digit-scaled="true"]').forEach(input => {
-      input.style.removeProperty('--two-digit-font-size');
-      input.removeAttribute('data-two-digit-scaled');
-    });
+    grid.querySelectorAll('.note-input[data-two-digit-scaled="true"]').forEach(resetTwoDigitFit);
   }
 
   function clearAll() {
