@@ -9,49 +9,55 @@
     return Array.from({ length: rowCount }, (_, index) => deepClone(source?.[index] || {}));
   }
 
-  function extractMeasureForInsert(rows, rhythmRows, rowIndex, measureIndex) {
+  function countsFor(rowCount) {
+    const counts = ensureRowMeasureCounts(currentSong());
+    return Array.from({ length: rowCount }, (_, index) => counts[index] || MEASURES);
+  }
+
+  function blankMeasureModule() {
+    const width = slotsPerMeasure();
+    return { notes: Array.from({ length: STRINGS }, () => Array(width).fill('')), rhythm: {} };
+  }
+
+  function extractMeasure(rows, rhythmRows, rowIndex, measureIndex) {
     const width = slotsPerMeasure();
     const start = measureIndex * width;
-    const end = start + width;
-    const notes = Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, end));
+    const notes = Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, start + width));
     const rhythm = {};
     for (const [rawPosition, rawDuration] of Object.entries(rhythmRows[rowIndex] || {})) {
       const position = Number(rawPosition);
-      if (position >= start && position < end) rhythm[position - start] = Number(rawDuration);
+      if (position >= start && position < start + width) rhythm[position - start] = Number(rawDuration);
     }
     return { notes, rhythm };
   }
 
-  function rebuildRowsFromMeasures(measures, rowCount) {
+  function activeMeasures(rows, rhythmRows, rowIndex, count) {
+    return Array.from({ length: count }, (_, measureIndex) => extractMeasure(rows, rhythmRows, rowIndex, measureIndex));
+  }
+
+  function writeMeasuresToRow(rows, rhythmRows, rowIndex, measures) {
     const width = slotsPerMeasure();
-    const rows = Array.from({ length: rowCount }, () => blankRow());
-    const rhythmRows = Array.from({ length: rowCount }, () => ({}));
-    measures.forEach((measure, flatIndex) => {
-      const rowIndex = Math.floor(flatIndex / MEASURES);
-      const measureIndex = flatIndex % MEASURES;
-      if (rowIndex >= rowCount) return;
+    rows[rowIndex] = blankRow();
+    rhythmRows[rowIndex] = {};
+    measures.slice(0, MEASURES).forEach((measure, measureIndex) => {
       const offset = measureIndex * width;
       for (let string = 0; string < STRINGS; string++) {
         const values = measure.notes?.[string] || [];
-        for (let position = 0; position < width; position++) {
-          rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
-        }
+        for (let position = 0; position < width; position++) rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
       }
       for (const [rawPosition, rawDuration] of Object.entries(measure.rhythm || {})) {
         const localPosition = Number(rawPosition);
-        if (localPosition >= 0 && localPosition < width) {
-          rhythmRows[rowIndex][offset + localPosition] = Number(rawDuration);
-        }
+        if (localPosition >= 0 && localPosition < width) rhythmRows[rowIndex][offset + localPosition] = Number(rawDuration);
       }
     });
-    return { rows, rhythmRows };
   }
 
-  function commitInsertStructure(rows, rhythmRows, message) {
+  function commitStructure(rows, rhythmRows, counts, message) {
     const song = currentSong();
     if (!song || previewSong) return;
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
     song.rhythmRows = rhythmRows;
+    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES)));
     song.updatedAt = Date.now();
     writeStorage();
     renderRows(song.rows);
@@ -60,52 +66,106 @@
     if (message) showToast(message);
   }
 
-  function moveMeasureAtBoundary(sourceFlatIndex, insertionIndex) {
+  function moveMeasureAtBoundary(sourceRow, sourceMeasure, targetRow, targetBoundary) {
     const rows = readRowsFromDom();
     const rhythmRows = rhythmRowsFor(rows.length);
-    const measures = [];
-    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-      for (let measureIndex = 0; measureIndex < MEASURES; measureIndex++) {
-        measures.push(extractMeasureForInsert(rows, rhythmRows, rowIndex, measureIndex));
-      }
+    const counts = countsFor(rows.length);
+    if (!rows[sourceRow] || !rows[targetRow]) return;
+
+    const sourceCount = counts[sourceRow];
+    const targetCount = counts[targetRow];
+    if (sourceMeasure < 0 || sourceMeasure >= sourceCount) return;
+
+    if (sourceRow === targetRow) {
+      const measures = activeMeasures(rows, rhythmRows, sourceRow, sourceCount);
+      const [moved] = measures.splice(sourceMeasure, 1);
+      let target = Math.max(0, Math.min(sourceCount, targetBoundary));
+      if (sourceMeasure < target) target -= 1;
+      target = Math.max(0, Math.min(measures.length, target));
+      if (target === sourceMeasure) return;
+      measures.splice(target, 0, moved);
+      writeMeasuresToRow(rows, rhythmRows, sourceRow, measures);
+      commitStructure(rows, rhythmRows, counts, '已移動小節模塊');
+      return;
     }
-    if (!measures[sourceFlatIndex]) return;
-    const [measure] = measures.splice(sourceFlatIndex, 1);
-    let target = insertionIndex;
-    if (sourceFlatIndex < target) target -= 1;
-    target = Math.max(0, Math.min(measures.length, target));
-    if (target === sourceFlatIndex) return;
-    measures.splice(target, 0, measure);
-    const rebuilt = rebuildRowsFromMeasures(measures, rows.length);
-    commitInsertStructure(rebuilt.rows, rebuilt.rhythmRows, '已移動小節模塊');
+
+    if (targetCount >= MEASURES) {
+      showToast('目標列已滿 4 個小節');
+      return;
+    }
+
+    const sourceMeasures = activeMeasures(rows, rhythmRows, sourceRow, sourceCount);
+    const targetMeasures = activeMeasures(rows, rhythmRows, targetRow, targetCount);
+    const [moved] = sourceMeasures.splice(sourceMeasure, 1);
+    const target = Math.max(0, Math.min(targetMeasures.length, targetBoundary));
+    targetMeasures.splice(target, 0, moved);
+
+    if (sourceMeasures.length === 0) {
+      sourceMeasures.push(blankMeasureModule());
+      counts[sourceRow] = 1;
+    } else counts[sourceRow] = sourceMeasures.length;
+    counts[targetRow] = targetMeasures.length;
+
+    writeMeasuresToRow(rows, rhythmRows, sourceRow, sourceMeasures);
+    writeMeasuresToRow(rows, rhythmRows, targetRow, targetMeasures);
+    commitStructure(rows, rhythmRows, counts, '已移動小節模塊');
   }
 
   function moveRowAtBoundary(sourceIndex, insertionIndex) {
     const rows = readRowsFromDom();
     const rhythmRows = rhythmRowsFor(rows.length);
+    const counts = countsFor(rows.length);
     if (!rows[sourceIndex]) return;
+
     const [row] = rows.splice(sourceIndex, 1);
     const [rhythm] = rhythmRows.splice(sourceIndex, 1);
+    const [count] = counts.splice(sourceIndex, 1);
     let target = insertionIndex;
     if (sourceIndex < target) target -= 1;
     target = Math.max(0, Math.min(rows.length, target));
     if (target === sourceIndex) return;
+
     rows.splice(target, 0, row);
     rhythmRows.splice(target, 0, rhythm || {});
-    commitInsertStructure(rows, rhythmRows, '已移動列模塊');
+    counts.splice(target, 0, count || MEASURES);
+    commitStructure(rows, rhythmRows, counts, '已移動列模塊');
   }
 
   function installVisualBoundaries() {
-    document.querySelectorAll('.measure-module-badge').forEach(badge => badge.remove());
     if (scoreViewEnabled) return;
     document.querySelectorAll('.tab-grid[data-row]').forEach(grid => {
-      grid.querySelectorAll('.measure-insert-boundary').forEach(zone => zone.remove());
-      for (let boundaryIndex = 0; boundaryIndex <= MEASURES; boundaryIndex++) {
+      grid.querySelectorAll('.measure-insert-boundary').forEach(node => node.remove());
+      const count = Number(grid.dataset.measureCount) || rowMeasureCount(Number(grid.dataset.row));
+      for (let boundary = 0; boundary <= count; boundary++) {
         const line = makeDiv('measure-insert-boundary');
-        line.dataset.boundary = boundaryIndex;
-        line.style.left = `${boundaryIndex * 25}%`;
+        line.dataset.boundary = boundary;
+        line.style.left = `${(boundary / count) * 100}%`;
         grid.appendChild(line);
       }
+    });
+  }
+
+  function installRowDropZones() {
+    document.querySelectorAll('.row-insert-zone').forEach(zone => {
+      if (zone.dataset.rowDropReady === 'true') return;
+      zone.dataset.rowDropReady = 'true';
+      zone.addEventListener('dragover', event => {
+        if (dragState?.type !== 'row') return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        showRowBoundary({ zone, index: Number(zone.dataset.insertIndex), distance: 0 });
+      });
+      zone.addEventListener('drop', event => {
+        if (dragState?.type !== 'row') return;
+        event.preventDefault();
+        event.stopPropagation();
+        const state = dragState;
+        dragState = null;
+        document.body.classList.remove('row-drag-active');
+        const insertionIndex = Number(zone.dataset.insertIndex);
+        clearFeedback();
+        moveRowAtBoundary(state.sourceRow, insertionIndex);
+      });
     });
   }
 
@@ -118,14 +178,14 @@
   }
 
   function findMeasureBoundary(clientX, clientY) {
-    const grids = Array.from(document.querySelectorAll('.tab-grid[data-row]'));
-    for (const grid of grids) {
+    for (const grid of document.querySelectorAll('.tab-grid[data-row]')) {
       const rect = grid.getBoundingClientRect();
       if (clientY < rect.top || clientY > rect.bottom || clientX < rect.left || clientX > rect.right) continue;
-      const beatPx = rect.width / (MEASURES * activeBeatsPerMeasure);
+      const count = Number(grid.dataset.measureCount) || rowMeasureCount(Number(grid.dataset.row));
+      const beatPx = rect.width / (count * activeBeatsPerMeasure);
       let best = null;
-      for (let boundary = 0; boundary <= MEASURES; boundary++) {
-        const x = rect.left + rect.width * (boundary / MEASURES);
+      for (let boundary = 0; boundary <= count; boundary++) {
+        const x = rect.left + rect.width * (boundary / count);
         const distance = Math.abs(clientX - x);
         if (distance <= beatPx && (!best || distance < best.distance)) best = { grid, boundary, distance };
       }
@@ -144,21 +204,6 @@
     });
   }
 
-  function findRowBoundary(clientX, clientY) {
-    const tabRect = tabArea.getBoundingClientRect();
-    if (clientX < tabRect.left || clientX > tabRect.right) return null;
-    let best = null;
-    document.querySelectorAll('.row-insert-zone').forEach(zone => {
-      const rect = zone.getBoundingClientRect();
-      const centerY = rect.top + rect.height / 2;
-      const distance = Math.abs(clientY - centerY);
-      if (distance <= 24 && (!best || distance < best.distance)) {
-        best = { zone, index: Number(zone.dataset.insertIndex), distance };
-      }
-    });
-    return best;
-  }
-
   function showRowBoundary(target) {
     clearFeedback();
     if (!target) return;
@@ -166,20 +211,20 @@
     target.zone.classList.add('is-drag-target');
   }
 
-  renderRows = function renderRowsWithBoundaryZones(rows) {
+  renderRows = function renderRowsWithBoundaries(rows) {
     previousRenderRows(rows);
     installVisualBoundaries();
+    installRowDropZones();
   };
 
   document.addEventListener('dragstart', event => {
     const measure = event.target.closest?.('.measure-module-hitbox');
     if (measure && !scoreViewEnabled) {
-      dragState = {
-        type: 'measure',
-        source: Number(measure.dataset.row) * MEASURES + Number(measure.dataset.measure)
-      };
-      event.dataTransfer?.setData('text/plain', `measure:${dragState.source}`);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      dragState = { type: 'measure', sourceRow: Number(measure.dataset.row), sourceMeasure: Number(measure.dataset.measure) };
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `measure:${dragState.sourceRow}:${dragState.sourceMeasure}`);
+      }
       document.body.classList.add('measure-drag-active');
       clearFeedback();
       return;
@@ -187,46 +232,34 @@
 
     const rowHandle = event.target.closest?.('.row-module-handle');
     if (rowHandle && !scoreViewEnabled) {
-      dragState = { type: 'row', source: Number(rowHandle.dataset.row) };
-      event.dataTransfer?.setData('text/plain', `row:${dragState.source}`);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      dragState = { type: 'row', sourceRow: Number(rowHandle.dataset.row) };
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `row:${dragState.sourceRow}`);
+      }
       document.body.classList.add('row-drag-active');
       clearFeedback();
     }
   }, true);
 
   document.addEventListener('dragover', event => {
-    if (!dragState) return;
+    if (dragState?.type !== 'measure') return;
     event.preventDefault();
-    event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    if (dragState.type === 'measure') showMeasureBoundary(findMeasureBoundary(event.clientX, event.clientY));
-    else showRowBoundary(findRowBoundary(event.clientX, event.clientY));
+    showMeasureBoundary(findMeasureBoundary(event.clientX, event.clientY));
   }, true);
 
   document.addEventListener('drop', event => {
-    if (!dragState) return;
+    if (dragState?.type !== 'measure') return;
     event.preventDefault();
     event.stopPropagation();
     const state = dragState;
+    const target = activeMeasureTarget;
     dragState = null;
-    document.body.classList.remove('measure-drag-active', 'row-drag-active');
-
-    if (state.type === 'measure' && activeMeasureTarget) {
-      const rowIndex = Number(activeMeasureTarget.grid.dataset.row);
-      const insertionIndex = rowIndex * MEASURES + activeMeasureTarget.boundary;
-      clearFeedback();
-      moveMeasureAtBoundary(state.source, insertionIndex);
-      return;
-    }
-
-    if (state.type === 'row' && activeRowTarget) {
-      const insertionIndex = activeRowTarget.index;
-      clearFeedback();
-      moveRowAtBoundary(state.source, insertionIndex);
-      return;
-    }
+    document.body.classList.remove('measure-drag-active');
     clearFeedback();
+    if (!target) return;
+    moveMeasureAtBoundary(state.sourceRow, state.sourceMeasure, Number(target.grid.dataset.row), target.boundary);
   }, true);
 
   document.addEventListener('dragend', () => {
@@ -236,4 +269,5 @@
   }, true);
 
   installVisualBoundaries();
+  installRowDropZones();
 })();
