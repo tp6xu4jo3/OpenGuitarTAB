@@ -286,6 +286,7 @@ addPreviewSongButton.addEventListener('click', () => {
 });
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
+  const pendingRoute = event.detail?.pendingRoute;
   if (!event.detail?.user) {
     songs = [];
     currentSongId = null;
@@ -293,9 +294,11 @@ window.addEventListener('opentab:auth-changed', async event => {
     renderSongList();
     renderLibraryGrid();
     renderCatalog();
+    setRoute('#/catalog');
     return;
   }
   await loadUserLibrary();
   renderCatalog();
+  if (pendingRoute) setRoute(pendingRoute);
 });
 initializeApp();
