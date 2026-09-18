@@ -1,4 +1,4 @@
-    const catalogBaseUrl = new URL('./public/catalog/', location.href);
+    const driveCatalogConfig = window.DRIVE_CATALOG_CONFIG || {};
 
     function setRoute(hash) {
       if (location.hash === hash) handleRoute();
@@ -75,22 +75,109 @@
       }
     }
 
+    function driveApiKey() {
+      const key = String(driveCatalogConfig.apiKey || '').trim();
+      if (!key) throw new Error('DRIVE_API_KEY_MISSING');
+      return key;
+    }
+
+    function driveFolderId() {
+      const folderId = String(driveCatalogConfig.folderId || '').trim();
+      if (!folderId) throw new Error('DRIVE_FOLDER_ID_MISSING');
+      return folderId;
+    }
+
+    function driveApiUrl(path, params = {}) {
+      const base = String(driveCatalogConfig.apiBaseUrl || 'https://www.googleapis.com/drive/v3').replace(/\/$/, '');
+      const url = new URL(`${base}/${path.replace(/^\//, '')}`);
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+      });
+      url.searchParams.set('key', driveApiKey());
+      return url;
+    }
+
+    async function driveFetch(url, label) {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const body = await response.json();
+          detail = body?.error?.message ? `: ${body.error.message}` : '';
+        } catch (_) {}
+        throw new Error(`${label} failed: ${response.status}${detail}`);
+      }
+      return response;
+    }
+
+    async function listDriveCatalogFiles() {
+      const files = [];
+      let pageToken = '';
+      const folderId = driveFolderId();
+      do {
+        const url = driveApiUrl('files', {
+          q: `'${folderId}' in parents and trashed = false`,
+          fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size)',
+          pageSize: 1000,
+          pageToken
+        });
+        const response = await driveFetch(url, 'Drive file list');
+        const payload = await response.json();
+        if (Array.isArray(payload.files)) files.push(...payload.files);
+        pageToken = payload.nextPageToken || '';
+      } while (pageToken);
+      return files;
+    }
+
+    async function fetchDriveFileText(fileId) {
+      const response = await driveFetch(
+        driveApiUrl(`files/${encodeURIComponent(fileId)}`, { alt: 'media' }),
+        'Drive file load'
+      );
+      return response.text();
+    }
+
+    function catalogFileName(file) {
+      return String(file || '').split('/').filter(Boolean).pop() || '';
+    }
+
     async function loadCatalog() {
       try {
-        const response = await fetch(new URL('index.json', catalogBaseUrl), { cache: 'no-store' });
-        if (!response.ok) throw new Error(`Catalog load failed: ${response.status}`);
-        const value = await response.json();
-        catalogSongs = Array.isArray(value) ? value : [];
+        const files = await listDriveCatalogFiles();
+        const fileByName = new Map(files.map(file => [file.name, file]));
+        const indexFile = fileByName.get('index.json');
+        if (!indexFile) throw new Error('Drive catalog index.json not found');
+
+        const indexText = await fetchDriveFileText(indexFile.id);
+        const value = JSON.parse(indexText.replace(/^\uFEFF/, ''));
+        if (!Array.isArray(value)) throw new Error('Drive catalog index.json must be an array');
+
+        const missingFiles = [];
+        catalogSongs = value.map(meta => {
+          const fileName = catalogFileName(meta.file);
+          const driveFile = fileByName.get(fileName);
+          if (!driveFile) missingFiles.push(fileName || meta.id || 'unknown');
+          return {
+            ...meta,
+            driveFileId: driveFile?.id || null,
+            driveFileName: fileName
+          };
+        }).filter(meta => meta.driveFileId);
+
+        if (missingFiles.length) console.warn('Drive catalog missing song files:', missingFiles);
         renderCatalog();
       } catch (error) {
-        console.error(error); catalogSongs = []; catalogGrid.innerHTML = '<p class="empty-state">公共曲庫目前無法載入。</p>'; catalogCount.textContent = '';
+        console.error(error);
+        catalogSongs = [];
+        const missingKey = error?.message === 'DRIVE_API_KEY_MISSING';
+        catalogGrid.innerHTML = `<p class="empty-state">${missingKey ? '公共曲庫尚未設定Google Drive API key。' : '公共曲庫目前無法載入。'}</p>`;
+        catalogCount.textContent = '';
       }
     }
 
     async function fetchCatalogSong(meta) {
-      const response = await fetch(new URL(meta.file, catalogBaseUrl), { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Song load failed: ${response.status}`);
-      const source = normalizeSongRecord(deserializeSong(await response.text()));
+      if (!meta.driveFileId) throw new Error(`Drive song file not found: ${meta.driveFileName || meta.id}`);
+      const source = normalizeSongRecord(deserializeSong(await fetchDriveFileText(meta.driveFileId)));
       return normalizeSongRecord({
         ...source,
         name: meta.name || source.name,
