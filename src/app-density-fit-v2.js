@@ -1,5 +1,6 @@
 (() => {
   const SCORE_MAX_FONT_SIZE = 20;
+  const EDIT_FONT_SIZE = 24;
   const MIN_TWO_DIGIT_SCALE = 0.58;
   const measureCanvas = document.createElement('canvas');
   const measureContext = measureCanvas.getContext('2d');
@@ -17,6 +18,10 @@
     if (!gridRect.width || !positionCount) return 18;
     const pitch = gridRect.width / positionCount;
     return Math.max(11, Math.min(SCORE_MAX_FONT_SIZE, Math.floor((pitch - 0.35) / 0.56)));
+  }
+
+  function activeBaseFontSize(gridRect, positionCount) {
+    return scoreViewEnabled ? scoreBaseFontSize(gridRect, positionCount) : EDIT_FONT_SIZE;
   }
 
   function fontDescriptor(sample, size) {
@@ -55,23 +60,26 @@
     input.removeAttribute('data-two-digit-scaled');
   }
 
-  function fitScoreGrid(grid, force = false) {
+  function fitGrid(grid, force = false) {
     const gridRect = grid.getBoundingClientRect();
     const positionCount = positionCountForGrid(grid);
     if (!gridRect.width || !positionCount) return;
 
     const filled = Array.from(grid.querySelectorAll('.note-input.has-value'));
     const signature = noteSignature(filled);
+    const mode = scoreViewEnabled ? 'score' : 'edit';
     const cached = fitState.get(grid);
-    if (!force && cached && Math.abs(cached.width - gridRect.width) < 0.5 && cached.positionCount === positionCount && cached.signature === signature) return;
+    if (!force && cached && Math.abs(cached.width - gridRect.width) < 0.5 && cached.positionCount === positionCount && cached.signature === signature && cached.mode === mode) return;
 
-    const baseSize = scoreBaseFontSize(gridRect, positionCount);
-    if (grid.style.getPropertyValue('--score-note-font-size') !== `${baseSize}px`) {
-      grid.style.setProperty('--score-note-font-size', `${baseSize}px`);
+    const baseSize = activeBaseFontSize(gridRect, positionCount);
+    if (scoreViewEnabled) {
+      if (grid.style.getPropertyValue('--score-note-font-size') !== `${baseSize}px`) grid.style.setProperty('--score-note-font-size', `${baseSize}px`);
+    } else {
+      grid.style.removeProperty('--score-note-font-size');
     }
 
     if (!filled.length) {
-      fitState.set(grid, { width: gridRect.width, positionCount, signature });
+      fitState.set(grid, { width: gridRect.width, positionCount, signature, mode });
       return;
     }
 
@@ -121,25 +129,24 @@
       });
     });
 
-    fitState.set(grid, { width: gridRect.width, positionCount, signature });
+    fitState.set(grid, { width: gridRect.width, positionCount, signature, mode });
   }
 
-  function clearEditGrid(grid) {
+  function clearGrid(grid) {
     fitState.delete(grid);
     grid.style.removeProperty('--score-note-font-size');
     grid.querySelectorAll('.note-input[data-two-digit-scaled="true"]').forEach(resetTwoDigitFit);
   }
 
   function clearAll() {
-    tabArea.querySelectorAll('.tab-grid').forEach(clearEditGrid);
+    tabArea.querySelectorAll('.tab-grid').forEach(clearGrid);
   }
 
   function fitAll(force = false) {
     scheduledFrame = 0;
     const shouldForce = force || forceNextFit;
     forceNextFit = false;
-    if (!scoreViewEnabled) return;
-    tabArea.querySelectorAll('.tab-grid').forEach(grid => fitScoreGrid(grid, shouldForce));
+    tabArea.querySelectorAll('.tab-grid').forEach(grid => fitGrid(grid, shouldForce));
   }
 
   function scheduleFit(force = false) {
@@ -158,10 +165,14 @@
   const previousSetScoreViewEnabled = setScoreViewEnabled;
   setScoreViewEnabled = function setScoreViewEnabledWithDensityFit(enabled) {
     const result = previousSetScoreViewEnabled(enabled);
-    if (enabled) scheduleFit(true);
-    else clearAll();
+    clearAll();
+    scheduleFit(true);
     return result;
   };
+
+  tabArea.addEventListener('input', event => {
+    if (event.target instanceof HTMLInputElement && event.target.classList.contains('note-input')) scheduleFit(false);
+  });
 
   const observedTarget = document.querySelector('.sheet') || tabArea;
   if (typeof ResizeObserver === 'function') {
