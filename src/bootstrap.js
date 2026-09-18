@@ -13,6 +13,7 @@ Object.assign(window, {
 const scripts = [
   './src/app-runtime.js',
   './src/app-editor-core.js',
+  './src/app-note-backgrounds.js',
   './src/app-row-layout.js',
   './src/app-measure-lines.js',
   './src/app-editor-stability.js',
