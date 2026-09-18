@@ -6,7 +6,7 @@
 .row-boundary-button{box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#000;cursor:pointer;box-shadow:0 6px 14px rgba(30,215,96,.20);transition:background .14s ease,transform .14s ease}
 .row-boundary-button:hover,.row-boundary-button:focus-visible{background:#3be477;transform:scale(1.05);outline:none}
 .row-boundary-button svg{width:18px;height:18px;display:block;overflow:visible;fill:none;stroke:currentColor;stroke-width:2.35;stroke-linecap:round;stroke-linejoin:round}
-.row-drag-active .editor-row-module{pointer-events:none}
+.row-drag-active .editor-row-module{pointer-events:auto}
 .row-drag-active .row-insert-zone{pointer-events:auto}
 .row-drag-active .editor-row-module.drop-before,.row-drag-active .editor-row-module.drop-after{transform:none!important;box-shadow:none!important}
 .row-insert-zone.is-drag-target{height:18px!important;min-height:18px!important}
