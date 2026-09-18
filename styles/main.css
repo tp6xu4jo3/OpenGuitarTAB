@@ -5,6 +5,7 @@
 @import './sheet.css';
 @import './editor-scroll.css';
 @import './editor-modules.css';
+@import './note-background-layer.css';
 @import './editor-insert-zones.css';
 @import './editor-row-controls.css';
 @import './modals.css';
