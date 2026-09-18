@@ -10,7 +10,6 @@ OpenGuitarTAB是純前端吉他TAB編輯與共享平台，可直接部署至GitH
 - localStorage作為本機個人曲譜儲存
 - 單曲JSON匯入與下載
 - 公共曲譜資料已搬到Google Drive公開資料夾
-- Drive中的`index.json`作為輕量曲庫索引
 - CSS依功能模組化
 
 ### Phase 2 — Catalog UI
@@ -28,10 +27,39 @@ OpenGuitarTAB是純前端吉他TAB編輯與共享平台，可直接部署至GitH
 - 公共曲庫改由Google Drive API讀取
 - 固定公開資料夾ID：`1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP`
 - 前端使用受HTTP參照網址與Google Drive API限制的API key
-- 啟動時列出Drive資料夾內容並尋找`index.json`
-- 依`index.json`中的歌曲JSON檔名對應Drive檔案ID
+- 啟動時直接列出Drive資料夾中的所有`application/json`檔案
+- `index.json`會被排除，不再作為新增歌曲的必要索引
+- 每個歌曲JSON會直接解析`id`、`name`、`artist`、`album`、`cover`、`tempo`、`capo`、`beatsPerMeasure`
+- 新增歌曲只要把有效的歌曲JSON上傳到`OpenTABs`資料夾，重新整理網站後就會自動出現在公共曲庫
+- 單一JSON格式錯誤時只略過該檔案，不會讓整個公共曲庫失效
+- 現有`index.json`只保留作為舊曲目的metadata／排序相容性fallback，不需要再手動更新
 - 預覽／加入曲譜時使用Drive `files.get?alt=media`讀取JSON
 - 個人曲譜仍使用localStorage，不做Google登入或雲端同步
+
+## 新增公共曲譜
+
+1. 準備一個有效的OpenGuitarTAB歌曲JSON。
+2. 直接上傳到Google Drive的`OpenTABs`資料夾。
+3. 不需要修改`index.json`。
+4. 重新整理網站，歌曲就會自動被Drive API掃描並加入公共曲庫。
+
+建議歌曲JSON本身包含以下metadata，這樣不依賴任何外部索引也能完整顯示卡片：
+
+```json
+{
+  "id": "song-example",
+  "name": "歌曲名稱",
+  "artist": "歌手",
+  "album": "專輯",
+  "cover": "https://...",
+  "tempo": 120,
+  "capo": 0,
+  "beatsPerMeasure": 4,
+  "rows": []
+}
+```
+
+`artist`、`album`、`cover`不是載入曲譜的必要欄位；缺少時仍可顯示與預覽，只是卡片資訊較少。
 
 ## Google Drive設定
 
