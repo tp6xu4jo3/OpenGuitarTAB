@@ -1,6 +1,7 @@
 (() => {
   const BACKGROUND_LAYER_CLASS = 'note-background-layer';
   const BACKGROUND_CLASS = 'note-value-background';
+  const backgroundMaps = new WeakMap();
 
   function ensureBackgroundLayer(grid) {
     let layer = grid.querySelector(`:scope > .${BACKGROUND_LAYER_CLASS}`);
@@ -17,8 +18,16 @@
     return `${input.dataset.string}:${input.dataset.position}`;
   }
 
-  function findBackground(layer, key) {
-    return Array.from(layer.children).find(child => child.dataset.noteKey === key) || null;
+  function backgroundMap(layer) {
+    let map = backgroundMaps.get(layer);
+    if (map) return map;
+
+    map = new Map();
+    Array.from(layer.children).forEach(child => {
+      if (child.dataset.noteKey) map.set(child.dataset.noteKey, child);
+    });
+    backgroundMaps.set(layer, map);
+    return map;
   }
 
   function gridPositionMetrics(grid, input) {
@@ -34,13 +43,14 @@
     return { startPosition, positionCount };
   }
 
-  function syncInputBackground(input) {
+  function syncInputBackground(input, knownLayer = null, knownMap = null) {
     if (!(input instanceof HTMLInputElement) || !input.classList.contains('note-input')) return;
 
     const grid = input.closest('.tab-grid');
     if (!grid) return;
 
-    const layer = ensureBackgroundLayer(grid);
+    const layer = knownLayer || ensureBackgroundLayer(grid);
+    const map = knownMap || backgroundMap(layer);
     const string = Number(input.dataset.string);
     const position = Number(input.dataset.position);
     if (!Number.isInteger(string) || !Number.isInteger(position)) return;
@@ -50,17 +60,23 @@
     input.dataset.noteLength = hasValue ? String(Math.min(2, value.length)) : '0';
 
     const key = backgroundKey(input);
-    let background = findBackground(layer, key);
+    let background = map.get(key) || null;
 
     if (!hasValue) {
-      background?.remove();
+      if (background) {
+        background.remove();
+        map.delete(key);
+      }
       return;
     }
 
     const { startPosition, positionCount } = gridPositionMetrics(grid, input);
     const localPosition = position - startPosition;
     if (localPosition < 0 || localPosition >= positionCount) {
-      background?.remove();
+      if (background) {
+        background.remove();
+        map.delete(key);
+      }
       return;
     }
 
@@ -68,6 +84,7 @@
       background = makeDiv(BACKGROUND_CLASS);
       background.dataset.noteKey = key;
       layer.appendChild(background);
+      map.set(key, background);
     }
 
     background.style.setProperty('--note-x', `${((localPosition + 1) / positionCount) * 100}%`);
@@ -78,16 +95,21 @@
     if (!(grid instanceof HTMLElement) || !grid.classList.contains('tab-grid')) return;
 
     const layer = ensureBackgroundLayer(grid);
+    const map = backgroundMap(layer);
     const liveKeys = new Set();
 
-    grid.querySelectorAll('.note-input').forEach(input => {
-      if (input.classList.contains('has-value') && String(input.value || '').length > 0) liveKeys.add(backgroundKey(input));
-      syncInputBackground(input);
+    grid.querySelectorAll('.note-input.has-value').forEach(input => {
+      if (!String(input.value || '').length) return;
+      const key = backgroundKey(input);
+      liveKeys.add(key);
+      syncInputBackground(input, layer, map);
     });
 
-    Array.from(layer.children).forEach(background => {
-      if (!liveKeys.has(background.dataset.noteKey)) background.remove();
-    });
+    for (const [key, background] of Array.from(map.entries())) {
+      if (liveKeys.has(key)) continue;
+      background.remove();
+      map.delete(key);
+    }
   }
 
   function syncAllBackgrounds() {
@@ -98,13 +120,7 @@
     const dirtyGrids = new Set();
 
     mutations.forEach(mutation => {
-      if (mutation.type === 'attributes' && mutation.target instanceof HTMLInputElement && mutation.target.classList.contains('note-input')) {
-        syncInputBackground(mutation.target);
-        return;
-      }
-
       if (mutation.type !== 'childList') return;
-
       mutation.addedNodes.forEach(node => {
         if (!(node instanceof HTMLElement)) return;
         if (node.classList.contains('tab-grid')) dirtyGrids.add(node);
@@ -117,9 +133,7 @@
 
   observer.observe(tabArea, {
     subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: ['class']
+    childList: true
   });
 
   tabArea.addEventListener('input', event => {
