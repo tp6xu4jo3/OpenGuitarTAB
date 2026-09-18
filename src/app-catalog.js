@@ -93,6 +93,7 @@
       const source = normalizeSongRecord(deserializeSong(await response.text()));
       return normalizeSongRecord({
         ...source,
+        name: meta.name || source.name,
         artist: source.artist || meta.artist,
         album: source.album || meta.album,
         cover: source.cover || meta.cover
