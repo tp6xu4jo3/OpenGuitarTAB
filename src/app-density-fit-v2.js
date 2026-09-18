@@ -2,7 +2,10 @@
   const measureCanvas = document.createElement('canvas');
   const measureContext = measureCanvas.getContext('2d');
   const widthCache = new Map();
+  const fitState = new WeakMap();
   let scheduledFrame = 0;
+  let forceNextFit = false;
+  let observedSheetWidth = -1;
 
   function positionCountForGrid(grid) {
     return Number(grid.dataset.positionCount) || rowPositionCount(Number(grid.dataset.row) || 0) || positionsPerRow();
@@ -11,7 +14,6 @@
   function scoreBaseFontSize(gridRect, positionCount) {
     if (!gridRect.width || !positionCount) return 18;
     const pitch = gridRect.width / positionCount;
-    // Keep normal glyph proportions. Dense 8-measure rows settle around 18–22px on desktop.
     return Math.max(11, Math.min(30, Math.floor((pitch - 0.35) / 0.56)));
   }
 
@@ -42,16 +44,29 @@
     return gridRect.left + ((local + 1) / positionCount) * gridRect.width;
   }
 
-  function fitScoreGrid(grid) {
+  function noteSignature(filled) {
+    return filled.map(input => `${input.dataset.string}:${input.dataset.position}:${input.value}`).join('|');
+  }
+
+  function fitScoreGrid(grid, force = false) {
     const gridRect = grid.getBoundingClientRect();
     const positionCount = positionCountForGrid(grid);
     if (!gridRect.width || !positionCount) return;
 
-    const baseSize = scoreBaseFontSize(gridRect, positionCount);
-    grid.style.setProperty('--score-note-font-size', `${baseSize}px`);
-
     const filled = Array.from(grid.querySelectorAll('.note-input.has-value'));
-    if (!filled.length) return;
+    const signature = noteSignature(filled);
+    const cached = fitState.get(grid);
+    if (!force && cached && Math.abs(cached.width - gridRect.width) < 0.5 && cached.positionCount === positionCount && cached.signature === signature) return;
+
+    const baseSize = scoreBaseFontSize(gridRect, positionCount);
+    if (grid.style.getPropertyValue('--score-note-font-size') !== `${baseSize}px`) {
+      grid.style.setProperty('--score-note-font-size', `${baseSize}px`);
+    }
+
+    if (!filled.length) {
+      fitState.set(grid, { width: gridRect.width, positionCount, signature });
+      return;
+    }
 
     const measureText = makeTextMeasurer(filled[0], baseSize);
     const startPosition = Number(grid.dataset.positionStart) || 0;
@@ -98,45 +113,64 @@
         note.input.dataset.twoDigitScaled = 'true';
       });
     });
+
+    fitState.set(grid, { width: gridRect.width, positionCount, signature });
   }
 
   function clearEditGrid(grid) {
+    fitState.delete(grid);
     grid.style.removeProperty('--score-note-font-size');
-    grid.querySelectorAll('.note-input').forEach(input => {
+    grid.querySelectorAll('.note-input[data-two-digit-scaled="true"]').forEach(input => {
       input.style.removeProperty('--two-digit-font-size');
       input.removeAttribute('data-two-digit-scaled');
     });
   }
 
-  function fitAll() {
-    scheduledFrame = 0;
-    tabArea.querySelectorAll('.tab-grid').forEach(grid => {
-      if (scoreViewEnabled) fitScoreGrid(grid);
-      else clearEditGrid(grid);
-    });
+  function clearAll() {
+    tabArea.querySelectorAll('.tab-grid').forEach(clearEditGrid);
   }
 
-  function scheduleFit() {
+  function fitAll(force = false) {
+    scheduledFrame = 0;
+    const shouldForce = force || forceNextFit;
+    forceNextFit = false;
+    if (!scoreViewEnabled) return;
+    tabArea.querySelectorAll('.tab-grid').forEach(grid => fitScoreGrid(grid, shouldForce));
+  }
+
+  function scheduleFit(force = false) {
+    if (force) forceNextFit = true;
     if (scheduledFrame) return;
-    scheduledFrame = requestAnimationFrame(fitAll);
+    scheduledFrame = requestAnimationFrame(() => fitAll(forceNextFit));
   }
 
   const previousRenderRows = renderRows;
   renderRows = function renderRowsWithDensityFit(rows) {
     const result = previousRenderRows(rows);
-    scheduleFit();
+    scheduleFit(true);
     return result;
   };
 
   const previousSetScoreViewEnabled = setScoreViewEnabled;
   setScoreViewEnabled = function setScoreViewEnabledWithDensityFit(enabled) {
     const result = previousSetScoreViewEnabled(enabled);
-    scheduleFit();
+    if (enabled) scheduleFit(true);
+    else clearAll();
     return result;
   };
 
-  const resizeObserver = new ResizeObserver(scheduleFit);
-  resizeObserver.observe(document.querySelector('.sheet') || tabArea);
-  window.addEventListener('resize', scheduleFit, { passive: true });
-  scheduleFit();
+  const observedTarget = document.querySelector('.sheet') || tabArea;
+  if (typeof ResizeObserver === 'function') {
+    const resizeObserver = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect?.width;
+      if (!Number.isFinite(width) || Math.abs(width - observedSheetWidth) < 0.5) return;
+      observedSheetWidth = width;
+      scheduleFit(false);
+    });
+    resizeObserver.observe(observedTarget);
+  } else {
+    window.addEventListener('resize', () => scheduleFit(false), { passive: true });
+  }
+
+  scheduleFit(true);
 })();
