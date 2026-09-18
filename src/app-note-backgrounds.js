@@ -120,14 +120,7 @@
     const dirtyGrids = new Set();
 
     mutations.forEach(mutation => {
-      if (mutation.type === 'attributes' && mutation.target instanceof HTMLInputElement && mutation.target.classList.contains('note-input')) {
-        const grid = mutation.target.closest('.tab-grid');
-        if (grid) dirtyGrids.add(grid);
-        return;
-      }
-
       if (mutation.type !== 'childList') return;
-
       mutation.addedNodes.forEach(node => {
         if (!(node instanceof HTMLElement)) return;
         if (node.classList.contains('tab-grid')) dirtyGrids.add(node);
@@ -140,9 +133,7 @@
 
   observer.observe(tabArea, {
     subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: ['class']
+    childList: true
   });
 
   tabArea.addEventListener('input', event => {
