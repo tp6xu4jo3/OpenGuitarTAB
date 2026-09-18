@@ -43,7 +43,9 @@
       const offset = measureIndex * width;
       for (let string = 0; string < STRINGS; string++) {
         const values = measure.notes?.[string] || [];
-        for (let position = 0; position < width; position++) rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
+        for (let position = 0; position < width; position++) {
+          rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
+        }
       }
       for (const [rawPosition, rawDuration] of Object.entries(measure.rhythm || {})) {
         const localPosition = Number(rawPosition);
@@ -57,7 +59,10 @@
     if (!song || previewSong) return;
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
     song.rhythmRows = rhythmRows;
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES)));
+    song.rowMeasureCounts = Array.from(
+      { length: song.rows.length },
+      (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES))
+    );
     song.updatedAt = Date.now();
     writeStorage();
     renderRows(song.rows);
@@ -103,7 +108,9 @@
     if (sourceMeasures.length === 0) {
       sourceMeasures.push(blankMeasureModule());
       counts[sourceRow] = 1;
-    } else counts[sourceRow] = sourceMeasures.length;
+    } else {
+      counts[sourceRow] = sourceMeasures.length;
+    }
     counts[targetRow] = targetMeasures.length;
 
     writeMeasuresToRow(rows, rhythmRows, sourceRow, sourceMeasures);
@@ -145,30 +152,6 @@
     });
   }
 
-  function installRowDropZones() {
-    document.querySelectorAll('.row-insert-zone').forEach(zone => {
-      if (zone.dataset.rowDropReady === 'true') return;
-      zone.dataset.rowDropReady = 'true';
-      zone.addEventListener('dragover', event => {
-        if (dragState?.type !== 'row') return;
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-        showRowBoundary({ zone, index: Number(zone.dataset.insertIndex), distance: 0 });
-      });
-      zone.addEventListener('drop', event => {
-        if (dragState?.type !== 'row') return;
-        event.preventDefault();
-        event.stopPropagation();
-        const state = dragState;
-        dragState = null;
-        document.body.classList.remove('row-drag-active');
-        const insertionIndex = Number(zone.dataset.insertIndex);
-        clearFeedback();
-        moveRowAtBoundary(state.sourceRow, insertionIndex);
-      });
-    });
-  }
-
   function clearFeedback() {
     document.querySelectorAll('.measure-insert-boundary.is-active').forEach(node => node.classList.remove('is-active'));
     document.querySelectorAll('.measure-module-hitbox.measure-insert-shift').forEach(node => node.classList.remove('measure-insert-shift'));
@@ -187,11 +170,29 @@
       for (let boundary = 0; boundary <= count; boundary++) {
         const x = rect.left + rect.width * (boundary / count);
         const distance = Math.abs(clientX - x);
-        if (distance <= beatPx && (!best || distance < best.distance)) best = { grid, boundary, distance };
+        if (distance <= beatPx && (!best || distance < best.distance)) {
+          best = { grid, boundary, distance };
+        }
       }
       if (best) return best;
     }
     return null;
+  }
+
+  function findRowBoundary(clientX, clientY) {
+    const areaRect = tabArea.getBoundingClientRect();
+    if (clientX < areaRect.left - 24 || clientX > areaRect.right + 24) return null;
+
+    let best = null;
+    document.querySelectorAll('.row-insert-zone').forEach(zone => {
+      const rect = zone.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const distance = Math.abs(clientY - centerY);
+      if (distance <= 36 && (!best || distance < best.distance)) {
+        best = { zone, index: Number(zone.dataset.insertIndex), distance };
+      }
+    });
+    return best;
   }
 
   function showMeasureBoundary(target) {
@@ -214,13 +215,16 @@
   renderRows = function renderRowsWithBoundaries(rows) {
     previousRenderRows(rows);
     installVisualBoundaries();
-    installRowDropZones();
   };
 
   document.addEventListener('dragstart', event => {
     const measure = event.target.closest?.('.measure-module-hitbox');
     if (measure && !scoreViewEnabled) {
-      dragState = { type: 'measure', sourceRow: Number(measure.dataset.row), sourceMeasure: Number(measure.dataset.measure) };
+      dragState = {
+        type: 'measure',
+        sourceRow: Number(measure.dataset.row),
+        sourceMeasure: Number(measure.dataset.measure)
+      };
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', `measure:${dragState.sourceRow}:${dragState.sourceMeasure}`);
@@ -243,23 +247,43 @@
   }, true);
 
   document.addEventListener('dragover', event => {
-    if (dragState?.type !== 'measure') return;
+    if (!dragState) return;
     event.preventDefault();
+    event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    showMeasureBoundary(findMeasureBoundary(event.clientX, event.clientY));
+
+    if (dragState.type === 'measure') {
+      showMeasureBoundary(findMeasureBoundary(event.clientX, event.clientY));
+    } else if (dragState.type === 'row') {
+      showRowBoundary(findRowBoundary(event.clientX, event.clientY));
+    }
   }, true);
 
   document.addEventListener('drop', event => {
-    if (dragState?.type !== 'measure') return;
+    if (!dragState) return;
     event.preventDefault();
     event.stopPropagation();
+
     const state = dragState;
-    const target = activeMeasureTarget;
+    const measureTarget = activeMeasureTarget;
+    const rowTarget = activeRowTarget;
     dragState = null;
-    document.body.classList.remove('measure-drag-active');
+    document.body.classList.remove('measure-drag-active', 'row-drag-active');
     clearFeedback();
-    if (!target) return;
-    moveMeasureAtBoundary(state.sourceRow, state.sourceMeasure, Number(target.grid.dataset.row), target.boundary);
+
+    if (state.type === 'measure' && measureTarget) {
+      moveMeasureAtBoundary(
+        state.sourceRow,
+        state.sourceMeasure,
+        Number(measureTarget.grid.dataset.row),
+        measureTarget.boundary
+      );
+      return;
+    }
+
+    if (state.type === 'row' && rowTarget) {
+      moveRowAtBoundary(state.sourceRow, rowTarget.index);
+    }
   }, true);
 
   document.addEventListener('dragend', () => {
@@ -269,5 +293,4 @@
   }, true);
 
   installVisualBoundaries();
-  installRowDropZones();
 })();
