@@ -1,4 +1,5 @@
 .measure-module-badge{display:none!important}
+.content.edit-view .measure-line{z-index:5;pointer-events:none;background:#222}
 .measure-module-hitbox.drop-before,.measure-module-hitbox.drop-after{transform:none!important;box-shadow:none!important}
 .measure-module-hitbox.drop-before::after,.measure-module-hitbox.drop-after::after{opacity:0!important}
 .measure-module-hitbox.measure-insert-shift{transform:translateX(8px)!important}
