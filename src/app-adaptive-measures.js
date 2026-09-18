@@ -103,12 +103,18 @@
       const value = String(rowValues?.[string]?.[position] ?? '');
       input.value = value;
       input.classList.toggle('has-value', value.length > 0);
+      input.dataset.noteLength = value.length ? String(Math.min(2, value.length)) : '0';
     });
   }
 
-  function makeExtraGrid(rowIndex, rowCount, rowValues, segment) {
-    const extraSystem = baseCreateTabSystem(rowIndex, rowCount);
-    const grid = extraSystem.querySelector('.tab-grid');
+  function makeExtraGrid(rowIndex, rowCount, rowValues, segment, scoreTemplate = null) {
+    let grid = null;
+    if (scoreTemplate && scoreViewEnabled) {
+      grid = scoreTemplate.cloneNode(true);
+    } else {
+      const extraSystem = baseCreateTabSystem(rowIndex, rowCount);
+      grid = extraSystem.querySelector('.tab-grid');
+    }
     if (!grid) return null;
     trimGridToSegment(grid, rowIndex, segment.startMeasure, segment.measureCount);
     hydrateGrid(grid, rowValues);
@@ -117,6 +123,7 @@
 
   function splitExistingGrid(grid, rowIndex, rowCount, rowValues) {
     const windows = segmentWindows(rowIndex);
+    const scoreTemplate = scoreViewEnabled && windows.length > 1 ? grid.cloneNode(true) : null;
     const first = windows[0];
     trimGridToSegment(grid, rowIndex, first.startMeasure, first.measureCount);
     hydrateGrid(grid, rowValues);
@@ -128,7 +135,7 @@
     stack.appendChild(grid);
 
     windows.slice(1).forEach(segment => {
-      const extraGrid = makeExtraGrid(rowIndex, rowCount, rowValues, segment);
+      const extraGrid = makeExtraGrid(rowIndex, rowCount, rowValues, segment, scoreTemplate);
       if (extraGrid) stack.appendChild(extraGrid);
     });
   }
@@ -140,6 +147,19 @@
     const startPosition = Number(grid?.dataset.positionStart) || startMeasure * slotsPerMeasure();
     const positionCount = Number(grid?.dataset.positionCount) || measureCount * slotsPerMeasure();
     return { grid, startMeasure, measureCount, startPosition, positionCount };
+  }
+
+  function filledPositions(grid, startPosition, endPosition) {
+    const map = new Map();
+    grid.querySelectorAll('.note-input.has-value').forEach(input => {
+      if (!String(input.value || '').length) return;
+      const position = Number(input.dataset.position);
+      if (position < startPosition || position >= endPosition) return;
+      const string = Number(input.dataset.string);
+      const current = map.get(position);
+      if (current === undefined || string > current) map.set(position, string);
+    });
+    return map;
   }
 
   function renderRhythmLayer(layer, rowIndex) {
@@ -156,21 +176,21 @@
     const measureSlots = slotsPerMeasure();
     const onsets = [];
     const explicitRhythm = currentSong()?.rhythmRows?.[rowIndex];
+    const filled = filledPositions(grid, startPosition, endPosition);
 
     if (explicitRhythm && Object.keys(explicitRhythm).length > 0) {
       for (const [rawPosition, rawDuration] of Object.entries(explicitRhythm)) {
         const position = Number(rawPosition);
         if (position < startPosition || position >= endPosition) continue;
-        const notes = getFilledInputsAt(rowIndex, position);
-        const lowestString = notes.length > 0 ? Math.max(...notes.map(input => Number(input.dataset.string))) : STRINGS - 1;
+        const lowestString = filled.get(position) ?? STRINGS - 1;
         onsets.push({ position, duration: Number(rawDuration), lowestString });
       }
       onsets.sort((a, b) => a.position - b.position);
     } else {
-      for (let position = startPosition; position < endPosition; position++) {
-        const notes = getFilledInputsAt(rowIndex, position);
-        if (notes.length > 0) onsets.push({ position, duration: 1, lowestString: Math.max(...notes.map(input => Number(input.dataset.string))) });
-      }
+      Array.from(filled.entries())
+        .sort((a, b) => a[0] - b[0])
+        .forEach(([position, lowestString]) => onsets.push({ position, duration: 1, lowestString }));
+
       onsets.forEach((onset, index) => {
         const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
         const next = onsets[index + 1];
@@ -248,7 +268,7 @@
   }
 
   renderRhythmNotation = function adaptiveRenderRhythmNotation(rowIndex) {
-    const layers = Array.from(document.querySelectorAll(`.rhythm-layer[data-row="${rowIndex}"]`));
+    const layers = Array.from(tabArea.querySelectorAll(`.rhythm-layer[data-row="${rowIndex}"]`));
     if (!layers.length) return;
     layers.forEach(layer => renderRhythmLayer(layer, rowIndex));
   };
