@@ -4,48 +4,57 @@
   const widthCache = new Map();
   let scheduledFrame = 0;
 
-  function scoreBaseFontSize(grid) {
-    const rect = grid.getBoundingClientRect();
-    const positions = Number(grid.dataset.positionCount) || rowPositionCount(Number(grid.dataset.row) || 0) || positionsPerRow();
-    if (!rect.width || !positions) return 18;
-    const pitch = rect.width / positions;
-    return Math.max(12, Math.min(30, Math.floor((pitch - 0.5) / 0.56)));
+  function positionCountForGrid(grid) {
+    return Number(grid.dataset.positionCount) || rowPositionCount(Number(grid.dataset.row) || 0) || positionsPerRow();
   }
 
-  function fontSignature(input, size) {
-    const style = getComputedStyle(input);
+  function scoreBaseFontSize(gridRect, positionCount) {
+    if (!gridRect.width || !positionCount) return 18;
+    const pitch = gridRect.width / positionCount;
+    // Keep normal glyph proportions. Dense 8-measure rows settle around 18–22px on desktop.
+    return Math.max(11, Math.min(30, Math.floor((pitch - 0.35) / 0.56)));
+  }
+
+  function fontDescriptor(sample, size) {
+    const style = getComputedStyle(sample);
     return {
       key: `${style.fontStyle}|${style.fontWeight}|${style.fontFamily}|${size}`,
       font: `${style.fontStyle || 'normal'} ${style.fontWeight || '700'} ${size}px ${style.fontFamily || 'sans-serif'}`
     };
   }
 
-  function textWidth(input, text, size) {
-    if (!measureContext) return size * String(text).length * 0.58;
-    const signature = fontSignature(input, size);
-    const cacheKey = `${signature.key}|${text}`;
-    if (widthCache.has(cacheKey)) return widthCache.get(cacheKey);
-    measureContext.font = signature.font;
-    const width = measureContext.measureText(String(text)).width;
-    widthCache.set(cacheKey, width);
-    return width;
+  function makeTextMeasurer(sample, size) {
+    const descriptor = fontDescriptor(sample, size);
+    return text => {
+      const value = String(text || '');
+      if (!measureContext) return size * value.length * 0.58;
+      const cacheKey = `${descriptor.key}|${value}`;
+      if (widthCache.has(cacheKey)) return widthCache.get(cacheKey);
+      measureContext.font = descriptor.font;
+      const width = measureContext.measureText(value).width;
+      widthCache.set(cacheKey, width);
+      return width;
+    };
   }
 
-  function noteCenterX(grid, input, gridRect) {
-    const startPosition = Number(grid.dataset.positionStart) || 0;
-    const positionCount = Number(grid.dataset.positionCount) || rowPositionCount(Number(grid.dataset.row) || 0) || positionsPerRow();
+  function noteCenterX(gridRect, positionCount, startPosition, input) {
     const local = Number(input.dataset.position) - startPosition;
     return gridRect.left + ((local + 1) / positionCount) * gridRect.width;
   }
 
   function fitScoreGrid(grid) {
     const gridRect = grid.getBoundingClientRect();
-    if (!gridRect.width) return;
-    const baseSize = scoreBaseFontSize(grid);
+    const positionCount = positionCountForGrid(grid);
+    if (!gridRect.width || !positionCount) return;
+
+    const baseSize = scoreBaseFontSize(gridRect, positionCount);
     grid.style.setProperty('--score-note-font-size', `${baseSize}px`);
 
     const filled = Array.from(grid.querySelectorAll('.note-input.has-value'));
     if (!filled.length) return;
+
+    const measureText = makeTextMeasurer(filled[0], baseSize);
+    const startPosition = Number(grid.dataset.positionStart) || 0;
     const byString = new Map();
 
     filled.forEach(input => {
@@ -60,31 +69,31 @@
       const notes = inputs.map(input => ({
         input,
         value: String(input.value || ''),
-        center: noteCenterX(grid, input, gridRect)
+        center: noteCenterX(gridRect, positionCount, startPosition, input)
       })).sort((a, b) => a.center - b.center);
 
       notes.forEach((note, index) => {
         if (!/^\d{2}$/.test(note.value)) return;
-        const naturalWidth = textWidth(note.input, note.value, baseSize);
+
+        const naturalWidth = measureText(note.value);
         let maxWidth = naturalWidth;
-        const gap = 0.25;
+        const gap = 0.2;
 
-        const previous = notes[index - 1];
-        if (previous) {
-          const previousWidth = textWidth(previous.input, previous.value, baseSize);
-          const distance = note.center - previous.center;
-          maxWidth = Math.min(maxWidth, Math.max(1, 2 * (distance - previousWidth / 2 - gap)));
-        }
+        const constrainAgainst = neighbor => {
+          if (!neighbor) return;
+          const distance = Math.abs(note.center - neighbor.center);
+          const neighborIsTwoDigit = /^\d{2}$/.test(neighbor.value);
+          const allowed = neighborIsTwoDigit
+            ? distance - gap
+            : (2 * (distance - gap)) - measureText(neighbor.value);
+          maxWidth = Math.min(maxWidth, Math.max(1, allowed));
+        };
 
-        const next = notes[index + 1];
-        if (next) {
-          const nextWidth = textWidth(next.input, next.value, baseSize);
-          const distance = next.center - note.center;
-          maxWidth = Math.min(maxWidth, Math.max(1, 2 * (distance - nextWidth / 2 - gap)));
-        }
+        constrainAgainst(notes[index - 1]);
+        constrainAgainst(notes[index + 1]);
 
-        if (maxWidth >= naturalWidth) return;
-        const fitted = Math.max(10, Math.min(baseSize, Math.floor(baseSize * (maxWidth / naturalWidth))));
+        if (maxWidth >= naturalWidth - 0.1) return;
+        const fitted = Math.max(9, Math.min(baseSize, Math.floor(baseSize * (maxWidth / naturalWidth))));
         note.input.style.setProperty('--two-digit-font-size', `${fitted}px`);
         note.input.dataset.twoDigitScaled = 'true';
       });
