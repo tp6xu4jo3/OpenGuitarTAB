@@ -23,6 +23,7 @@ const scripts = [
   './src/app-row-playback.js',
   './src/app-playback.js',
   './src/app-library.js',
+  './src/catalog/drive-catalog-service.js',
   './src/app-catalog.js'
 ];
 
