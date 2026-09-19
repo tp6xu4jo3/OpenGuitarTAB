@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs",
-    "test": "node tests/song-codec.test.mjs",
-    "check": "node --check api/index.js && node --check src/bootstrap.js && node --check src/services/cloud-api.js && node --check src/app-auth.js && node --check src/app-catalog.js && node --check src/app-library.js && node --check src/app-editor-core.js",
+    "test": "node tests/song-codec.test.mjs && node tests/song-permissions.test.mjs",
+    "check": "node --check api/index.js && node --check src/bootstrap.js && node --check src/services/cloud-api.js && node --check src/app-auth.js && node --check src/app-catalog.js && node --check src/app-library.js && node --check src/app-editor-core.js && node --check src/core/song-permissions.js",
     "hash-password": "node scripts/hash-password.mjs",
     "drive-auth": "node scripts/google-drive-auth.mjs"
   }

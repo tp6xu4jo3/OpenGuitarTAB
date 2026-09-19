@@ -1,3 +1,5 @@
+let catalogMenuOpenFor = null;
+
 function setRoute(hash) {
   if (location.hash === hash) handleRoute();
   else location.hash = hash;
@@ -11,6 +13,17 @@ function showPage(page) {
   libraryNavButton.classList.toggle('active', page === 'library');
 }
 
+function catalogSongOwner(song) {
+  return String(song?.owner || song?._opentab?.owner || '').trim();
+}
+
+function catalogSongCanManage(song) {
+  const user = window.authState?.user;
+  if (!user) return false;
+  const owner = catalogSongOwner(song);
+  return Boolean(owner && (owner === user.username || user.role === 'admin'));
+}
+
 function catalogSongIsAdded(song) {
   const user = window.authState?.user;
   if (!user) return false;
@@ -18,8 +31,8 @@ function catalogSongIsAdded(song) {
   const publicFileId = String(song?._driveFileId || '');
   if (!publicFileId) return false;
   return songs.some(item =>
-    String(item?._opentab?.sourcePublicFileId || '') === publicFileId ||
-    String(item?._opentab?.publicFileId || '') === publicFileId
+    String(item?._driveFileId || '') === publicFileId ||
+    String(item?._opentab?.sourcePublicFileId || '') === publicFileId
   );
 }
 
@@ -39,9 +52,39 @@ function markCatalogAddButtonAdded(button, { animate = false } = {}) {
   }
 }
 
+async function editCatalogSong(song) {
+  if (!catalogSongCanManage(song)) return;
+  let local = songs.find(item => String(item?._driveFileId || '') === String(song?._driveFileId || ''));
+  if (!local) {
+    await loadUserLibrary();
+    local = songs.find(item => String(item?._driveFileId || '') === String(song?._driveFileId || ''));
+  }
+  if (!local) {
+    showToast('找不到可編輯的原始曲譜');
+    return;
+  }
+  catalogMenuOpenFor = null;
+  setRoute(`#/editor/${encodeURIComponent(local.id)}`);
+}
+
+async function unlistCatalogSong(song) {
+  if (!catalogSongCanManage(song) || !song?._driveFileId) return;
+  try {
+    await cloudApi.setPublic(song._driveFileId, false);
+    catalogMenuOpenFor = null;
+    await Promise.all([loadCatalog(), loadUserLibrary()]);
+    showToast('已從公共曲庫下架');
+  } catch (error) {
+    console.error(error);
+    showToast('下架失敗');
+  }
+}
+
 function songCard(song, { publicSong = false } = {}) {
   const card = document.createElement('article');
   card.className = 'song-card';
+  if (publicSong) card.dataset.catalogFileId = song._driveFileId || '';
+
   const art = document.createElement('div');
   art.className = 'song-card-art';
   const fallbackArt = document.createElement('span');
@@ -60,15 +103,47 @@ function songCard(song, { publicSong = false } = {}) {
     image.addEventListener('error', () => image.remove());
     art.appendChild(image);
   }
+
+  if (publicSong && catalogSongCanManage(song)) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'catalog-card-more';
+    more.textContent = '⋯';
+    more.setAttribute('aria-label', `${song.name || '曲譜'} 管理選單`);
+    more.addEventListener('click', event => {
+      event.stopPropagation();
+      catalogMenuOpenFor = catalogMenuOpenFor === song._driveFileId ? null : song._driveFileId;
+      renderCatalog();
+    });
+    card.appendChild(more);
+
+    const menu = document.createElement('div');
+    menu.className = 'catalog-card-menu';
+    menu.hidden = catalogMenuOpenFor !== song._driveFileId;
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.textContent = '編輯';
+    edit.addEventListener('click', event => { event.stopPropagation(); editCatalogSong(song); });
+
+    const unlist = document.createElement('button');
+    unlist.type = 'button';
+    unlist.textContent = '下架';
+    unlist.addEventListener('click', event => { event.stopPropagation(); unlistCatalogSong(song); });
+
+    menu.append(edit, unlist);
+    card.appendChild(menu);
+  }
+
   const body = document.createElement('div');
   body.className = 'song-card-body';
   const title = document.createElement('h3');
   title.textContent = song.name || '未命名曲譜';
-  if (!publicSong && song?._opentab?.hidden === true && window.authState?.user?.role === 'admin') {
-    const hidden = document.createElement('span');
-    hidden.className = 'song-hidden-badge';
-    hidden.textContent = '隱藏';
-    title.appendChild(hidden);
+  if (!publicSong && songWasPublished(song) && !songIsPublic(song)) {
+    const badge = document.createElement('span');
+    badge.className = 'song-hidden-badge';
+    badge.textContent = '已下架';
+    title.appendChild(badge);
   }
   const artist = document.createElement('p');
   artist.className = 'song-card-artist';
@@ -76,7 +151,7 @@ function songCard(song, { publicSong = false } = {}) {
   if (song.album) artist.title = song.album;
   const source = document.createElement('p');
   source.className = 'song-card-source';
-  source.textContent = `由 ${song.uploadedBy || song?._opentab?.uploadedBy || 'OpenGuitarTAB'} 上傳`;
+  source.textContent = `由 ${song.uploadedBy || songOwner(song) || 'OpenGuitarTAB'} 上傳`;
   const meta = document.createElement('div');
   meta.className = 'song-card-meta';
   meta.innerHTML = `<span>${Number(song.tempo) || 120} BPM</span><span>Capo ${Number(song.capo) || 0}</span>`;
@@ -88,7 +163,8 @@ function songCard(song, { publicSong = false } = {}) {
   open.textContent = publicSong ? '預覽' : '編輯';
   open.addEventListener('click', () => publicSong ? setRoute(`#/preview/${encodeURIComponent(song.id)}`) : setRoute(`#/editor/${encodeURIComponent(song.id)}`));
   actions.appendChild(open);
-  if (publicSong) {
+
+  if (publicSong && !catalogSongCanManage(song)) {
     const add = document.createElement('button');
     add.className = 'card-secondary-button';
     add.type = 'button';
@@ -100,6 +176,7 @@ function songCard(song, { publicSong = false } = {}) {
     }
     actions.appendChild(add);
   }
+
   body.append(title, artist);
   if (publicSong) body.appendChild(source);
   body.append(meta, actions);
@@ -110,6 +187,7 @@ function songCard(song, { publicSong = false } = {}) {
 function renderCatalog() {
   const query = catalogSearchInput.value.trim().toLocaleLowerCase();
   const filtered = catalogSongs.filter(song => !query || [song.name, song.artist, song.album].filter(Boolean).some(value => String(value).toLocaleLowerCase().includes(query)));
+  if (catalogMenuOpenFor && !filtered.some(song => song._driveFileId === catalogMenuOpenFor)) catalogMenuOpenFor = null;
   catalogGrid.innerHTML = '';
   filtered.forEach(song => catalogGrid.appendChild(songCard(song, { publicSong: true })));
   catalogCount.textContent = `${filtered.length} 首`;
@@ -169,7 +247,7 @@ async function loadUserLibrary() {
     if (!songs.some(song => song.id === currentSongId)) currentSongId = songs[0]?.id || null;
     const hint = document.getElementById('libraryStorageHint');
     if (hint) hint.textContent = user.role === 'admin'
-      ? '管理員曲譜櫃與公共曲庫使用同一批Google Drive檔案。'
+      ? '管理員可管理公共曲譜與其他使用者已發布的原始曲譜；所有權不會因管理員編輯而改變。'
       : '測試帳號曲譜儲存在自己的Google Drive測試資料夾。';
     renderSongList();
     renderLibraryGrid();
@@ -194,9 +272,8 @@ async function addCatalogSong(meta, button = null) {
     openLoginModal('#/library');
     return;
   }
-  if (user.role === 'admin') {
+  if (catalogSongCanManage(meta) || catalogSongIsAdded(meta)) {
     markCatalogAddButtonAdded(button, { animate: true });
-    showToast('管理員的我的曲譜已直接連通公共曲庫');
     return;
   }
   try {
@@ -242,7 +319,7 @@ async function openCatalogPreview(id) {
     if (previewBadge) previewBadge.hidden = false;
     saveSongButton.hidden = true;
     downloadSongButton.hidden = true;
-    addPreviewSongButton.hidden = false;
+    addPreviewSongButton.hidden = catalogSongCanManage(meta) || catalogSongIsAdded(meta);
     setScoreViewEnabled(true);
     if (rhythmToggleButton.isConnected) rhythmToggleButton.remove();
     renderRows(previewSong.rows);
@@ -330,9 +407,16 @@ addPreviewSongButton.addEventListener('click', () => {
   const meta = catalogSongs.find(song => song._driveFileId === fileId) || catalogSongs.find(song => `preview:${song.id}` === currentSongId);
   if (meta) addCatalogSong(meta);
 });
+document.addEventListener('click', event => {
+  if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {
+    catalogMenuOpenFor = null;
+    if (!catalogView.hidden) renderCatalog();
+  }
+});
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
   const pendingRoute = event.detail?.pendingRoute;
+  catalogMenuOpenFor = null;
   if (!event.detail?.user) {
     songs = [];
     currentSongId = null;

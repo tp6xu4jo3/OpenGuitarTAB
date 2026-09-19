@@ -23,6 +23,11 @@ async function request(action, { method = 'GET', body, params } = {}) {
   throw error;
 }
 
+async function publishSong(song) {
+  const result = await request('publish', { method: 'POST', body: { song } });
+  return { ...result, privateSong: result.privateSong || result.song };
+}
+
 export const cloudApi = Object.freeze({
   session: () => request('session'),
   login: (username, password) => request('login', { method: 'POST', body: { username, password } }),
@@ -32,7 +37,7 @@ export const cloudApi = Object.freeze({
   library: () => request('library'),
   saveSong: song => request('save', { method: 'POST', body: { song } }),
   deleteSong: fileId => request('delete', { method: 'POST', body: { fileId } }),
-  setHidden: (fileId, hidden) => request('hide', { method: 'POST', body: { fileId, hidden } }),
-  publishSong: song => request('publish', { method: 'POST', body: { song } }),
+  setPublic: (fileId, isPublic) => request('visibility', { method: 'POST', body: { fileId, public: Boolean(isPublic) } }),
+  publishSong,
   clonePublicSong: fileId => request('clone', { method: 'POST', body: { fileId } })
 });

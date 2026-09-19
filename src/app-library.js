@@ -35,9 +35,18 @@
       return replaceSongRecord(result.song);
     }
 
+    function libraryActionsFor(song) {
+      const user = currentAuthUser();
+      return {
+        edit: canEditSong(user, song),
+        visibility: canUnlistSong(user, song) && songWasPublished(song),
+        delete: canDeleteSong(user, song)
+      };
+    }
+
     function calculateSongMenuPosition(buttonRect) {
-      const menuWidth = 144;
-      const menuHeight = isAdminUser() ? 132 : 96;
+      const menuWidth = 148;
+      const menuHeight = 140;
       const gap = 6;
       const margin = 8;
       let left = buttonRect.right - menuWidth;
@@ -72,23 +81,28 @@
       songs.forEach(song => {
         const item = makeDiv('song-item');
         if (song.id === currentSongId) item.classList.add('active');
+
         const loadButton = document.createElement('button');
         loadButton.type = 'button';
         loadButton.className = 'song-load-button';
         loadButton.textContent = song.name || '未命名曲譜';
         loadButton.title = song.name || '未命名曲譜';
         loadButton.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.id)}`));
-        if (song?._opentab?.hidden === true && isAdminUser()) {
-          const hiddenBadge = document.createElement('span');
-          hiddenBadge.className = 'song-hidden-badge';
-          hiddenBadge.textContent = '隱藏';
-          item.appendChild(hiddenBadge);
+
+        if (songWasPublished(song) && !songIsPublic(song)) {
+          const badge = document.createElement('span');
+          badge.className = 'song-hidden-badge';
+          badge.textContent = '已下架';
+          item.appendChild(badge);
         }
 
+        const permissions = libraryActionsFor(song);
+        const hasMenu = permissions.edit || permissions.visibility || permissions.delete;
         const moreButton = document.createElement('button');
         moreButton.type = 'button';
         moreButton.className = 'song-more-button';
         moreButton.innerHTML = '⋯';
+        moreButton.hidden = !hasMenu;
         moreButton.setAttribute('aria-label', `${song.name} 設定選單`);
         if (menuOpenFor === song.id) moreButton.classList.add('open');
         moreButton.addEventListener('click', event => {
@@ -105,28 +119,34 @@
           menu.classList.add('open');
           if (menuPosition) { menu.style.left = `${menuPosition.left}px`; menu.style.top = `${menuPosition.top}px`; }
         }
-        const rename = document.createElement('button');
-        rename.type = 'button';
-        rename.className = 'song-menu-action';
-        rename.textContent = '重新命名';
-        rename.addEventListener('click', event => { event.stopPropagation(); renameSong(song.id); });
-        menu.appendChild(rename);
 
-        if (isAdminUser()) {
-          const hide = document.createElement('button');
-          hide.type = 'button';
-          hide.className = 'song-menu-action toggle-hidden';
-          hide.textContent = song?._opentab?.hidden === true ? '取消隱藏' : '隱藏';
-          hide.addEventListener('click', event => { event.stopPropagation(); toggleSongHidden(song); });
-          menu.appendChild(hide);
+        if (permissions.edit) {
+          const rename = document.createElement('button');
+          rename.type = 'button';
+          rename.className = 'song-menu-action';
+          rename.textContent = '重新命名';
+          rename.addEventListener('click', event => { event.stopPropagation(); renameSong(song.id); });
+          menu.appendChild(rename);
         }
 
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'song-menu-action danger';
-        del.textContent = '刪除';
-        del.addEventListener('click', event => { event.stopPropagation(); deleteSong(song.id); });
-        menu.appendChild(del);
+        if (permissions.visibility) {
+          const visibility = document.createElement('button');
+          visibility.type = 'button';
+          visibility.className = 'song-menu-action toggle-hidden';
+          visibility.textContent = songIsPublic(song) ? '下架' : '重新上架';
+          visibility.addEventListener('click', event => { event.stopPropagation(); toggleSongPublic(song); });
+          menu.appendChild(visibility);
+        }
+
+        if (permissions.delete) {
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'song-menu-action danger';
+          del.textContent = '刪除';
+          del.addEventListener('click', event => { event.stopPropagation(); deleteSong(song.id); });
+          menu.appendChild(del);
+        }
+
         item.append(loadButton, moreButton, menu);
         songList.appendChild(item);
       });
@@ -156,7 +176,7 @@
 
     function renameSong(id) {
       const song = songs.find(item => item.id === id);
-      if (!song) return;
+      if (!song || !canEditSong(currentAuthUser(), song)) return;
       renameTargetId = id;
       menuOpenFor = null;
       menuPosition = null;
@@ -175,7 +195,7 @@
 
     async function confirmRenameSong() {
       const song = songs.find(item => item.id === renameTargetId);
-      if (!song) { closeRenameModal(); return; }
+      if (!song || !canEditSong(currentAuthUser(), song)) { closeRenameModal(); return; }
       const cleanName = renameInput.value.trim();
       if (!cleanName) { showToast('名稱不能空白'); renameInput.focus(); return; }
       const previousName = song.name;
@@ -186,7 +206,7 @@
         renderSongList();
         renderLibraryGrid();
         closeRenameModal();
-        if (isAdminUser() && typeof loadCatalog === 'function') await loadCatalog();
+        if (typeof loadCatalog === 'function') await loadCatalog();
         showToast('已重新命名');
       } catch (error) {
         console.error(error);
@@ -197,7 +217,7 @@
 
     function deleteSong(id) {
       const song = songs.find(item => item.id === id);
-      if (!song) return;
+      if (!song || !canDeleteSong(currentAuthUser(), song)) return;
       deleteTargetId = id;
       menuOpenFor = null;
       menuPosition = null;
@@ -217,7 +237,7 @@
     async function confirmDeleteSong() {
       const id = deleteTargetId;
       const song = songs.find(item => item.id === id);
-      if (!song) { closeDeleteModal(); return; }
+      if (!song || !canDeleteSong(currentAuthUser(), song)) { closeDeleteModal(); return; }
       try {
         if (song._driveFileId) await cloudApi.deleteSong(song._driveFileId);
         songs = songs.filter(item => item.id !== id);
@@ -227,29 +247,30 @@
         menuPosition = null;
         renderSongList();
         renderLibraryGrid();
-        if (isAdminUser() && typeof loadCatalog === 'function') await loadCatalog();
+        if (typeof loadCatalog === 'function') await loadCatalog();
         setRoute('#/library');
         showToast('已刪除曲譜');
       } catch (error) {
         console.error(error);
-        showToast('刪除失敗');
+        showToast(error?.message === 'DELETE_FORBIDDEN' ? '只有曲譜擁有者可以刪除' : '刪除失敗');
       }
     }
 
-    async function toggleSongHidden(song) {
-      if (!isAdminUser() || !song?._driveFileId) return;
+    async function toggleSongPublic(song) {
+      if (!song?._driveFileId || !canUnlistSong(currentAuthUser(), song) || !songWasPublished(song)) return;
+      const makePublic = !songIsPublic(song);
       try {
-        const result = await cloudApi.setHidden(song._driveFileId, song?._opentab?.hidden !== true);
+        const result = await cloudApi.setPublic(song._driveFileId, makePublic);
         replaceSongRecord(result.song);
         menuOpenFor = null;
         menuPosition = null;
         renderSongList();
         renderLibraryGrid();
         if (typeof loadCatalog === 'function') await loadCatalog();
-        showToast(result.song?._opentab?.hidden ? '已從公共曲庫隱藏' : '已重新顯示於公共曲庫');
+        showToast(makePublic ? '已重新上架至公共曲庫' : '已從公共曲庫下架');
       } catch (error) {
         console.error(error);
-        showToast('更新顯示狀態失敗');
+        showToast('更新公共狀態失敗');
       }
     }
 
@@ -299,7 +320,7 @@
         renderSongList();
         meterBadge.textContent = `每小節 ${beats} 拍`;
         renderLibraryGrid();
-        if (isAdminUser() && typeof loadCatalog === 'function') await loadCatalog();
+        if (typeof loadCatalog === 'function') await loadCatalog();
         setRoute(`#/editor/${encodeURIComponent(saved.id)}`);
         showToast(`已新增 ${beats} 拍空白曲譜`);
       } catch (error) {
