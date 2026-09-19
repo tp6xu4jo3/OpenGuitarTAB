@@ -1,0 +1,33 @@
+.publish-description {
+  margin: 0 0 16px;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.publish-field {
+  display: block;
+  margin: 0 0 7px;
+  color: #222;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.publish-uploader {
+  margin: 12px 0 0;
+  color: #555;
+  font-size: 14px;
+}
+
+.publish-error {
+  min-height: 21px;
+  margin: 8px 0 0;
+  color: #b42318;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.publish-dialog .modal-button:disabled {
+  cursor: wait;
+  opacity: .6;
+}

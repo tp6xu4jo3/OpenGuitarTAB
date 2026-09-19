@@ -1,17 +1,17 @@
 import { compactSong, deserializeSong } from './core/song-codec.js';
-import { readLocalLibrary, writeLocalLibrary } from './storage/local-storage.js';
-import { DRIVE_CATALOG_CONFIG } from './config/drive-config.js';
+import { cloudApi } from './services/cloud-api.js';
+import { APP_CONFIG } from './config/app-config.js';
 
 Object.assign(window, {
   compactSong,
   deserializeSong,
-  readLocalLibrary,
-  writeLocalLibrary,
-  DRIVE_CATALOG_CONFIG
+  cloudApi,
+  APP_CONFIG
 });
 
 const scripts = [
   './src/app-runtime.js',
+  './src/app-auth.js',
   './src/app-editor-core.js',
   './src/app-note-backgrounds.js',
   './src/app-row-layout.js',
@@ -27,7 +27,6 @@ const scripts = [
   './src/app-density-fit-v2.js',
   './src/app-playback.js',
   './src/app-library.js',
-  './src/catalog/drive-catalog-service.js',
   './src/app-catalog.js'
 ];
 

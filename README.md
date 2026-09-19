@@ -1,107 +1,128 @@
 # OpenGuitarTAB
 
-OpenGuitarTAB是純前端吉他TAB編輯與共享平台，可直接部署至GitHub Pages。
+OpenGuitarTAB是吉他TAB編輯與共享平台。公開曲庫與登入後的個人曲譜改由Google Drive儲存，登入／Drive寫入透過Vercel Serverless Function處理，瀏覽器不再持有Google Drive API key或Drive寫入憑證。
 
-## 目前完成
+## 帳號與曲庫邏輯
 
-### Phase 1 — Pure Client-Side
-- 完全移除Node.js後端與`/api/library`依賴
-- `src/core/song-codec.js`負責`sparse-v3`與編輯器資料雙向轉換
-- localStorage作為本機個人曲譜儲存
-- 單曲JSON匯入與下載
-- 公共曲譜資料已搬到Google Drive公開資料夾
-- CSS依功能模組化
+目前先提供兩個固定帳號，之後可替換成Google OAuth登入：
 
-### Phase 2 — Catalog UI
-- Spotify風格深色導覽與曲譜卡片
-- `#/catalog`公共曲庫首頁
-- 公共曲譜搜尋
-- 公共曲譜唯讀預覽
-- 一鍵加入個人曲譜櫃
-- `#/library`個人曲譜櫃
-- `#/editor/:id`編輯器Hash路由
-- 編輯器／播放／曲庫／Catalog程式模組化
+- `admin`：管理員。我的曲譜＝公共曲庫的實際Drive檔案。
+- `test`：測試／遊客帳號。我的曲譜儲存在測試資料夾。
 
-### Phase 3 — Public Google Drive Catalog
-- 暫不加入Google OAuth
-- 公共曲庫改由Google Drive API讀取
-- 固定公開資料夾ID：`1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP`
-- 前端使用受HTTP參照網址與Google Drive API限制的API key
-- 啟動時直接列出Drive資料夾中的所有`application/json`檔案
-- `index.json`會被排除，不再作為新增歌曲的必要索引
-- 每個歌曲JSON會直接解析`id`、`name`、`artist`、`album`、`cover`、`tempo`、`capo`、`beatsPerMeasure`
-- 新增歌曲只要把有效的歌曲JSON上傳到`OpenTABs`資料夾，重新整理網站後就會自動出現在公共曲庫
-- 單一JSON格式錯誤時只略過該檔案，不會讓整個公共曲庫失效
-- 現有`index.json`只保留作為舊曲目的metadata／排序相容性fallback，不需要再手動更新
-- 預覽／加入曲譜時使用Drive `files.get?alt=media`讀取JSON
-- 個人曲譜仍使用localStorage，不做Google登入或雲端同步
+帳號密碼不寫進GitHub。請把密碼雜湊放在Vercel Environment Variables。
 
-## 新增公共曲譜
+### 管理員
 
-1. 準備一個有效的OpenGuitarTAB歌曲JSON。
-2. 直接上傳到Google Drive的`OpenTABs`資料夾。
-3. 不需要修改`index.json`。
-4. 重新整理網站，歌曲就會自動被Drive API掃描並加入公共曲庫。
+- 登入後「我的曲譜」直接顯示目前公共曲庫所有受管理曲譜。
+- 儲存：直接更新同一個公共Drive檔案。
+- 新增／匯入JSON：直接建立新的公共曲譜檔案。
+- 刪除：直接刪除該公共Drive檔案。
+- `⋯ → 隱藏`：檔案保留在管理員曲譜櫃，但公共曲庫不顯示；可再次取消隱藏。
+- 不建立預設空白曲譜。
 
-建議歌曲JSON本身包含以下metadata，這樣不依賴任何外部索引也能完整顯示卡片：
+### test
 
-```json
-{
-  "id": "song-example",
-  "name": "歌曲名稱",
-  "artist": "歌手",
-  "album": "專輯",
-  "cover": "https://...",
-  "tempo": 120,
-  "capo": 0,
-  "beatsPerMeasure": 4,
-  "rows": []
-}
-```
+- 私人測試曲譜資料夾：`1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g`
+- 儲存：只更新測試資料夾中的同一個檔案。
+- 上傳：發布到公共曲庫；第一次建立公共檔案，之後會記住公共file ID並更新同一個檔案，不重複建立。
+- 從公共曲庫按「加入」：複製一份到test自己的Drive資料夾後再編輯。
 
-`artist`、`album`、`cover`不是載入曲譜的必要欄位；缺少時仍可顯示與預覽，只是卡片資訊較少。
+> `test`資料夾目前依需求建立在公開`OpenTABs`資料夾下，因此它繼承公開讀取權限，只適合作為測試帳號。未來真實使用者資料應改成私人資料夾或各自Google OAuth授權。
 
-## Google Drive設定
+## 未登入狀態
 
-Drive設定位於：
+- 「我的曲譜」不顯示任何歌曲，只顯示登入按鈕。
+- 點「個人曲譜櫃」會開啟置中的登入視窗。
+- 公共曲庫與唯讀預覽仍可使用。
+- 登入視窗目前使用帳號／密碼；Google登入按鈕的UI與設定開關已預留，`googleOAuthEnabled`目前為`false`。
+
+## 新增曲譜
+
+「我的曲譜」右側`＋`會先開啟選擇視窗：
+
+- 空白曲譜 → 再選3拍或4拍。
+- 上傳 → 選擇OpenGuitarTAB JSON。
+
+舊版「直接把JSON丟到OpenTABs就自動公開」已取消。公共曲庫只接受目前既有受管理檔案，以及經網站管理員新增／使用者按「上傳」發布的檔案。
+
+## 編輯器按鈕
+
+- `儲存`：更新登入使用者自己的Drive檔案。
+- `上傳`：發布／更新公共曲庫檔案。
+  - admin：自己的Drive檔案本身就是公共檔案，因此等同更新公共版本。
+  - test：使用已記錄的public file ID更新同一個公共檔案。
+
+## 為什麼不能只用GitHub Pages
+
+這個版本需要安全登入、HttpOnly session cookie，以及Google Drive建立／更新／刪除權限，因此需要server-side API。GitHub Pages仍可保存原始碼，但正式網站應部署到Vercel，讓靜態前端與`/api`同網域執行。
+
+不要把密碼、密碼雜湊、Google Client Secret、refresh token或API key提交到GitHub。
+
+## 環境變數
+
+複製`.env.example`的欄位到Vercel Environment Variables：
 
 ```text
-src/config/drive-config.js
+SESSION_SECRET
+ADMIN_PASSWORD_HASH
+TEST_PASSWORD_HASH
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_REFRESH_TOKEN
+PUBLIC_DRIVE_FOLDER_ID
+TEST_DRIVE_FOLDER_ID
 ```
 
-設定內容包含：
-
-```js
-export const DRIVE_CATALOG_CONFIG = Object.freeze({
-  folderId: '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP',
-  apiKey: '<Google Drive API key>',
-  apiBaseUrl: 'https://www.googleapis.com/drive/v3'
-});
-```
-
-API key應限制為：
-
-- 應用程式限制：HTTP參照網址（網站）
-- 允許GitHub Pages網站來源
-- API限制：只允許Google Drive API
-
-Drive公共曲庫資料夾應設為：
+目前資料夾：
 
 ```text
-知道連結的任何人 → 檢視者
+PUBLIC_DRIVE_FOLDER_ID=1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP
+TEST_DRIVE_FOLDER_ID=1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g
 ```
 
-不要設為編輯者，因為公共網站只需要讀取JSON。
+### admin/test密碼設為123
 
-## 本機預覽
+不要把`123`或固定SHA直接寫入repository。使用內建PBKDF2工具各產生一次不同salt的hash：
 
 ```bash
-python -m http.server 8080
+npm run hash-password -- 123
+npm run hash-password -- 123
 ```
 
-開啟`http://localhost:8080/`。
+把兩次輸出分別設成：
 
-若API key只允許正式GitHub Pages網址，本機`localhost`預覽Drive曲庫會被Google拒絕；若需要本機測試，可暫時將本機來源加入HTTP參照網址限制，測試完成後再移除。
+```text
+ADMIN_PASSWORD_HASH=<第一次輸出>
+TEST_PASSWORD_HASH=<第二次輸出>
+```
+
+伺服器使用PBKDF2-HMAC-SHA256驗證，session則用`SESSION_SECRET`簽署並放在HttpOnly、Secure、SameSite=Lax cookie。
+
+## Google Drive後端授權
+
+網站使用的是「伺服器代表Drive擁有者」的Google OAuth refresh token，這與未來給一般使用者看的「使用Google登入」是兩件不同的事。
+
+Vercel端需要：
+
+```text
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_REFRESH_TOKEN
+```
+
+這些只能存在Vercel環境變數，不得放在前端或GitHub。
+
+## 目錄重點
+
+```text
+api/index.js                  # 登入session、Drive CRUD、公開/私人曲庫API
+src/services/cloud-api.js     # 前端同網域API client
+src/app-auth.js               # 登入視窗與session UI
+src/config/app-config.js      # 未來Google登入功能開關
+scripts/hash-password.mjs     # 產生PBKDF2密碼hash
+```
+
+舊的`src/config/drive-config.js`及前端Drive API key讀取流程已移除。
 
 ## 測試
 
@@ -111,4 +132,4 @@ npm test
 
 ## 部署
 
-不需要Node.js後端或Vercel，GitHub Pages可直接部署此repository。
+建議直接將此repository匯入Vercel。Vercel會提供靜態檔案並將`api/index.js`部署成Serverless Function，因此前端呼叫`/api`可保持同網域。
