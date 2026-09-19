@@ -32,7 +32,7 @@ export const cloudApi = Object.freeze({
   library: () => request('library'),
   saveSong: song => request('save', { method: 'POST', body: { song } }),
   deleteSong: fileId => request('delete', { method: 'POST', body: { fileId } }),
-  setHidden: (fileId, hidden) => request('hide', { method: 'POST', body: { fileId, hidden } }),
+  setPublic: (fileId, isPublic) => request('visibility', { method: 'POST', body: { fileId, public: Boolean(isPublic) } }),
   publishSong: song => request('publish', { method: 'POST', body: { song } }),
   clonePublicSong: fileId => request('clone', { method: 'POST', body: { fileId } })
 });
