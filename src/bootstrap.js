@@ -1,10 +1,24 @@
 import { compactSong, deserializeSong } from './core/song-codec.js';
+import {
+  songOwner,
+  songWasPublished,
+  songIsPublic,
+  canEditSong,
+  canUnlistSong,
+  canDeleteSong
+} from './core/song-permissions.js';
 import { cloudApi } from './services/cloud-api.js';
 import { APP_CONFIG } from './config/app-config.js';
 
 Object.assign(window, {
   compactSong,
   deserializeSong,
+  songOwner,
+  songWasPublished,
+  songIsPublic,
+  canEditSong,
+  canUnlistSong,
+  canDeleteSong,
   cloudApi,
   APP_CONFIG
 });
