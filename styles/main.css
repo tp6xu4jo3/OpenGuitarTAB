@@ -1,6 +1,7 @@
 @import './tokens-base.css';
 @import './sidebar.css';
 @import './catalog.css';
+@import './catalog-management.css';
 @import './header.css';
 @import './sheet.css';
 @import './editor-scroll.css';
