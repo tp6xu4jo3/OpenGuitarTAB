@@ -57,6 +57,12 @@
     const editorBackButton = document.getElementById('editorBackButton');
     const editorTitle = document.getElementById('editorTitle');
     const addPreviewSongButton = document.getElementById('addPreviewSongButton');
+    const publishModal = document.getElementById('publishModal');
+    const publishArtistInput = document.getElementById('publishArtistInput');
+    const publishUploader = document.getElementById('publishUploader');
+    const publishError = document.getElementById('publishError');
+    const publishCancel = document.getElementById('publishCancel');
+    const publishConfirm = document.getElementById('publishConfirm');
 
     let songs = [];
     let currentSongId = null;
@@ -80,6 +86,7 @@
     let catalogSongs = [];
     let previewSong = null;
     let previousNonEditorRoute = '#/catalog';
+    let publishInProgress = false;
 
     function normalizeBeatsPerMeasure(value) {
       return Number(value) === 3 ? 3 : 4;

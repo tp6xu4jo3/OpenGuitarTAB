@@ -24,13 +24,14 @@
           <span class="nav-label">個人曲譜櫃</span>
         </button>
       </nav>
-      <div class="sidebar-head"><div class="sidebar-title">我的曲譜</div><button class="new-song-button" id="newSongButton" type="button" aria-label="新增空白曲譜">+</button></div>
+      <div class="sidebar-head"><div class="sidebar-title">我的曲譜</div><button class="new-song-button" id="newSongButton" type="button" aria-label="新增曲譜">+</button></div>
       <div class="song-list" id="songList"></div>
+      <div class="sidebar-session" id="sidebarSession"></div>
     </aside>
 
     <section class="page-view catalog-view" id="catalogView" aria-label="公共曲庫">
       <div class="catalog-hero">
-        <div><p class="eyebrow">OPEN TAB LIBRARY</p><h1>找到想彈的歌，直接開始看譜。</h1><p class="catalog-lead">公共曲譜以唯讀方式提供預覽，可以加入個人曲譜櫃後再編輯。</p></div>
+        <div><p class="eyebrow">OPEN TAB LIBRARY</p><h1>找到想彈的歌，直接開始看譜。</h1><p class="catalog-lead">公共曲譜以唯讀方式提供預覽，登入後可以加入自己的曲譜櫃。</p></div>
         <label class="catalog-search"><span>⌕</span><input id="catalogSearchInput" type="search" placeholder="搜尋曲名或作者" autocomplete="off" /></label>
       </div>
       <div class="catalog-section-head"><div><p class="eyebrow">PUBLIC CATALOG</p><h2>公共曲譜</h2></div><span class="catalog-count" id="catalogCount"></span></div>
@@ -38,7 +39,7 @@
     </section>
 
     <section class="page-view library-view" id="libraryView" hidden aria-label="個人曲譜櫃">
-      <div class="library-hero"><p class="eyebrow">YOUR LIBRARY</p><h1>個人曲譜櫃</h1><p>目前先儲存在此瀏覽器；下一階段接上Google Drive後會同步到你的雲端。</p><button class="primary-action" id="libraryNewSongButton" type="button">＋ 新增曲譜</button></div>
+      <div class="library-hero"><p class="eyebrow">YOUR LIBRARY</p><h1>個人曲譜櫃</h1><p id="libraryStorageHint">登入後從Google Drive載入你的曲譜。</p><button class="primary-action" id="libraryNewSongButton" type="button">＋ 新增曲譜</button></div>
       <div class="song-card-grid" id="libraryGrid"></div>
     </section>
 
@@ -49,7 +50,7 @@
             <button class="back-button" id="editorBackButton" type="button" aria-label="返回">←</button>
             <div class="header-actions">
               <button class="save-button" id="saveSongButton" type="button">儲存</button>
-              <button class="download-button" id="downloadSongButton" type="button">下載</button>
+              <button class="download-button" id="downloadSongButton" type="button">上傳</button>
               <button class="add-preview-button" id="addPreviewSongButton" type="button" hidden aria-label="加入曲譜櫃" data-tooltip="加入曲譜櫃">+</button>
             </div>
           </div>
@@ -72,8 +73,55 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal-backdrop auth-modal-backdrop" id="loginModal" aria-hidden="true">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+      <h2 id="loginModalTitle">登入OpenGuitarTAB</h2>
+      <p class="login-description">登入後才能使用個人曲譜櫃。</p>
+      <form id="loginForm" class="login-form">
+        <label>帳號<input id="loginUsername" type="text" autocomplete="username" required /></label>
+        <label>密碼<input id="loginPassword" type="password" autocomplete="current-password" required /></label>
+        <p class="login-error" id="loginError" role="alert"></p>
+        <button class="login-submit-button" type="submit">登入</button>
+      </form>
+      <div class="google-login-section" id="googleLoginSection" hidden>
+        <div class="login-separator"><span>或</span></div>
+        <button class="google-login-button" id="googleLoginButton" type="button"><span aria-hidden="true">G</span> 使用Google登入</button>
+      </div>
+      <button class="login-cancel-button" id="loginCancel" type="button">取消</button>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="renameModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle"><h2 id="renameModalTitle">重新命名曲譜</h2><input class="rename-input" id="renameInput" type="text" maxlength="60" autocomplete="off" /><div class="rename-actions"><button class="modal-button cancel" id="renameCancel" type="button">取消</button><button class="modal-button confirm" id="renameConfirm" type="button">確定</button></div></div></div>
-  <div class="modal-backdrop" id="newSongModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="newSongModalTitle"><h2 id="newSongModalTitle">新增曲譜</h2><p class="delete-message">請選擇每小節拍數。建立後不能切換，只能刪除曲譜或重新新增。</p><div class="meter-choice" role="group" aria-label="每小節拍數"><button class="meter-choice-button" id="newSongThreeBeats" type="button">3 拍</button><button class="meter-choice-button" id="newSongFourBeats" type="button">4 拍</button></div><div class="import-separator">或</div><button class="upload-json-button" id="uploadJsonButton" type="button">📂 上傳 JSON</button><input id="uploadJsonInput" type="file" accept="application/json,.json" hidden /><div class="rename-actions"><button class="modal-button cancel" id="newSongCancel" type="button">取消</button></div></div></div>
+
+  <div class="modal-backdrop" id="publishModal" aria-hidden="true">
+    <div class="rename-dialog publish-dialog" role="dialog" aria-modal="true" aria-labelledby="publishModalTitle">
+      <h2 id="publishModalTitle">上傳到公共曲譜</h2>
+      <p class="publish-description">請確認這首歌的作者（歌手）。上傳後會顯示你的帳號名稱。</p>
+      <label class="publish-field" for="publishArtistInput">作者（歌手）</label>
+      <input class="rename-input" id="publishArtistInput" type="text" maxlength="80" autocomplete="off" required />
+      <p class="publish-uploader">上傳者：<strong id="publishUploader"></strong></p>
+      <p class="publish-error" id="publishError" role="alert"></p>
+      <div class="rename-actions"><button class="modal-button cancel" id="publishCancel" type="button">取消</button><button class="modal-button confirm" id="publishConfirm" type="button">上傳</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="newSongModal" aria-hidden="true">
+    <div class="rename-dialog new-song-dialog" role="dialog" aria-modal="true" aria-labelledby="newSongModalTitle">
+      <h2 id="newSongModalTitle">新增曲譜</h2>
+      <div class="new-song-choice-grid">
+        <button class="new-song-choice" id="blankSongChoice" type="button"><strong>空白曲譜</strong><span>建立新的TAB</span></button>
+        <button class="new-song-choice" id="uploadJsonButton" type="button"><strong>上傳</strong><span>匯入JSON曲譜</span></button>
+      </div>
+      <div class="blank-song-options" id="blankSongOptions" hidden>
+        <p class="delete-message">選擇每小節拍數</p>
+        <div class="meter-choice" role="group" aria-label="每小節拍數"><button class="meter-choice-button" id="newSongThreeBeats" type="button">3 拍</button><button class="meter-choice-button" id="newSongFourBeats" type="button">4 拍</button></div>
+      </div>
+      <input id="uploadJsonInput" type="file" accept="application/json,.json" hidden />
+      <div class="rename-actions"><button class="modal-button cancel" id="newSongCancel" type="button">取消</button></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="deleteModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle"><h2 id="deleteModalTitle">刪除曲譜</h2><p class="delete-message">確定要刪除 <span class="delete-song-name" id="deleteSongName"></span> 嗎？</p><p class="delete-message">刪除後無法從曲譜庫復原。</p><div class="rename-actions"><button class="modal-button cancel" id="deleteCancel" type="button">取消</button><button class="modal-button danger" id="deleteConfirm" type="button">刪除</button></div></div></div>
   <script type="module" src="./src/bootstrap.js"></script>
 </body>

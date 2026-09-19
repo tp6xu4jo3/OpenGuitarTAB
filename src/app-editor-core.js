@@ -202,40 +202,126 @@
       return rows;
     }
 
-    function saveRowsToCurrentSong(rows, persist = true) {
+    function saveRowsToCurrentSong(rows, persist = false) {
       const song = currentSong(); if (!song) return;
-      song.rows = normalizeRows(rows, song.beatsPerMeasure); song.tempo = getTempo(); song.capo = getCapo(); song.updatedAt = Date.now();
-      if (persist) writeStorage();
-      renderSongList(); renderLibraryGrid();
+      song.rows = normalizeRows(rows, song.beatsPerMeasure);
+      song.tempo = getTempo();
+      song.capo = getCapo();
+      song.updatedAt = Date.now();
+      renderSongList();
+      renderLibraryGrid();
     }
 
-    function saveCurrentSong() { saveRowsToCurrentSong(readRowsFromDom(), true); showToast('已儲存目前曲譜'); }
+    async function saveCurrentSong() {
+      const song = currentSong();
+      if (!song || !window.authState?.user) { openLoginModal('#/library'); return; }
+      saveRowsToCurrentSong(readRowsFromDom(), false);
+      try {
+        const saved = await persistSongToCloud(song);
+        currentSongId = saved.id;
+        editorTitle.textContent = saved.name || '吉他 TAB 譜製作器';
+        renderSongList();
+        renderLibraryGrid();
+        if (isAdminUser() && typeof loadCatalog === 'function') await loadCatalog();
+        showToast('已儲存到Google Drive');
+      } catch (error) {
+        console.error(error);
+        showToast('儲存失敗');
+      }
+    }
 
     function sanitizeFileName(value) {
       const cleaned = String(value || '未命名曲譜').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
       return cleaned || '未命名曲譜';
     }
 
-    function downloadCurrentSong() {
-      const song = currentSong(); if (!song) return;
-      saveRowsToCurrentSong(readRowsFromDom(), true);
-      const json = JSON.stringify(compactSong(song), null, 2);
-      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${sanitizeFileName(song.name)}.json`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
-      showToast('已下載目前曲譜 JSON');
+    function closePublishModal() {
+      if (publishInProgress) return;
+      publishModal.classList.remove('open');
+      publishModal.setAttribute('aria-hidden', 'true');
+      publishError.textContent = '';
+    }
+
+    function openPublishModal() {
+      const song = currentSong();
+      if (!song || !window.authState?.user) { openLoginModal('#/library'); return; }
+      saveRowsToCurrentSong(readRowsFromDom(), false);
+      publishArtistInput.value = String(song.artist || '');
+      publishUploader.textContent = window.authState.user.username;
+      publishError.textContent = '';
+      publishModal.classList.add('open');
+      publishModal.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        publishArtistInput.focus();
+        publishArtistInput.select();
+      });
+    }
+
+    async function confirmPublishSong() {
+      if (publishInProgress) return;
+      const song = currentSong();
+      const artist = publishArtistInput.value.trim();
+      if (!song || !window.authState?.user) { closePublishModal(); openLoginModal('#/library'); return; }
+      if (!artist) {
+        publishError.textContent = '請輸入作者（歌手）。';
+        publishArtistInput.focus();
+        return;
+      }
+      song.artist = artist;
+      song._opentab = { ...(song._opentab || {}), uploadedBy: window.authState.user.username };
+      publishInProgress = true;
+      publishConfirm.disabled = true;
+      publishCancel.disabled = true;
+      try {
+        const result = await cloudApi.publishSong(compactSong(song));
+        const updated = isAdminUser() ? result.song : result.privateSong;
+        if (updated) {
+          const saved = replaceSongRecord(updated);
+          currentSongId = saved.id;
+        }
+        if (typeof loadCatalog === 'function') await loadCatalog();
+        renderSongList();
+        renderLibraryGrid();
+        publishModal.classList.remove('open');
+        publishModal.setAttribute('aria-hidden', 'true');
+        showToast(isAdminUser() ? '已更新公共曲庫' : '已上傳到公共曲庫');
+      } catch (error) {
+        console.error(error);
+        publishError.textContent = error?.message === 'SAVE_BEFORE_PUBLISH' ? '請先儲存曲譜。' : '上傳公共曲庫失敗，請稍後再試。';
+      } finally {
+        publishInProgress = false;
+        publishConfirm.disabled = false;
+        publishCancel.disabled = false;
+      }
     }
 
     async function importSongFile(file) {
       if (!file) return;
+      if (!window.authState?.user) { openLoginModal('#/library'); uploadJsonInput.value = ''; return; }
       try {
         const imported = normalizeSongRecord(deserializeSong(await file.text()));
+        delete imported._driveFileId;
+        delete imported._driveFileName;
+        delete imported._driveModifiedTime;
+        imported._opentab = {};
         if (!imported.id || songs.some(song => song.id === imported.id)) imported.id = uid();
         if (!imported.name) imported.name = file.name.replace(/\.json$/i, '') || '匯入曲譜';
-        imported.createdAt = Number(imported.createdAt) || Date.now(); imported.updatedAt = Date.now();
-        songs.unshift(imported); currentSongId = imported.id; closeNewSongModal(); writeStorage(); renderSongList(); renderLibraryGrid(); setRoute(`#/editor/${encodeURIComponent(currentSongId)}`); showToast(`已匯入 ${imported.name}`);
-      } catch (error) { console.error(error); showToast(error?.message || 'JSON 匯入失敗'); }
-      finally { uploadJsonInput.value = ''; }
+        imported.createdAt = Number(imported.createdAt) || Date.now();
+        imported.updatedAt = Date.now();
+        const saved = await persistSongToCloud(imported);
+        currentSongId = saved.id;
+        closeNewSongModal();
+        renderSongList();
+        renderLibraryGrid();
+        if (isAdminUser() && typeof loadCatalog === 'function') await loadCatalog();
+        setRoute(`#/editor/${encodeURIComponent(saved.id)}`);
+        showToast(`已匯入 ${saved.name}`);
+      } catch (error) {
+        console.error(error);
+        showToast(error?.message || 'JSON 匯入失敗');
+      } finally {
+        uploadJsonInput.value = '';
+      }
     }
 
     function copyRow(rowIndex) { const rows = readRowsFromDom(); rowClipboard = deepClone(rows[rowIndex]); showToast(`已複製第 ${rowIndex + 1} 列`); }
