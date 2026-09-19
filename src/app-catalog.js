@@ -11,6 +11,34 @@ function showPage(page) {
   libraryNavButton.classList.toggle('active', page === 'library');
 }
 
+function catalogSongIsAdded(song) {
+  const user = window.authState?.user;
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const publicFileId = String(song?._driveFileId || '');
+  if (!publicFileId) return false;
+  return songs.some(item =>
+    String(item?._opentab?.sourcePublicFileId || '') === publicFileId ||
+    String(item?._opentab?.publicFileId || '') === publicFileId
+  );
+}
+
+function markCatalogAddButtonAdded(button, { animate = false } = {}) {
+  if (!button) return;
+  button.classList.remove('is-adding', 'just-added');
+  button.classList.add('is-added');
+  button.textContent = '✓';
+  button.setAttribute('aria-label', '已在我的曲譜');
+  button.title = '已在我的曲譜';
+  button.disabled = true;
+  if (animate) {
+    requestAnimationFrame(() => {
+      button.classList.add('just-added');
+      button.addEventListener('animationend', () => button.classList.remove('just-added'), { once: true });
+    });
+  }
+}
+
 function songCard(song, { publicSong = false } = {}) {
   const card = document.createElement('article');
   card.className = 'song-card';
@@ -27,6 +55,7 @@ function songCard(song, { publicSong = false } = {}) {
     image.alt = song.album ? `${song.album} 封面` : `${song.name || '曲譜'} 封面`;
     image.loading = 'lazy';
     image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
     image.addEventListener('load', () => art.classList.add('has-image'));
     image.addEventListener('error', () => image.remove());
     art.appendChild(image);
@@ -42,8 +71,12 @@ function songCard(song, { publicSong = false } = {}) {
     title.appendChild(hidden);
   }
   const artist = document.createElement('p');
+  artist.className = 'song-card-artist';
   artist.textContent = song.artist || (publicSong ? 'OpenGuitarTAB 公共曲譜' : '我的曲譜');
   if (song.album) artist.title = song.album;
+  const source = document.createElement('p');
+  source.className = 'song-card-source';
+  source.textContent = `由 ${song.uploadedBy || song?._opentab?.uploadedBy || 'OpenGuitarTAB'} 上傳`;
   const meta = document.createElement('div');
   meta.className = 'song-card-meta';
   meta.innerHTML = `<span>${Number(song.tempo) || 120} BPM</span><span>Capo ${Number(song.capo) || 0}</span>`;
@@ -59,16 +92,17 @@ function songCard(song, { publicSong = false } = {}) {
     const add = document.createElement('button');
     add.className = 'card-secondary-button';
     add.type = 'button';
-    if (window.authState?.user?.role === 'admin') {
-      add.textContent = '已在我的曲譜';
-      add.disabled = true;
+    if (catalogSongIsAdded(song)) {
+      markCatalogAddButtonAdded(add);
     } else {
       add.textContent = '＋ 加入';
-      add.addEventListener('click', () => addCatalogSong(song));
+      add.addEventListener('click', () => addCatalogSong(song, add));
     }
     actions.appendChild(add);
   }
-  body.append(title, artist, meta, actions);
+  body.append(title, artist);
+  if (publicSong) body.appendChild(source);
+  body.append(meta, actions);
   card.append(art, body);
   return card;
 }
@@ -154,17 +188,23 @@ async function fetchCatalogSong(meta) {
   return hydrateCloudSong(result.song);
 }
 
-async function addCatalogSong(meta) {
+async function addCatalogSong(meta, button = null) {
   const user = window.authState?.user;
   if (!user) {
     openLoginModal('#/library');
     return;
   }
   if (user.role === 'admin') {
+    markCatalogAddButtonAdded(button, { animate: true });
     showToast('管理員的我的曲譜已直接連通公共曲庫');
     return;
   }
   try {
+    if (button) {
+      button.disabled = true;
+      button.classList.add('is-adding');
+      button.textContent = '加入中…';
+    }
     const result = await cloudApi.clonePublicSong(meta._driveFileId);
     const copy = hydrateCloudSong(result.song);
     songs.unshift(copy);
@@ -172,9 +212,15 @@ async function addCatalogSong(meta) {
     previewSong = null;
     renderSongList();
     renderLibraryGrid();
+    markCatalogAddButtonAdded(button, { animate: true });
     showToast(`已將 ${copy.name || '曲譜'} 加入個人曲譜櫃`);
   } catch (error) {
     console.error(error);
+    if (button) {
+      button.disabled = false;
+      button.classList.remove('is-adding');
+      button.textContent = '＋ 加入';
+    }
     showToast('加入曲譜櫃失敗');
   }
 }

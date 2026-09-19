@@ -235,10 +235,43 @@
       return cleaned || '未命名曲譜';
     }
 
-    async function downloadCurrentSong() {
+    function closePublishModal() {
+      if (publishInProgress) return;
+      publishModal.classList.remove('open');
+      publishModal.setAttribute('aria-hidden', 'true');
+      publishError.textContent = '';
+    }
+
+    function openPublishModal() {
       const song = currentSong();
       if (!song || !window.authState?.user) { openLoginModal('#/library'); return; }
       saveRowsToCurrentSong(readRowsFromDom(), false);
+      publishArtistInput.value = String(song.artist || '');
+      publishUploader.textContent = window.authState.user.username;
+      publishError.textContent = '';
+      publishModal.classList.add('open');
+      publishModal.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        publishArtistInput.focus();
+        publishArtistInput.select();
+      });
+    }
+
+    async function confirmPublishSong() {
+      if (publishInProgress) return;
+      const song = currentSong();
+      const artist = publishArtistInput.value.trim();
+      if (!song || !window.authState?.user) { closePublishModal(); openLoginModal('#/library'); return; }
+      if (!artist) {
+        publishError.textContent = '請輸入作者（歌手）。';
+        publishArtistInput.focus();
+        return;
+      }
+      song.artist = artist;
+      song._opentab = { ...(song._opentab || {}), uploadedBy: window.authState.user.username };
+      publishInProgress = true;
+      publishConfirm.disabled = true;
+      publishCancel.disabled = true;
       try {
         const result = await cloudApi.publishSong(compactSong(song));
         const updated = isAdminUser() ? result.song : result.privateSong;
@@ -249,10 +282,16 @@
         if (typeof loadCatalog === 'function') await loadCatalog();
         renderSongList();
         renderLibraryGrid();
+        publishModal.classList.remove('open');
+        publishModal.setAttribute('aria-hidden', 'true');
         showToast(isAdminUser() ? '已更新公共曲庫' : '已上傳到公共曲庫');
       } catch (error) {
         console.error(error);
-        showToast(error?.message === 'SAVE_BEFORE_PUBLISH' ? '請先儲存曲譜' : '上傳公共曲庫失敗');
+        publishError.textContent = error?.message === 'SAVE_BEFORE_PUBLISH' ? '請先儲存曲譜。' : '上傳公共曲庫失敗，請稍後再試。';
+      } finally {
+        publishInProgress = false;
+        publishConfirm.disabled = false;
+        publishCancel.disabled = false;
       }
     }
 

@@ -1,4 +1,10 @@
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+const STATIC_CATALOG = new Map(
+  JSON.parse(readFileSync(new URL('../public/catalog/index.json', import.meta.url), 'utf8'))
+    .map(song => [String(song.id), song])
+);
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -303,16 +309,28 @@ function attachFileMeta(song, file) {
   };
 }
 
-function catalogMeta(song, file) {
+function withStaticCatalogMetadata(song) {
+  const fallback = STATIC_CATALOG.get(String(song?.id || '')) || {};
   return {
-    id: String(song.id || file.id),
-    name: song.name || file.name.replace(/\.json$/i, ''),
-    artist: song.artist || '',
-    album: song.album || '',
-    cover: song.cover || '',
-    tempo: Number(song.tempo) || 120,
-    capo: Number.isFinite(Number(song.capo)) ? Number(song.capo) : 0,
-    beatsPerMeasure: Number(song.beatsPerMeasure) === 3 ? 3 : 4,
+    ...song,
+    artist: song?.artist || fallback.artist || '',
+    album: song?.album || fallback.album || '',
+    cover: song?.cover || fallback.cover || ''
+  };
+}
+
+function catalogMeta(song, file) {
+  const enriched = withStaticCatalogMetadata(song);
+  return {
+    id: String(enriched.id || file.id),
+    name: enriched.name || file.name.replace(/\.json$/i, ''),
+    artist: enriched.artist,
+    album: enriched.album,
+    cover: enriched.cover,
+    uploadedBy: enriched?._opentab?.uploadedBy || 'OpenGuitarTAB',
+    tempo: Number(enriched.tempo) || 120,
+    capo: Number.isFinite(Number(enriched.capo)) ? Number(enriched.capo) : 0,
+    beatsPerMeasure: Number(enriched.beatsPerMeasure) === 3 ? 3 : 4,
     _driveFileId: file.id,
     _driveFileName: file.name,
     _driveModifiedTime: file.modifiedTime || ''
@@ -325,7 +343,7 @@ async function managedPublicEntries({ includeHidden = false, full = false } = {}
     const song = await readDriveJson(file.id);
     if (!isManagedPublic(file, song)) return null;
     if (!includeHidden && isHidden(song)) return null;
-    return full ? attachFileMeta(song, file) : catalogMeta(song, file);
+    return full ? attachFileMeta(withStaticCatalogMetadata(song), file) : catalogMeta(song, file);
   }));
   return results
     .filter(result => result.status === 'fulfilled' && result.value)
@@ -357,8 +375,23 @@ async function saveUserSong(session, song) {
 }
 
 async function publishSong(session, song) {
-  if (session.role === 'admin') return saveUserSong(session, song);
-  const privateFileId = String(song?._driveFileId || '').trim();
+  const artist = String(song?.artist || '').trim();
+  if (!artist) throw new Error('ARTIST_REQUIRED');
+  const publishableSong = { ...song, artist };
+  if (session.role === 'admin') {
+    const fileId = String(publishableSong?._driveFileId || '').trim();
+    const patch = {
+      public: true,
+      hidden: publishableSong?._opentab?.hidden === true,
+      uploadedBy: session.username
+    };
+    if (fileId) {
+      await assertFileInFolder(fileId, PUBLIC_FOLDER_ID);
+      return updateJsonFile(fileId, publishableSong, patch);
+    }
+    return createJsonFile(PUBLIC_FOLDER_ID, publishableSong, patch);
+  }
+  const privateFileId = String(publishableSong?._driveFileId || '').trim();
   if (!privateFileId) throw new Error('SAVE_BEFORE_PUBLISH');
   await assertFileInFolder(privateFileId, TEST_FOLDER_ID);
 
@@ -368,25 +401,25 @@ async function publishSong(session, song) {
     try {
       await assertFileInFolder(publicFileId, PUBLIC_FOLDER_ID);
       const existing = await readDriveJson(publicFileId);
-      const linked = existing?._opentab?.sourceUser === 'test' && existing?._opentab?.sourceFileId === privateFileId;
+      const linked = existing?._opentab?.sourceUser === session.username && existing?._opentab?.sourceFileId === privateFileId;
       if (!linked) publicFileId = '';
     } catch {
       publicFileId = '';
     }
   }
 
-  const publicPatch = { public: true, hidden: false, sourceUser: 'test', sourceFileId: privateFileId };
-  if (publicFileId) published = await updateJsonFile(publicFileId, song, publicPatch);
-  else published = await createJsonFile(PUBLIC_FOLDER_ID, song, publicPatch);
+  const publicPatch = { public: true, hidden: false, sourceUser: session.username, sourceFileId: privateFileId, uploadedBy: session.username };
+  if (publicFileId) published = await updateJsonFile(publicFileId, publishableSong, publicPatch);
+  else published = await createJsonFile(PUBLIC_FOLDER_ID, publishableSong, publicPatch);
 
   const privatePatch = { owner: 'test', publicFileId: published._driveFileId };
-  const updatedPrivate = await updateJsonFile(privateFileId, song, privatePatch);
+  const updatedPrivate = await updateJsonFile(privateFileId, publishableSong, privatePatch);
   return { privateSong: updatedPrivate, publicFileId: published._driveFileId };
 }
 
 async function clonePublicToTest(fileId) {
   const file = await assertFileInFolder(fileId, PUBLIC_FOLDER_ID);
-  const source = await readDriveJson(fileId);
+  const source = withStaticCatalogMetadata(await readDriveJson(fileId));
   if (!isManagedPublic(file, source) || isHidden(source)) throw new Error('PUBLIC_SONG_NOT_AVAILABLE');
   const copy = structuredClone(source);
   delete copy._driveFileId;
@@ -445,7 +478,7 @@ export default async function handler(req, res) {
       const file = await assertFileInFolder(fileId, PUBLIC_FOLDER_ID);
       const song = await readDriveJson(fileId);
       if (!isManagedPublic(file, song) || isHidden(song)) return json(res, 404, { error: 'PUBLIC_SONG_NOT_AVAILABLE' });
-      return json(res, 200, { song: attachFileMeta(song, file) });
+      return json(res, 200, { song: attachFileMeta(withStaticCatalogMetadata(song), file) });
     }
 
     const session = requireSession(req, res);
@@ -488,9 +521,9 @@ export default async function handler(req, res) {
 
     return json(res, 404, { error: 'NOT_FOUND' });
   } catch (error) {
-    console.error(error);
     const message = String(error?.message || error || 'UNKNOWN_ERROR');
-    const status = message.includes('OUTSIDE_LIBRARY') ? 403 : message.includes('NOT_AVAILABLE') ? 404 : 500;
+    const status = message.includes('OUTSIDE_LIBRARY') ? 403 : message.includes('NOT_AVAILABLE') ? 404 : message.includes('_REQUIRED') ? 400 : 500;
+    if (status >= 500) console.error(error);
     return json(res, status, { error: message.split(':')[0] });
   }
 }

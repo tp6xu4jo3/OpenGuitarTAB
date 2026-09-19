@@ -325,11 +325,18 @@
     deleteCancel.addEventListener('click', closeDeleteModal);
     deleteConfirm.addEventListener('click', confirmDeleteSong);
     deleteModal.addEventListener('click', event => { if (event.target === deleteModal) closeDeleteModal(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSongMenu(); if (renameModal.classList.contains('open')) closeRenameModal(); if (deleteModal.classList.contains('open')) closeDeleteModal(); if (newSongModal.classList.contains('open')) closeNewSongModal(); } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSongMenu(); if (renameModal.classList.contains('open')) closeRenameModal(); if (deleteModal.classList.contains('open')) closeDeleteModal(); if (newSongModal.classList.contains('open')) closeNewSongModal(); if (publishModal.classList.contains('open')) closePublishModal(); } });
     addRowButton.addEventListener('click', addTabSystem);
     removeRowButton.addEventListener('click', removeLastTabSystem);
     saveSongButton.addEventListener('click', saveCurrentSong);
-    downloadSongButton.addEventListener('click', downloadCurrentSong);
+    downloadSongButton.addEventListener('click', openPublishModal);
+    publishCancel.addEventListener('click', closePublishModal);
+    publishConfirm.addEventListener('click', confirmPublishSong);
+    publishArtistInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') confirmPublishSong();
+      if (event.key === 'Escape') closePublishModal();
+    });
+    publishModal.addEventListener('click', event => { if (event.target === publishModal) closePublishModal(); });
     newSongButton.addEventListener('click', openNewSongModal);
     document.getElementById('blankSongChoice')?.addEventListener('click', () => {
       const blankOptions = document.getElementById('blankSongOptions');

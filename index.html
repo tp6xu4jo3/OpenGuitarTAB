@@ -94,6 +94,18 @@
 
   <div class="modal-backdrop" id="renameModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle"><h2 id="renameModalTitle">重新命名曲譜</h2><input class="rename-input" id="renameInput" type="text" maxlength="60" autocomplete="off" /><div class="rename-actions"><button class="modal-button cancel" id="renameCancel" type="button">取消</button><button class="modal-button confirm" id="renameConfirm" type="button">確定</button></div></div></div>
 
+  <div class="modal-backdrop" id="publishModal" aria-hidden="true">
+    <div class="rename-dialog publish-dialog" role="dialog" aria-modal="true" aria-labelledby="publishModalTitle">
+      <h2 id="publishModalTitle">上傳到公共曲譜</h2>
+      <p class="publish-description">請確認這首歌的作者（歌手）。上傳後會顯示你的帳號名稱。</p>
+      <label class="publish-field" for="publishArtistInput">作者（歌手）</label>
+      <input class="rename-input" id="publishArtistInput" type="text" maxlength="80" autocomplete="off" required />
+      <p class="publish-uploader">上傳者：<strong id="publishUploader"></strong></p>
+      <p class="publish-error" id="publishError" role="alert"></p>
+      <div class="rename-actions"><button class="modal-button cancel" id="publishCancel" type="button">取消</button><button class="modal-button confirm" id="publishConfirm" type="button">上傳</button></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="newSongModal" aria-hidden="true">
     <div class="rename-dialog new-song-dialog" role="dialog" aria-modal="true" aria-labelledby="newSongModalTitle">
       <h2 id="newSongModalTitle">新增曲譜</h2>
