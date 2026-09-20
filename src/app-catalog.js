@@ -1,5 +1,23 @@
 let catalogMenuOpenFor = null;
 
+const mobileMenuButton = document.getElementById('mobileMenuButton');
+const mobileMenuBackdrop = document.getElementById('mobileMenuBackdrop');
+const sidebar = document.getElementById('sidebar');
+
+function setMobileMenuOpen(open) {
+  const isMobile = window.matchMedia('(max-width: 980px)').matches;
+  const next = Boolean(open && isMobile);
+  sidebar?.classList.toggle('mobile-open', next);
+  mobileMenuButton?.setAttribute('aria-expanded', String(next));
+  if (mobileMenuButton) mobileMenuButton.setAttribute('aria-label', next ? '關閉導覽選單' : '開啟導覽選單');
+  if (mobileMenuBackdrop) mobileMenuBackdrop.hidden = !next;
+  document.body.classList.toggle('mobile-nav-open', next);
+}
+
+function closeMobileMenu() {
+  setMobileMenuOpen(false);
+}
+
 function setRoute(hash) {
   if (location.hash === hash) handleRoute();
   else location.hash = hash;
@@ -11,6 +29,8 @@ function showPage(page) {
   editorView.hidden = page !== 'editor';
   catalogNavButton.classList.toggle('active', page === 'catalog');
   libraryNavButton.classList.toggle('active', page === 'library');
+  if (mobileMenuButton) mobileMenuButton.hidden = page === 'editor';
+  if (page === 'editor') closeMobileMenu();
 }
 
 function catalogSongOwner(song) {
@@ -391,8 +411,16 @@ async function initializeApp() {
   handleRoute();
 }
 
-catalogNavButton.addEventListener('click', () => setRoute('#/catalog'));
+mobileMenuButton?.addEventListener('click', () => {
+  setMobileMenuOpen(!sidebar?.classList.contains('mobile-open'));
+});
+mobileMenuBackdrop?.addEventListener('click', closeMobileMenu);
+catalogNavButton.addEventListener('click', () => {
+  closeMobileMenu();
+  setRoute('#/catalog');
+});
 libraryNavButton.addEventListener('click', () => {
+  closeMobileMenu();
   if (!window.authState?.user) openLoginModal('#/library');
   else setRoute('#/library');
 });
@@ -406,6 +434,12 @@ addPreviewSongButton.addEventListener('click', () => {
   const fileId = previewSong?._catalogFileId || previewSong?._driveFileId;
   const meta = catalogSongs.find(song => song._driveFileId === fileId) || catalogSongs.find(song => `preview:${song.id}` === currentSongId);
   if (meta) addCatalogSong(meta);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeMobileMenu();
+});
+window.addEventListener('resize', () => {
+  if (!window.matchMedia('(max-width: 980px)').matches) closeMobileMenu();
 });
 document.addEventListener('click', event => {
   if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {
