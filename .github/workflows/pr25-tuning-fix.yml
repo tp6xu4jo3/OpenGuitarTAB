@@ -1,0 +1,37 @@
+name: One-time PR25 tuning fix
+
+on:
+  push:
+    branches:
+      - feat/source-schema-catalog-menu
+    paths:
+      - .github/workflows/pr25-tuning-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/source-schema-catalog-menu
+      - name: Normalize tuning fallback and remove this workflow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('api/index.js')
+          text = path.read_text()
+          old = "const STANDARD_TUNING = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];"
+          new = "const STANDARD_TUNING = 'standard';"
+          if old not in text:
+              raise SystemExit('Expected tuning fallback was not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/pr25-tuning-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/index.js .github/workflows/pr25-tuning-fix.yml
+          git commit -m "fix: use standard tuning fallback"
+          git push origin HEAD:feat/source-schema-catalog-menu
