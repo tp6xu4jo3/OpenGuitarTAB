@@ -3,10 +3,10 @@ let catalogMenuOpenFor = null;
 const mobileMenuButton = document.getElementById('mobileMenuButton');
 const mobileMenuBackdrop = document.getElementById('mobileMenuBackdrop');
 const sidebar = document.getElementById('sidebar');
+const mobileQuery = window.matchMedia('(max-width: 980px)');
 
 function setMobileMenuOpen(open) {
-  const isMobile = window.matchMedia('(max-width: 980px)').matches;
-  const next = Boolean(open && isMobile);
+  const next = Boolean(open && mobileQuery.matches);
   sidebar?.classList.toggle('mobile-open', next);
   mobileMenuButton?.setAttribute('aria-expanded', String(next));
   if (mobileMenuButton) mobileMenuButton.setAttribute('aria-label', next ? '關閉導覽選單' : '開啟導覽選單');
@@ -438,8 +438,8 @@ addPreviewSongButton.addEventListener('click', () => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeMobileMenu();
 });
-window.addEventListener('resize', () => {
-  if (!window.matchMedia('(max-width: 980px)').matches) closeMobileMenu();
+mobileQuery.addEventListener('change', event => {
+  if (!event.matches) closeMobileMenu();
 });
 document.addEventListener('click', event => {
   if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {
