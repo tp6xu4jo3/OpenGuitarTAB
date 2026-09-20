@@ -1,7 +1,9 @@
-.song-card{position:relative}
-.catalog-card-more{position:absolute;top:20px;right:20px;z-index:8;width:34px;height:34px;border:1px solid rgba(255,255,255,.16);border-radius:50%;background:rgba(15,15,15,.86);color:#fff;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.song-card{position:relative;z-index:0}
+.song-card:hover{z-index:1}
+.song-card:has(.catalog-card-menu:not([hidden])){z-index:30;transform:none}
+.catalog-card-more{position:absolute;top:20px;right:20px;z-index:31;width:34px;height:34px;border:1px solid rgba(255,255,255,.16);border-radius:50%;background:rgba(15,15,15,.86);color:#fff;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 .catalog-card-more:hover,.catalog-card-more:focus-visible{background:#2a2a2a;border-color:rgba(255,255,255,.45);outline:none}
-.catalog-card-menu{position:absolute;top:58px;right:18px;z-index:10;min-width:132px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#222;box-shadow:0 16px 36px rgba(0,0,0,.42)}
+.catalog-card-menu{position:absolute;top:58px;right:18px;z-index:32;min-width:132px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#222;box-shadow:0 16px 36px rgba(0,0,0,.42)}
 .catalog-card-menu[hidden]{display:none!important}
 .catalog-card-menu button{display:block;width:100%;padding:9px 11px;border:0;border-radius:7px;background:transparent;color:#fff;text-align:left;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .catalog-card-menu button:hover,.catalog-card-menu button:focus-visible{background:rgba(255,255,255,.1);outline:none}
