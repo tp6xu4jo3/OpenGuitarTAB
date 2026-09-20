@@ -1,0 +1,44 @@
+name: Patch catalog card render
+on:
+  push:
+    branches: [feat/catalog-playstyle-difficulty-info]
+    paths:
+      - .github/workflows/patch-catalog-card-render.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/catalog-playstyle-difficulty-info
+      - name: Patch catalog renderer
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/app-catalog.js')
+          text = path.read_text()
+          replacements = [
+            ("  if (publicSong && catalogSongCanManage(song)) {", "  if (publicSong) {"),
+            ("    menu.append(edit, unlist);\n    card.appendChild(menu);", "    if (catalogSongCanManage(song)) menu.append(edit, unlist);\n    card.appendChild(menu);"),
+            ("  const source = document.createElement('p');\n  source.className = 'song-card-source';\n  source.textContent = `由 ${song.uploadedBy || songOwner(song) || 'OpenGuitarTAB'} 上傳`;\n", ""),
+            ("  meta.innerHTML = `<span>${Number(song.tempo) || 120} BPM</span><span>Capo ${Number(song.capo) || 0}</span>`;", "  const playStyle = song.playStyle === 'fingerstyle' ? '指彈' : song.playStyle === 'chord' ? '和弦' : '未設定';\n  const difficulty = Number(song.difficulty);\n  const difficultyText = Number.isFinite(difficulty) && difficulty >= 1 && difficulty <= 5 ? `難度 ${Math.round(difficulty)}` : '難度 -';\n  meta.innerHTML = `<span>${playStyle}</span><span>${difficultyText}</span>`;"),
+            ("  if (publicSong) body.appendChild(source);\n", "")
+          ]
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f'Expected catalog fragment not found: {old!r}')
+            text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          rm .github/workflows/patch-catalog-card-render.yml
+          npm test
+          npm run check
+          npm run build
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app-catalog.js .github/workflows/patch-catalog-card-render.yml
+          git commit -m 'feat: render play style and difficulty on catalog cards'
+          git push origin HEAD:feat/catalog-playstyle-difficulty-info
