@@ -56,7 +56,8 @@
         originLine.className = 'song-card-source song-card-origin';
         uploaderLine.after(originLine);
       }
-      originLine.textContent = `來源 ${String(song.source || '').trim() || '未提供'}`;
+      const text = `來源 ${String(song.source || '').trim() || '未提供'}`;
+      if (originLine.textContent !== text) originLine.textContent = text;
     });
   }
 
@@ -66,8 +67,10 @@
       const isOpen = Boolean(catalogMenuOpenFor && catalogMenuOpenFor === fileId);
       const menu = card.querySelector('.catalog-card-menu');
       const button = card.querySelector('.catalog-card-more');
-      if (menu) menu.hidden = !isOpen;
-      if (button) button.setAttribute('aria-expanded', String(isOpen));
+      if (menu && menu.hidden === isOpen) menu.hidden = !isOpen;
+      if (button && button.getAttribute('aria-expanded') !== String(isOpen)) {
+        button.setAttribute('aria-expanded', String(isOpen));
+      }
     });
   }
 
