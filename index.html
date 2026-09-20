@@ -9,7 +9,10 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="主要導覽">
+    <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-label="開啟導覽選單" aria-controls="sidebar" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <aside class="sidebar" id="sidebar" aria-label="主要導覽">
       <div class="brand-row">
         <div class="brand-mark">OG</div>
         <div><div class="brand-name">OpenGuitarTAB</div><div class="brand-subtitle">Guitar TAB Studio</div></div>
@@ -28,6 +31,7 @@
       <div class="song-list" id="songList"></div>
       <div class="sidebar-session" id="sidebarSession"></div>
     </aside>
+    <div class="mobile-menu-backdrop" id="mobileMenuBackdrop" hidden></div>
 
     <section class="page-view catalog-view" id="catalogView" aria-label="公共曲庫">
       <div class="catalog-hero">
