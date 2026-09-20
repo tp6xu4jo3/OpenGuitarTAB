@@ -3,6 +3,7 @@ const CATALOG_CACHE_TTL_MS = 5_000;
 let catalogCacheValue = null;
 let catalogCacheExpiresAt = 0;
 let catalogRequest = null;
+let catalogGeneration = 0;
 
 function apiUrl(action, params = {}) {
   const url = new URL('/api', window.location.origin);
@@ -35,8 +36,10 @@ async function request(action, { method = 'GET', body, params } = {}) {
 }
 
 function clearCatalogCache() {
+  catalogGeneration += 1;
   catalogCacheValue = null;
   catalogCacheExpiresAt = 0;
+  catalogRequest = null;
 }
 
 function getCatalog() {
@@ -46,10 +49,13 @@ function getCatalog() {
   }
   if (catalogRequest) return catalogRequest;
 
+  const requestGeneration = catalogGeneration;
   const pending = request('catalog')
     .then(result => {
-      catalogCacheValue = result;
-      catalogCacheExpiresAt = Date.now() + CATALOG_CACHE_TTL_MS;
+      if (requestGeneration === catalogGeneration) {
+        catalogCacheValue = result;
+        catalogCacheExpiresAt = Date.now() + CATALOG_CACHE_TTL_MS;
+      }
       return result;
     })
     .finally(() => {
