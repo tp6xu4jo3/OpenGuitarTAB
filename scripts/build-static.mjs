@@ -16,8 +16,4 @@ for (const directory of ['src', 'styles']) {
   });
 }
 
-// Vercel serves the configured output directory as the site root, so merge
-// public/ into dist/ instead of publishing it under /public.
-await cp(path.join(projectRoot, 'public'), outputDir, { recursive: true });
-
 console.log(`Static site built at ${outputDir}`);
