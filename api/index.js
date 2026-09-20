@@ -13,6 +13,24 @@ const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
 const SESSION_COOKIE = 'opentab_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
+const SONG_FIELD_ORDER = [
+  'id',
+  'name',
+  'tempo',
+  'capo',
+  'beatsPerMeasure',
+  'meter',
+  'tuning',
+  'source',
+  'createdAt',
+  'updatedAt',
+  'artist',
+  'album',
+  'cover',
+  'rhythmRows',
+  'rows'
+];
+const STANDARD_TUNING = 'standard';
 const LEGACY_PUBLIC_FILE_IDS = new Set([
   '1AptDYqj0eRlNfJMoCNC1S8w0aeRtg_YQ',
   '1fa3wj6LUS6eYVuRd2blabOwDtGp0Oo4o',
@@ -292,7 +310,6 @@ function attachFileMeta(song, file) {
   };
 }
 
-
 function catalogMeta(song, file) {
   const enriched = song || {};
   const owner = songOwner(enriched);
@@ -302,6 +319,7 @@ function catalogMeta(song, file) {
     artist: enriched.artist,
     album: enriched.album,
     cover: enriched.cover,
+    source: enriched.source,
     owner,
     uploadedBy: owner || 'OpenGuitarTAB',
     public: songIsPublic(enriched),
@@ -315,16 +333,33 @@ function catalogMeta(song, file) {
 }
 
 function cleanSongForWrite(song, meta) {
-  const source = song && typeof song === 'object' && !Array.isArray(song) ? structuredClone(song) : {};
-  delete source._driveFileId;
-  delete source._driveFileName;
-  delete source._driveModifiedTime;
-  source._opentab = { ...meta };
-  delete source._opentab.hidden;
-  delete source._opentab.publicFileId;
-  delete source._opentab.sourceUser;
-  delete source._opentab.sourceFileId;
-  return source;
+  const input = song && typeof song === 'object' && !Array.isArray(song) ? structuredClone(song) : {};
+  const beatsPerMeasure = Number(input.beatsPerMeasure) === 3 ? 3 : 4;
+  const defaults = {
+    id: String(input.id || `song-${Date.now().toString(36)}`),
+    name: String(input.name || '未命名曲譜'),
+    tempo: Number(input.tempo) || 120,
+    capo: Number.isFinite(Number(input.capo)) ? Number(input.capo) : 0,
+    beatsPerMeasure,
+    meter: String(input.meter || `${beatsPerMeasure}/4`),
+    tuning: input.tuning ?? STANDARD_TUNING,
+    source: String(input.source || ''),
+    createdAt: Number(input.createdAt) || Date.now(),
+    updatedAt: Number(input.updatedAt) || Date.now(),
+    artist: String(input.artist || ''),
+    album: String(input.album || ''),
+    cover: String(input.cover || ''),
+    rhythmRows: Array.isArray(input.rhythmRows) ? input.rhythmRows : [],
+    rows: Array.isArray(input.rows) ? input.rows : []
+  };
+  const persisted = {};
+  for (const key of SONG_FIELD_ORDER) persisted[key] = structuredClone(defaults[key]);
+  persisted._opentab = { ...meta };
+  delete persisted._opentab.hidden;
+  delete persisted._opentab.publicFileId;
+  delete persisted._opentab.sourceUser;
+  delete persisted._opentab.sourceFileId;
+  return persisted;
 }
 
 function songFileName(song) {
