@@ -42,11 +42,6 @@ function clearCatalogCache() {
   catalogRequest = null;
 }
 
-function keepCatalogCacheFresh() {
-  if (!catalogCacheValue) return;
-  catalogCacheExpiresAt = Date.now() + CATALOG_CACHE_TTL_MS;
-}
-
 function getCatalog() {
   const now = Date.now();
   if (catalogCacheValue && now < catalogCacheExpiresAt) {
@@ -79,8 +74,9 @@ async function requestWithCatalogInvalidation(action, options) {
 
 async function saveSong(song) {
   const result = await request('save', { method: 'POST', body: { song } });
+  // Private test songs cannot change the public catalog, so keep any still-valid
+  // catalog cache. Public/admin saves invalidate it immediately.
   if (result.song?._opentab?.public === true) clearCatalogCache();
-  else keepCatalogCacheFresh();
   return result;
 }
 
