@@ -181,7 +181,6 @@
     const source = String(song?.source || '').trim() || '未提供';
     const uploader = song?.uploadedBy || song?.owner || 'OpenGuitarTAB';
     const lines = [
-      ['catalog-card-info-title', '資訊：'],
       ['catalog-card-info-line', `來源 ${source}`],
       ['catalog-card-info-line', `由 ${uploader} 上傳`],
       ['catalog-card-info-line', `更新時間：${catalogUpdatedDate(song)}`]
