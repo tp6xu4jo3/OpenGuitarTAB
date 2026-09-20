@@ -124,7 +124,7 @@ function songCard(song, { publicSong = false } = {}) {
     art.appendChild(image);
   }
 
-  if (publicSong && catalogSongCanManage(song)) {
+  if (publicSong) {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'catalog-card-more';
@@ -151,7 +151,7 @@ function songCard(song, { publicSong = false } = {}) {
     unlist.textContent = '下架';
     unlist.addEventListener('click', event => { event.stopPropagation(); unlistCatalogSong(song); });
 
-    menu.append(edit, unlist);
+    if (catalogSongCanManage(song)) menu.append(edit, unlist);
     card.appendChild(menu);
   }
 
@@ -169,12 +169,12 @@ function songCard(song, { publicSong = false } = {}) {
   artist.className = 'song-card-artist';
   artist.textContent = song.artist || (publicSong ? 'OpenGuitarTAB 公共曲譜' : '我的曲譜');
   if (song.album) artist.title = song.album;
-  const source = document.createElement('p');
-  source.className = 'song-card-source';
-  source.textContent = `由 ${song.uploadedBy || songOwner(song) || 'OpenGuitarTAB'} 上傳`;
   const meta = document.createElement('div');
   meta.className = 'song-card-meta';
-  meta.innerHTML = `<span>${Number(song.tempo) || 120} BPM</span><span>Capo ${Number(song.capo) || 0}</span>`;
+  const playStyle = song.playStyle === 'fingerstyle' ? '指彈' : song.playStyle === 'chord' ? '和弦' : '未設定';
+  const difficulty = Number(song.difficulty);
+  const difficultyText = Number.isFinite(difficulty) && difficulty >= 1 && difficulty <= 5 ? `難度 ${Math.round(difficulty)}` : '難度 -';
+  meta.innerHTML = `<span>${playStyle}</span><span>${difficultyText}</span>`;
   const actions = document.createElement('div');
   actions.className = 'song-card-actions';
   const open = document.createElement('button');
@@ -198,7 +198,6 @@ function songCard(song, { publicSong = false } = {}) {
   }
 
   body.append(title, artist);
-  if (publicSong) body.appendChild(source);
   body.append(meta, actions);
   card.append(art, body);
   return card;
