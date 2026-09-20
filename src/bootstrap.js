@@ -49,7 +49,8 @@ const APP_SCRIPTS = [
   ...RUNTIME_SCRIPTS,
   ...EDITOR_SCRIPTS,
   './src/app-library.js',
-  './src/app-catalog.js'
+  './src/app-catalog.js',
+  './src/app-source-ui.js'
 ];
 
 function loadClassicScriptsInOrder(sources) {
