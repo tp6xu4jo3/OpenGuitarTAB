@@ -72,6 +72,14 @@ async function requestWithCatalogInvalidation(action, options) {
   return result;
 }
 
+async function saveSong(song) {
+  const result = await request('save', { method: 'POST', body: { song } });
+  // Private test songs cannot change the public catalog, so keep any still-valid
+  // catalog cache. Public/admin saves invalidate it immediately.
+  if (result.song?._opentab?.public === true) clearCatalogCache();
+  return result;
+}
+
 async function publishSong(song) {
   const result = await requestWithCatalogInvalidation('publish', {
     method: 'POST',
@@ -87,7 +95,7 @@ export const cloudApi = Object.freeze({
   catalog: getCatalog,
   catalogSong: fileId => request('catalog-song', { params: { fileId } }),
   library: () => request('library'),
-  saveSong: song => requestWithCatalogInvalidation('save', { method: 'POST', body: { song } }),
+  saveSong,
   deleteSong: fileId => requestWithCatalogInvalidation('delete', { method: 'POST', body: { fileId } }),
   setPublic: (fileId, isPublic) => requestWithCatalogInvalidation('visibility', {
     method: 'POST',
