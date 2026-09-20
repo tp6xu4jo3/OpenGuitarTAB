@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import {
   songOwner,
   songWasPublished,
@@ -9,10 +8,6 @@ import {
   canDeleteSong
 } from '../src/core/song-permissions.js';
 
-const STATIC_CATALOG = new Map(
-  JSON.parse(readFileSync(new URL('../public/catalog/index.json', import.meta.url), 'utf8'))
-    .map(song => [String(song.id), song])
-);
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -297,18 +292,9 @@ function attachFileMeta(song, file) {
   };
 }
 
-function withStaticCatalogMetadata(song) {
-  const fallback = STATIC_CATALOG.get(String(song?.id || '')) || {};
-  return {
-    ...song,
-    artist: song?.artist || fallback.artist || '',
-    album: song?.album || fallback.album || '',
-    cover: song?.cover || fallback.cover || ''
-  };
-}
 
 function catalogMeta(song, file) {
-  const enriched = withStaticCatalogMetadata(song);
+  const enriched = song || {};
   const owner = songOwner(enriched);
   return {
     id: String(enriched.id || file.id),
@@ -409,7 +395,7 @@ async function managedPublicEntries({ full = false } = {}) {
   return [...publicEntries, ...testEntries]
     .filter(entry => songIsPublic(entry.song))
     .map(entry => full
-      ? attachFileMeta(withStaticCatalogMetadata(entry.song), entry.file)
+      ? attachFileMeta(entry.song, entry.file)
       : catalogMeta(entry.song, entry.file))
     .sort((a, b) => String(b._driveModifiedTime || '').localeCompare(String(a._driveModifiedTime || '')));
 }
@@ -421,7 +407,7 @@ async function userLibrary(session) {
       entriesFromFolder(TEST_FOLDER_ID)
     ]);
     return [...publicEntries, ...testEntries.filter(entry => songWasPublished(entry.song))]
-      .map(entry => attachFileMeta(withStaticCatalogMetadata(entry.song), entry.file))
+      .map(entry => attachFileMeta(entry.song, entry.file))
       .sort((a, b) => String(b._driveModifiedTime || '').localeCompare(String(a._driveModifiedTime || '')));
   }
   const testEntries = await entriesFromFolder(TEST_FOLDER_ID);
@@ -503,7 +489,7 @@ async function clonePublicToTest(fileId, session) {
   if (session.role === 'admin') throw new Error('ADMIN_LIBRARY_IS_PUBLIC_LIBRARY');
   const entry = await readManagedEntry(fileId);
   if (!songIsPublic(entry.song)) throw new Error('PUBLIC_SONG_NOT_AVAILABLE');
-  const copy = structuredClone(withStaticCatalogMetadata(entry.song));
+  const copy = structuredClone(entry.song);
   delete copy._driveFileId;
   delete copy._driveFileName;
   delete copy._driveModifiedTime;
@@ -558,7 +544,7 @@ export default async function handler(req, res) {
       if (!fileId) return json(res, 400, { error: 'FILE_ID_REQUIRED' });
       const entry = await readManagedEntry(fileId);
       if (!songIsPublic(entry.song)) return json(res, 404, { error: 'PUBLIC_SONG_NOT_AVAILABLE' });
-      return json(res, 200, { song: attachFileMeta(withStaticCatalogMetadata(entry.song), entry.file) });
+      return json(res, 200, { song: attachFileMeta(entry.song, entry.file) });
     }
 
     const session = requireSession(req, res);
