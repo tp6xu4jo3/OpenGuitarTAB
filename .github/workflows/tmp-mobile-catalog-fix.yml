@@ -1,0 +1,120 @@
+name: Temporary mobile catalog fix
+
+on:
+  push:
+    branches:
+      - fix/mobile-catalog-layout
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, 'mobile catalog layout and drawer') && !contains(github.event.head_commit.message, 'remove temporary mobile workflow') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-catalog-layout
+      - name: Apply mobile catalog fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          old = '''  <div class="app-shell">\n    <aside class="sidebar" aria-label="主要導覽">'''
+          new = '''  <div class="app-shell">\n    <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-label="開啟導覽選單" aria-controls="sidebar" aria-expanded="false">\n      <span></span><span></span><span></span>\n    </button>\n    <aside class="sidebar" id="sidebar" aria-label="主要導覽">'''
+          if old not in text:
+              raise SystemExit('index sidebar anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''    </aside>\n\n    <section class="page-view catalog-view"'''
+          new = '''    </aside>\n    <div class="mobile-menu-backdrop" id="mobileMenuBackdrop" hidden></div>\n\n    <section class="page-view catalog-view"'''
+          if old not in text:
+              raise SystemExit('index backdrop anchor not found')
+          text = text.replace(old, new, 1)
+          index.write_text(text, encoding='utf-8')
+
+          app = Path('src/app-catalog.js')
+          text = app.read_text(encoding='utf-8')
+          anchor = 'let catalogMenuOpenFor = null;\n'
+          insert = '''let catalogMenuOpenFor = null;\n\nconst mobileMenuButton = document.getElementById('mobileMenuButton');\nconst mobileMenuBackdrop = document.getElementById('mobileMenuBackdrop');\nconst sidebar = document.getElementById('sidebar');\n\nfunction setMobileMenuOpen(open) {\n  const isMobile = window.matchMedia('(max-width: 980px)').matches;\n  const next = Boolean(open && isMobile);\n  sidebar?.classList.toggle('mobile-open', next);\n  mobileMenuButton?.setAttribute('aria-expanded', String(next));\n  if (mobileMenuButton) mobileMenuButton.setAttribute('aria-label', next ? '關閉導覽選單' : '開啟導覽選單');\n  if (mobileMenuBackdrop) mobileMenuBackdrop.hidden = !next;\n  document.body.classList.toggle('mobile-nav-open', next);\n}\n\nfunction closeMobileMenu() {\n  setMobileMenuOpen(false);\n}\n'''
+          if anchor not in text:
+              raise SystemExit('catalog top anchor not found')
+          text = text.replace(anchor, insert, 1)
+
+          old = '''function showPage(page) {\n  catalogView.hidden = page !== 'catalog';\n  libraryView.hidden = page !== 'library';\n  editorView.hidden = page !== 'editor';\n  catalogNavButton.classList.toggle('active', page === 'catalog');\n  libraryNavButton.classList.toggle('active', page === 'library');\n}'''
+          new = '''function showPage(page) {\n  catalogView.hidden = page !== 'catalog';\n  libraryView.hidden = page !== 'library';\n  editorView.hidden = page !== 'editor';\n  catalogNavButton.classList.toggle('active', page === 'catalog');\n  libraryNavButton.classList.toggle('active', page === 'library');\n  if (mobileMenuButton) mobileMenuButton.hidden = page === 'editor';\n  if (page === 'editor') closeMobileMenu();\n}'''
+          if old not in text:
+              raise SystemExit('showPage block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''catalogNavButton.addEventListener('click', () => setRoute('#/catalog'));\nlibraryNavButton.addEventListener('click', () => {\n  if (!window.authState?.user) openLoginModal('#/library');\n  else setRoute('#/library');\n});'''
+          new = '''mobileMenuButton?.addEventListener('click', () => {\n  setMobileMenuOpen(!sidebar?.classList.contains('mobile-open'));\n});\nmobileMenuBackdrop?.addEventListener('click', closeMobileMenu);\ncatalogNavButton.addEventListener('click', () => {\n  closeMobileMenu();\n  setRoute('#/catalog');\n});\nlibraryNavButton.addEventListener('click', () => {\n  closeMobileMenu();\n  if (!window.authState?.user) openLoginModal('#/library');\n  else setRoute('#/library');\n});'''
+          if old not in text:
+              raise SystemExit('nav handler block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''document.addEventListener('click', event => {\n  if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {'''
+          new = '''document.addEventListener('keydown', event => {\n  if (event.key === 'Escape') closeMobileMenu();\n});\nwindow.addEventListener('resize', () => {\n  if (!window.matchMedia('(max-width: 980px)').matches) closeMobileMenu();\n});\ndocument.addEventListener('click', event => {\n  if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {'''
+          if old not in text:
+              raise SystemExit('document click anchor not found')
+          text = text.replace(old, new, 1)
+          app.write_text(text, encoding='utf-8')
+
+          css = Path('styles/responsive.css')
+          text = css.read_text(encoding='utf-8')
+          addition = r'''
+
+.mobile-menu-button,.mobile-menu-backdrop{display:none}
+@media (max-width:980px){
+  body.mobile-nav-open{overflow:hidden}
+  .mobile-menu-button{position:fixed;left:14px;top:14px;z-index:1100;width:46px;height:46px;padding:0;border:1px solid rgba(255,255,255,.14);border-radius:13px;background:rgba(24,24,24,.96);display:grid;place-content:center;gap:5px;box-shadow:0 10px 28px rgba(0,0,0,.35);cursor:pointer}
+  .mobile-menu-button[hidden]{display:none!important}
+  .mobile-menu-button span{display:block;width:22px;height:2px;border-radius:999px;background:#fff;transition:transform .18s ease,opacity .18s ease}
+  .mobile-menu-button[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  .mobile-menu-button[aria-expanded="true"] span:nth-child(2){opacity:0}
+  .mobile-menu-button[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+  .mobile-menu-backdrop{display:block;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.58);backdrop-filter:blur(2px)}
+  .mobile-menu-backdrop[hidden]{display:none!important}
+  .sidebar{position:fixed!important;left:0;top:0;bottom:0;z-index:1000;width:min(84vw,320px)!important;height:100dvh!important;max-height:none!important;padding:74px 14px 16px!important;overflow:hidden!important;transform:translateX(-105%);transition:transform .22s ease;box-shadow:18px 0 42px rgba(0,0,0,.4)}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .catalog-view,.library-view{padding-top:82px}
+}
+@media (max-width:600px){
+  .catalog-view,.library-view{padding-left:12px;padding-right:12px;padding-bottom:36px}
+  .catalog-hero{padding:8px 0 30px;gap:18px}
+  .catalog-hero h1,.library-hero h1{font-size:34px}
+  .catalog-lead,.library-hero>p:not(.eyebrow){font-size:14px;line-height:1.55}
+  .catalog-section-head{margin-bottom:12px}
+  .catalog-section-head h2{font-size:24px}
+  .song-card-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .song-card{padding:9px;border-radius:12px}
+  .song-card:hover{transform:none}
+  .song-card-art{border-radius:8px;font-size:28px;box-shadow:0 10px 20px rgba(0,0,0,.24)}
+  .song-card-body h3{margin:10px 0 3px;font-size:14px}
+  .song-card-body p{font-size:11px}
+  .song-card-artist,.song-card-source{min-height:17px}
+  .song-card-meta{gap:4px;margin:8px 0;font-size:9px}
+  .song-card-meta span{padding:3px 5px}
+  .song-card-actions{gap:5px}
+  .card-primary-button,.card-secondary-button{min-height:34px;padding:0 5px;font-size:12px}
+  .catalog-card-more{top:14px;right:14px;width:30px;height:30px;font-size:20px}
+  .catalog-card-menu{top:48px;right:10px;min-width:112px}
+}
+'''
+          if '.mobile-menu-button,.mobile-menu-backdrop{display:none}' not in text:
+              text += addition
+          css.write_text(text, encoding='utf-8')
+          PY
+
+          npm test
+          npm run check
+          npm run build
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+tp6xu4jo3@users.noreply.github.com
+          git add index.html src/app-catalog.js styles/responsive.css
+          git commit -m "fix: mobile catalog layout and drawer"
+          git push origin HEAD:fix/mobile-catalog-layout
