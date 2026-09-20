@@ -79,14 +79,11 @@
       const centerKey = playbackLine?.dataset.row !== undefined ? `row-${playbackLine.dataset.row}` : playbackLine?.closest('.tab-system')?.dataset.centerKey || `row-${row}`;
 
       if (playbackLine && centerKey !== lastCenteredPlaybackRow) {
-        if (lastCenteredPlaybackRow === -1) {
-          // Do not center the first line when playback starts. This preserves the
-          // score's natural top position and avoids moving the controls offscreen.
-          lastCenteredPlaybackRow = centerKey;
-        } else {
-          followPlaybackLineInSheet(playbackLine);
-          lastCenteredPlaybackRow = centerKey;
-        }
+        // Let the follow helper decide whether movement is needed even on the
+        // first playback line. Starting from the top stays put naturally, while
+        // starting from a later progress position follows that line immediately.
+        followPlaybackLineInSheet(playbackLine);
+        lastCenteredPlaybackRow = centerKey;
       }
 
       getFilledInputsAt(row, position).forEach(input => {
