@@ -1,0 +1,36 @@
+name: One-time branch cleanup
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ !contains(github.event.head_commit.message, 'remove temporary branch cleanup workflow') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Delete completed branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for branch in chore/remove-catalog-env chore/remove-catalog-env-pr; do
+            encoded=$(python -c "import urllib.parse; print(urllib.parse.quote('${branch}', safe=''))")
+            curl -fsS -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}" || true
+          done
+      - name: Remove this workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-clean-branches.yml
+          git commit -m "chore: remove temporary branch cleanup workflow"
+          git push origin HEAD:main
