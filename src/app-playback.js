@@ -52,14 +52,43 @@
       return source;
     }
 
+    function followPlaybackLineInSheet(playbackLine) {
+      const sheet = playbackLine?.closest('.sheet');
+      if (!sheet || sheet.clientHeight <= 0) return;
+
+      const sheetRect = sheet.getBoundingClientRect();
+      const lineRect = playbackLine.getBoundingClientRect();
+      const sheetCenter = sheetRect.top + sheet.clientHeight / 2;
+      const lineCenter = lineRect.top + lineRect.height / 2;
+
+      // Keep the opening lines where they naturally start. Once playback moves
+      // below the sheet's center line, follow one rendered TAB line at a time.
+      // If the user has manually scrolled past the playing line, recover it too.
+      const shouldFollow = lineCenter > sheetCenter + 1 || lineRect.bottom < sheetRect.top;
+      if (!shouldFollow) return;
+
+      const lineCenterInContent = sheet.scrollTop + (lineCenter - sheetRect.top);
+      const maxScrollTop = Math.max(0, sheet.scrollHeight - sheet.clientHeight);
+      const nextScrollTop = clamp(lineCenterInContent - sheet.clientHeight / 2, 0, maxScrollTop);
+      sheet.scrollTo({ top: nextScrollTop, behavior: 'smooth' });
+    }
+
     function playCurrentSlot(row, position) {
       const activeInput = getInput(row, 0, position) || document.querySelector(`.note-input[data-row="${row}"][data-position="${position}"]`);
-      const activeSystem = activeInput?.closest('.tab-system');
-      const centerKey = activeSystem?.dataset.centerKey || `row-${row}`;
-      if (centerKey !== lastCenteredPlaybackRow && activeSystem) {
-        activeSystem.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        lastCenteredPlaybackRow = centerKey;
+      const playbackLine = activeInput?.closest('.tab-grid') || activeInput?.closest('.tab-system');
+      const centerKey = playbackLine?.dataset.row !== undefined ? `row-${playbackLine.dataset.row}` : playbackLine?.closest('.tab-system')?.dataset.centerKey || `row-${row}`;
+
+      if (playbackLine && centerKey !== lastCenteredPlaybackRow) {
+        if (lastCenteredPlaybackRow === -1) {
+          // Do not center the first line when playback starts. This preserves the
+          // score's natural top position and avoids moving the controls offscreen.
+          lastCenteredPlaybackRow = centerKey;
+        } else {
+          followPlaybackLineInSheet(playbackLine);
+          lastCenteredPlaybackRow = centerKey;
+        }
       }
+
       getFilledInputsAt(row, position).forEach(input => {
         const stringIndex = Number(input.dataset.string);
         if (!/^x$/i.test(input.value)) playGuitarNote(stringIndex, input.value);
@@ -77,6 +106,10 @@
       playButton.setAttribute('aria-label', '停止播放 TAB 譜');
       playIndex = clamp(Number(playProgress.value) || 0, 0, totalSlots() - 1);
       lastCenteredPlaybackRow = -1;
+      if (playIndex === 0) {
+        const sheet = editorView?.querySelector('.sheet');
+        if (sheet) sheet.scrollTop = 0;
+      }
       const firstPlayIndex = playIndex;
       const slotDurationMs = getSlotDurationMs();
       const playbackStartedAt = performance.now();
