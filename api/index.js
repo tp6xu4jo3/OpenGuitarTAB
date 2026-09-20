@@ -30,7 +30,7 @@ const SONG_FIELD_ORDER = [
   'rhythmRows',
   'rows'
 ];
-const STANDARD_TUNING = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];
+const STANDARD_TUNING = 'standard';
 const LEGACY_PUBLIC_FILE_IDS = new Set([
   '1AptDYqj0eRlNfJMoCNC1S8w0aeRtg_YQ',
   '1fa3wj6LUS6eYVuRd2blabOwDtGp0Oo4o',
