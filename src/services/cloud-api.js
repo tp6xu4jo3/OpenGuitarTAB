@@ -42,6 +42,11 @@ function clearCatalogCache() {
   catalogRequest = null;
 }
 
+function keepCatalogCacheFresh() {
+  if (!catalogCacheValue) return;
+  catalogCacheExpiresAt = Date.now() + CATALOG_CACHE_TTL_MS;
+}
+
 function getCatalog() {
   const now = Date.now();
   if (catalogCacheValue && now < catalogCacheExpiresAt) {
@@ -72,6 +77,13 @@ async function requestWithCatalogInvalidation(action, options) {
   return result;
 }
 
+async function saveSong(song) {
+  const result = await request('save', { method: 'POST', body: { song } });
+  if (result.song?._opentab?.public === true) clearCatalogCache();
+  else keepCatalogCacheFresh();
+  return result;
+}
+
 async function publishSong(song) {
   const result = await requestWithCatalogInvalidation('publish', {
     method: 'POST',
@@ -87,7 +99,7 @@ export const cloudApi = Object.freeze({
   catalog: getCatalog,
   catalogSong: fileId => request('catalog-song', { params: { fileId } }),
   library: () => request('library'),
-  saveSong: song => requestWithCatalogInvalidation('save', { method: 'POST', body: { song } }),
+  saveSong,
   deleteSong: fileId => requestWithCatalogInvalidation('delete', { method: 'POST', body: { fileId } }),
   setPublic: (fileId, isPublic) => requestWithCatalogInvalidation('visibility', {
     method: 'POST',
