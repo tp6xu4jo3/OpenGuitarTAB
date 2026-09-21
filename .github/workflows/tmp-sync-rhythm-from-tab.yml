@@ -1,0 +1,160 @@
+name: Temporary rhythm sync fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tmp-sync-rhythm-from-tab.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync TAB input positions with rhythm data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          core = Path('src/app-editor-core.js')
+          text = core.read_text()
+
+          marker = "    function renderRhythmNotation(rowIndex) {\n"
+          helpers = r'''    function rhythmOnsetsFromRow(row, beats = activeBeatsPerMeasure) {
+      const positions = positionsPerRow(beats);
+      const measureSlots = slotsPerMeasure(beats);
+      const onsets = [];
+      for (let position = 0; position < positions; position++) {
+        let lowestString = -1;
+        for (let string = 0; string < STRINGS; string++) {
+          if (String(row?.[string]?.[position] ?? '').trim() !== '') lowestString = string;
+        }
+        if (lowestString >= 0) onsets.push({ position, duration: 1, lowestString });
+      }
+      onsets.forEach((onset, index) => {
+        const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
+        const next = onsets[index + 1];
+        onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
+      });
+      return onsets;
+    }
+
+    function rhythmRowFromRow(row, beats = activeBeatsPerMeasure) {
+      const rhythm = {};
+      rhythmOnsetsFromRow(row, beats).forEach(onset => { rhythm[onset.position] = onset.duration; });
+      return rhythm;
+    }
+
+    function readTabRowFromDom(rowIndex) {
+      const row = blankRow();
+      document.querySelectorAll(`.note-input[data-row="${rowIndex}"]`).forEach(input => {
+        const string = Number(input.dataset.string);
+        const position = Number(input.dataset.position);
+        if (!row[string] || position < 0 || position >= row[string].length) return;
+        row[string][position] = normalizeTabValue(input.value);
+      });
+      return row;
+    }
+
+    function syncRhythmRowFromDom(rowIndex) {
+      const song = currentSong();
+      if (!song || previewSong) return;
+      const rowCount = Math.max(song.rows?.length || 0, rowIndex + 1);
+      if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
+      while (song.rhythmRows.length < rowCount) song.rhythmRows.push({});
+      song.rhythmRows[rowIndex] = rhythmRowFromRow(readTabRowFromDom(rowIndex), song.beatsPerMeasure);
+    }
+
+'''
+          if helpers.strip() not in text:
+              if marker not in text:
+                  raise SystemExit('renderRhythmNotation marker not found')
+              text = text.replace(marker, helpers + marker, 1)
+
+          start_marker = "      const onsets = [];\n      const positions = positionsPerRow();\n      const measureSlots = slotsPerMeasure();\n"
+          start = text.find(start_marker, text.find('function renderRhythmNotation'))
+          end_marker = "      onsets.forEach(onset => {\n"
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('old rhythm render block not found')
+          replacement = "      const positions = positionsPerRow();\n      const measureSlots = slotsPerMeasure();\n      const onsets = rhythmOnsetsFromRow(readTabRowFromDom(rowIndex), activeBeatsPerMeasure);\n"
+          text = text[:start] + replacement + text[end:]
+
+          old_handle = '''    function handleInput(event) {
+      const input = event.target;
+      input.value = normalizeTabValue(input.value);
+      input.classList.toggle('has-value', input.value.length > 0);
+      jumpToInput(input, false);
+      renderRhythmNotation(Number(input.dataset.row));
+      if (input.value.length === 2) focusRelative(input, 0, 1);
+    }
+'''
+          new_handle = '''    function handleInput(event) {
+      const input = event.target;
+      input.value = normalizeTabValue(input.value);
+      input.classList.toggle('has-value', input.value.length > 0);
+      const rowIndex = Number(input.dataset.row);
+      syncRhythmRowFromDom(rowIndex);
+      jumpToInput(input, false);
+      renderRhythmNotation(rowIndex);
+      if (input.value.length === 2) focusRelative(input, 0, 1);
+    }
+'''
+          if old_handle not in text:
+              raise SystemExit('handleInput block not found')
+          text = text.replace(old_handle, new_handle, 1)
+
+          old_save = '''    function saveRowsToCurrentSong(rows, persist = false) {
+      const song = currentSong(); if (!song) return;
+      song.rows = normalizeRows(rows, song.beatsPerMeasure);
+      song.tempo = getTempo();
+      song.capo = getCapo();
+      song.updatedAt = Date.now();
+      renderSongList();
+      renderLibraryGrid();
+    }
+'''
+          new_save = '''    function saveRowsToCurrentSong(rows, persist = false) {
+      const song = currentSong(); if (!song) return;
+      song.rows = normalizeRows(rows, song.beatsPerMeasure);
+      song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
+      song.tempo = getTempo();
+      song.capo = getCapo();
+      song.updatedAt = Date.now();
+      renderSongList();
+      renderLibraryGrid();
+    }
+'''
+          if old_save not in text:
+              raise SystemExit('saveRowsToCurrentSong block not found')
+          text = text.replace(old_save, new_save, 1)
+          core.write_text(text)
+
+          modules = Path('src/app-editor-modules.js')
+          modules_text = modules.read_text()
+          old_commit = "    song.rhythmRows = rhythmRows;\n"
+          new_commit = "    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));\n"
+          if old_commit not in modules_text:
+              raise SystemExit('commitStructure rhythm assignment not found')
+          modules.write_text(modules_text.replace(old_commit, new_commit, 1))
+          PY
+      - run: npm test
+      - run: npm run check
+      - run: npm run build
+      - name: Commit fix and remove temporary workflow
+        run: |
+          rm .github/workflows/tmp-sync-rhythm-from-tab.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/app-editor-core.js src/app-editor-modules.js .github/workflows/tmp-sync-rhythm-from-tab.yml
+          git commit -m "fix: keep TAB notes and rhythm data synchronized"
+          git push
