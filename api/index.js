@@ -29,6 +29,7 @@ const SONG_FIELD_ORDER = [
   'artist',
   'album',
   'cover',
+  'rowMeasureCounts',
   'rhythmRows',
   'rows'
 ];
@@ -336,7 +337,7 @@ function catalogMeta(song, file) {
   };
 }
 
-function cleanSongForWrite(song, meta) {
+export function cleanSongForWrite(song, meta) {
   const input = song && typeof song === 'object' && !Array.isArray(song) ? structuredClone(song) : {};
   const beatsPerMeasure = Number(input.beatsPerMeasure) === 3 ? 3 : 4;
   const defaults = {
@@ -349,12 +350,13 @@ function cleanSongForWrite(song, meta) {
     tuning: input.tuning ?? STANDARD_TUNING,
     source: String(input.source || ''),
     playStyle: input.playStyle === 'chord' ? 'chord' : input.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
-    difficulty: Number.isFinite(Number(input.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(input.difficulty)))) : 3,
+    difficulty: Number.isFinite(Number(input.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(input.difficulty)))) : undefined,
     createdAt: Number(input.createdAt) || Date.now(),
     updatedAt: Number(input.updatedAt) || Date.now(),
     artist: String(input.artist || ''),
     album: String(input.album || ''),
     cover: String(input.cover || ''),
+    rowMeasureCounts: Array.isArray(input.rowMeasureCounts) ? structuredClone(input.rowMeasureCounts) : undefined,
     rhythmRows: Array.isArray(input.rhythmRows) ? input.rhythmRows : [],
     rows: Array.isArray(input.rows) ? input.rows : []
   };
