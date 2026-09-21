@@ -54,11 +54,41 @@
     });
   }
 
+  function measureHasNotes(measure) {
+    return (measure?.notes || []).some(stringValues =>
+      (stringValues || []).some(value => String(value || '').trim() !== '')
+    );
+  }
+
+  function insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex, boundary, measure, replaceEmptyRow = false) {
+    if (rowIndex >= rows.length) {
+      rows.push(blankRow());
+      rhythmRows.push({});
+      counts.push(1);
+      writeMeasuresToRow(rows, rhythmRows, rowIndex, [measure]);
+      return;
+    }
+
+    const count = Math.max(1, Math.min(MEASURES, Number(counts[rowIndex]) || MEASURES));
+    const measures = activeMeasures(rows, rhythmRows, rowIndex, count);
+    if (replaceEmptyRow && measures.length === 1 && !measureHasNotes(measures[0])) {
+      measures[0] = measure;
+    } else {
+      const target = Math.max(0, Math.min(measures.length, boundary));
+      measures.splice(target, 0, measure);
+    }
+
+    const overflow = measures.length > MEASURES ? measures.pop() : null;
+    counts[rowIndex] = Math.max(1, measures.length);
+    writeMeasuresToRow(rows, rhythmRows, rowIndex, measures);
+    if (overflow) insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex + 1, 0, overflow, true);
+  }
+
   function commitStructure(rows, rhythmRows, counts, message) {
     const song = currentSong();
     if (!song || previewSong) return;
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = rhythmRows;
+    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
     song.rowMeasureCounts = Array.from(
       { length: song.rows.length },
       (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES))
@@ -94,16 +124,8 @@
       return;
     }
 
-    if (targetCount >= MEASURES) {
-      showToast('目標列已滿 4 個小節');
-      return;
-    }
-
     const sourceMeasures = activeMeasures(rows, rhythmRows, sourceRow, sourceCount);
-    const targetMeasures = activeMeasures(rows, rhythmRows, targetRow, targetCount);
     const [moved] = sourceMeasures.splice(sourceMeasure, 1);
-    const target = Math.max(0, Math.min(targetMeasures.length, targetBoundary));
-    targetMeasures.splice(target, 0, moved);
 
     if (sourceMeasures.length === 0) {
       sourceMeasures.push(blankMeasureModule());
@@ -111,10 +133,9 @@
     } else {
       counts[sourceRow] = sourceMeasures.length;
     }
-    counts[targetRow] = targetMeasures.length;
 
     writeMeasuresToRow(rows, rhythmRows, sourceRow, sourceMeasures);
-    writeMeasuresToRow(rows, rhythmRows, targetRow, targetMeasures);
+    insertMeasureWithOverflow(rows, rhythmRows, counts, targetRow, targetBoundary, moved, true);
     commitStructure(rows, rhythmRows, counts, '已移動小節模塊');
   }
 
