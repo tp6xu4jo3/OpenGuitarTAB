@@ -60,7 +60,7 @@
     );
   }
 
-  function insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex, boundary, measure, replaceEmptyRow = false) {
+  function insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex, boundary, measure) {
     if (rowIndex >= rows.length) {
       rows.push(blankRow());
       rhythmRows.push({});
@@ -71,7 +71,10 @@
 
     const count = Math.max(1, Math.min(MEASURES, Number(counts[rowIndex]) || MEASURES));
     const measures = activeMeasures(rows, rhythmRows, rowIndex, count);
-    if (replaceEmptyRow && measures.length === 1 && !measureHasNotes(measures[0])) {
+
+    // If the next row is only a generated blank placeholder, use that slot instead
+    // of pushing an extra empty measure through the rest of the song.
+    if (measures.length === 1 && !measureHasNotes(measures[0]) && boundary === 0) {
       measures[0] = measure;
     } else {
       const target = Math.max(0, Math.min(measures.length, boundary));
@@ -81,12 +84,16 @@
     const overflow = measures.length > MEASURES ? measures.pop() : null;
     counts[rowIndex] = Math.max(1, measures.length);
     writeMeasuresToRow(rows, rhythmRows, rowIndex, measures);
-    if (overflow) insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex + 1, 0, overflow, true);
+
+    if (overflow) insertMeasureWithOverflow(rows, rhythmRows, counts, rowIndex + 1, 0, overflow);
   }
 
-  function commitStructure(rows, rhythmRows, counts, message) {
+  function commitStructure(rows, counts, message) {
     const song = currentSong();
     if (!song || previewSong) return;
+
+    // Structural editing is local/in-memory. Drive is updated only when the user
+    // presses Save (or performs an explicit cloud action such as Publish).
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
     song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
     song.rowMeasureCounts = Array.from(
@@ -94,10 +101,8 @@
       (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES))
     );
     song.updatedAt = Date.now();
-    writeStorage();
+
     renderRows(song.rows);
-    renderSongList();
-    renderLibraryGrid();
     if (message) showToast(message);
   }
 
@@ -108,7 +113,6 @@
     if (!rows[sourceRow] || !rows[targetRow]) return;
 
     const sourceCount = counts[sourceRow];
-    const targetCount = counts[targetRow];
     if (sourceMeasure < 0 || sourceMeasure >= sourceCount) return;
 
     if (sourceRow === targetRow) {
@@ -120,7 +124,7 @@
       if (target === sourceMeasure) return;
       measures.splice(target, 0, moved);
       writeMeasuresToRow(rows, rhythmRows, sourceRow, measures);
-      commitStructure(rows, rhythmRows, counts, '已移動小節模塊');
+      commitStructure(rows, counts, '已移動小節');
       return;
     }
 
@@ -135,8 +139,8 @@
     }
 
     writeMeasuresToRow(rows, rhythmRows, sourceRow, sourceMeasures);
-    insertMeasureWithOverflow(rows, rhythmRows, counts, targetRow, targetBoundary, moved, true);
-    commitStructure(rows, rhythmRows, counts, '已移動小節模塊');
+    insertMeasureWithOverflow(rows, rhythmRows, counts, targetRow, targetBoundary, moved);
+    commitStructure(rows, counts, '已插入小節');
   }
 
   function moveRowAtBoundary(sourceIndex, insertionIndex) {
@@ -146,7 +150,7 @@
     if (!rows[sourceIndex]) return;
 
     const [row] = rows.splice(sourceIndex, 1);
-    const [rhythm] = rhythmRows.splice(sourceIndex, 1);
+    rhythmRows.splice(sourceIndex, 1);
     const [count] = counts.splice(sourceIndex, 1);
     let target = insertionIndex;
     if (sourceIndex < target) target -= 1;
@@ -154,9 +158,8 @@
     if (target === sourceIndex) return;
 
     rows.splice(target, 0, row);
-    rhythmRows.splice(target, 0, rhythm || {});
     counts.splice(target, 0, count || MEASURES);
-    commitStructure(rows, rhythmRows, counts, '已移動列模塊');
+    commitStructure(rows, counts, '已移動列');
   }
 
   function installVisualBoundaries() {
@@ -185,17 +188,11 @@
     for (const grid of document.querySelectorAll('.tab-grid[data-row]')) {
       const rect = grid.getBoundingClientRect();
       if (clientY < rect.top || clientY > rect.bottom || clientX < rect.left || clientX > rect.right) continue;
+
       const count = Number(grid.dataset.measureCount) || rowMeasureCount(Number(grid.dataset.row));
-      const beatPx = rect.width / (count * activeBeatsPerMeasure);
-      let best = null;
-      for (let boundary = 0; boundary <= count; boundary++) {
-        const x = rect.left + rect.width * (boundary / count);
-        const distance = Math.abs(clientX - x);
-        if (distance <= beatPx && (!best || distance < best.distance)) {
-          best = { grid, boundary, distance };
-        }
-      }
-      if (best) return best;
+      const relative = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const boundary = Math.max(0, Math.min(count, Math.round(relative * count)));
+      return { grid, boundary };
     }
     return null;
   }
@@ -233,19 +230,36 @@
     target.zone.classList.add('is-drag-target');
   }
 
+  function measureSourceFromTarget(target) {
+    const grip = target.closest?.('.measure-drag-grip');
+    if (grip) {
+      return {
+        type: 'measure',
+        sourceRow: Number(grip.dataset.row),
+        sourceMeasure: Number(grip.dataset.measure)
+      };
+    }
+
+    const measure = target.closest?.('.measure-module-hitbox');
+    if (!measure) return null;
+    return {
+      type: 'measure',
+      sourceRow: Number(measure.dataset.row),
+      sourceMeasure: Number(measure.dataset.measure)
+    };
+  }
+
   renderRows = function renderRowsWithBoundaries(rows) {
     previousRenderRows(rows);
     installVisualBoundaries();
   };
 
   document.addEventListener('dragstart', event => {
-    const measure = event.target.closest?.('.measure-module-hitbox');
-    if (measure && !scoreViewEnabled) {
-      dragState = {
-        type: 'measure',
-        sourceRow: Number(measure.dataset.row),
-        sourceMeasure: Number(measure.dataset.measure)
-      };
+    if (scoreViewEnabled) return;
+
+    const measureSource = measureSourceFromTarget(event.target);
+    if (measureSource) {
+      dragState = measureSource;
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', `measure:${dragState.sourceRow}:${dragState.sourceMeasure}`);
@@ -256,7 +270,7 @@
     }
 
     const rowHandle = event.target.closest?.('.row-module-handle');
-    if (rowHandle && !scoreViewEnabled) {
+    if (rowHandle) {
       dragState = { type: 'row', sourceRow: Number(rowHandle.dataset.row) };
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
@@ -270,12 +284,11 @@
   document.addEventListener('dragover', event => {
     if (!dragState) return;
     event.preventDefault();
-    event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 
     if (dragState.type === 'measure') {
       showMeasureBoundary(findMeasureBoundary(event.clientX, event.clientY));
-    } else if (dragState.type === 'row') {
+    } else {
       showRowBoundary(findRowBoundary(event.clientX, event.clientY));
     }
   }, true);
@@ -283,11 +296,15 @@
   document.addEventListener('drop', event => {
     if (!dragState) return;
     event.preventDefault();
-    event.stopPropagation();
 
     const state = dragState;
-    const measureTarget = activeMeasureTarget;
-    const rowTarget = activeRowTarget;
+    const measureTarget = state.type === 'measure'
+      ? (activeMeasureTarget || findMeasureBoundary(event.clientX, event.clientY))
+      : null;
+    const rowTarget = state.type === 'row'
+      ? (activeRowTarget || findRowBoundary(event.clientX, event.clientY))
+      : null;
+
     dragState = null;
     document.body.classList.remove('measure-drag-active', 'row-drag-active');
     clearFeedback();
@@ -302,9 +319,7 @@
       return;
     }
 
-    if (state.type === 'row' && rowTarget) {
-      moveRowAtBoundary(state.sourceRow, rowTarget.index);
-    }
+    if (state.type === 'row' && rowTarget) moveRowAtBoundary(state.sourceRow, rowTarget.index);
   }, true);
 
   document.addEventListener('dragend', () => {

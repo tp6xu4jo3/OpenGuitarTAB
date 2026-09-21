@@ -37,6 +37,8 @@ const EDITOR_SCRIPTS = [
   './src/app-editor-modules.js',
   './src/app-editor-insert-zones.js',
   './src/app-editor-row-controls.js',
+  './src/app-editor-drag-grip.js',
+  './src/app-editor-performance.js',
   './src/app-audio.js',
   './src/app-row-playback.js',
   './src/app-adaptive-measures.js',
