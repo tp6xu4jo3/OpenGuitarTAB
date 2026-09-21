@@ -70,6 +70,8 @@
     const observer = new MutationObserver(() => {
       if (rhythmToggleButton.isConnected && rhythmToggleButton.parentElement !== playPanel) playPanel.prepend(rhythmToggleButton);
     });
-    observer.observe(editorView, { childList: true, subtree: true });
+    // Only the play panel matters here. Watching the entire editor subtree also
+    // observed every rhythm mark redraw and caused unnecessary work while typing.
+    observer.observe(playPanel, { childList: true });
   }
 })();
