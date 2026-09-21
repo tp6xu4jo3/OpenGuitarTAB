@@ -44,7 +44,8 @@ const EDITOR_SCRIPTS = [
   './src/app-adaptive-measures.js',
   './src/app-score-layout.js',
   './src/app-density-fit-v2.js',
-  './src/app-playback.js'
+  './src/app-playback.js',
+  './src/app-editor-hotpath.js'
 ];
 
 const APP_SCRIPTS = [
