@@ -2,18 +2,19 @@ name: Temporary editor hotpath fix
 
 on:
   push:
-    branches: [fix/editor-hotpath]
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/editor-hotpath
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -25,55 +26,23 @@ jobs:
 
           p = Path('src/app-editor-modules.js')
           s = p.read_text()
-          s = s.replace("""  function commitStructure(rows, rhythmRows, counts, message) {
-    const song = currentSong();
-    if (!song || previewSong) return;
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts?.[index]) || MEASURES)));
-    song.updatedAt = Date.now();
-    writeStorage();
+          s = s.replace("""    writeStorage();
     renderRows(song.rows);
     renderSongList();
     renderLibraryGrid();
-    if (message) showToast(message);
-  }
-""", """  function commitStructure(rows, rhythmRows, counts, message) {
-    const song = currentSong();
-    if (!song || previewSong) return;
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts?.[index]) || MEASURES)));
-    song.updatedAt = Date.now();
-    // Structural edits stay local. Rebuilding the sidebar/library and serializing
-    // the whole library here made every insert/delete feel like a save operation.
-    renderRows(song.rows);
-    if (message) showToast(message);
-  }
-""")
+""", """    renderRows(song.rows);
+""", 1)
           s = s.replace("""  function deleteSelectedRow(rowIndex) {
     const rows = readRowsFromDom();
-    if (rows.length <= 1) { showToast('至少保留一列'); return; }
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
 """, """  function deleteSelectedRow(rowIndex) {
-    const song = currentSong();
-    const rows = deepClone(song?.rows || []);
-    if (rows.length <= 1) { showToast('至少保留一列'); return; }
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
+    const rows = deepClone(currentSong()?.rows || []);
 """)
           s = s.replace("""  function insertRowAt(index) {
     if (previewSong || scoreViewEnabled) return;
     const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
 """, """  function insertRowAt(index) {
     if (previewSong || scoreViewEnabled) return;
-    const song = currentSong();
-    const rows = deepClone(song?.rows || []);
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
+    const rows = deepClone(currentSong()?.rows || []);
 """)
           s = s.replace("""    normalized.forEach((_, rowIndex) => {
       tabArea.appendChild(createInsertZone(rowIndex));
@@ -104,8 +73,6 @@ jobs:
     fragment.appendChild(createInsertZone(normalized.length));
     tabArea.replaceChildren(fragment);
 
-    // Hydrate all inputs in one DOM pass. The previous nested getInput() loop ran
-    // a document.querySelector for every single TAB cell after every structural edit.
     tabArea.querySelectorAll('.note-input').forEach(input => {
       const rowIndex = Number(input.dataset.row);
       const string = Number(input.dataset.string);
@@ -131,202 +98,133 @@ jobs:
 
           p = Path('src/app-editor-row-controls.js')
           s = p.read_text()
-          s = s.replace("""  function commitRows(rows, rhythmRows, counts, message) {
-    const song = currentSong();
-    if (!song || previewSong) return;
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = rhythmRows;
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES)));
-    song.updatedAt = Date.now();
-    writeStorage();
+          s = s.replace("""    writeStorage();
     renderRows(song.rows);
     renderSongList();
     renderLibraryGrid();
-    if (message) showToast(message);
-  }
-""", """  function commitRows(rows, rhythmRows, counts, message) {
-    const song = currentSong();
-    if (!song || previewSong) return;
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = rhythmRows;
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES)));
-    song.updatedAt = Date.now();
-    renderRows(song.rows);
-    if (message) showToast(message);
-  }
+""", """    renderRows(song.rows);
 """)
           s = s.replace("""    const rows = readRowsFromDom();
     const rhythmRows = rhythmRowsFor(rows.length);
-""", """    const song = currentSong();
-    const rows = deepClone(song?.rows || []);
+""", """    const rows = deepClone(currentSong()?.rows || []);
     const rhythmRows = rhythmRowsFor(rows.length);
 """, 1)
           p.write_text(s)
 
-          # Replace the expensive document-level measure drag tracker with a cached,
-          # requestAnimationFrame-throttled version. Row dragging keeps the old path.
-          p = Path('src/app-editor-fast-drag.js')
-          p.write_text(r'''(() => {
-  let state = null;
-  let geometry = [];
-  let target = null;
-  let frame = 0;
-  let pendingPoint = null;
-  let activeBoundary = null;
+          Path('src/app-editor-fast-drag.js').write_text(r'''(() => {
+  let drag = null;
+  let grids = [];
+  let active = null;
+  let activeLine = null;
   let shifted = [];
+  let raf = 0;
+  let point = null;
 
-  function rhythmRowsFor(rowCount) {
-    const source = currentSong()?.rhythmRows;
-    return Array.from({ length: rowCount }, (_, index) => deepClone(source?.[index] || {}));
-  }
-
-  function countsFor(rowCount) {
+  const countsFor = n => {
     const counts = ensureRowMeasureCounts(currentSong());
-    return Array.from({ length: rowCount }, (_, index) => counts[index] || MEASURES);
-  }
+    return Array.from({ length: n }, (_, i) => counts[i] || MEASURES);
+  };
+  const rhythmRowsFor = n => Array.from({ length: n }, (_, i) => deepClone(currentSong()?.rhythmRows?.[i] || {}));
 
-  function extractMeasure(rows, rhythmRows, rowIndex, measureIndex) {
+  function extractMeasure(rows, rowIndex, measureIndex) {
     const width = slotsPerMeasure();
     const start = measureIndex * width;
-    const notes = Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, start + width));
-    const rhythm = {};
-    for (const [rawPosition, rawDuration] of Object.entries(rhythmRows[rowIndex] || {})) {
-      const position = Number(rawPosition);
-      if (position >= start && position < start + width) rhythm[position - start] = Number(rawDuration);
-    }
-    return { notes, rhythm };
+    return { notes: Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, start + width)) };
   }
-
-  function activeMeasures(rows, rhythmRows, rowIndex, count) {
-    return Array.from({ length: count }, (_, measureIndex) => extractMeasure(rows, rhythmRows, rowIndex, measureIndex));
+  function measuresFor(rows, rowIndex, count) {
+    return Array.from({ length: count }, (_, i) => extractMeasure(rows, rowIndex, i));
   }
-
-  function writeMeasuresToRow(rows, rhythmRows, rowIndex, measures) {
+  function writeMeasures(rows, rowIndex, measures) {
     const width = slotsPerMeasure();
     rows[rowIndex] = blankRow();
-    rhythmRows[rowIndex] = {};
-    measures.slice(0, MEASURES).forEach((measure, measureIndex) => {
-      const offset = measureIndex * width;
+    measures.slice(0, MEASURES).forEach((measure, mi) => {
       for (let string = 0; string < STRINGS; string++) {
         const values = measure.notes?.[string] || [];
-        for (let position = 0; position < width; position++) rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
+        for (let p = 0; p < width; p++) rows[rowIndex][string][mi * width + p] = normalizeTabValue(values[p]);
       }
     });
   }
-
-  function measureHasNotes(measure) {
-    return (measure?.notes || []).some(values => (values || []).some(value => String(value || '').trim() !== ''));
-  }
-
-  function insertWithOverflow(rows, rhythmRows, counts, rowIndex, boundary, measure, replaceEmpty = false) {
+  const hasNotes = measure => (measure?.notes || []).some(values => (values || []).some(value => String(value || '').trim()));
+  function cascadeInsert(rows, counts, rowIndex, boundary, measure, replaceEmpty = false) {
     if (rowIndex >= rows.length) {
       rows.push(blankRow());
-      rhythmRows.push({});
       counts.push(1);
-      writeMeasuresToRow(rows, rhythmRows, rowIndex, [measure]);
+      writeMeasures(rows, rowIndex, [measure]);
       return;
     }
     const count = Math.max(1, Math.min(MEASURES, Number(counts[rowIndex]) || MEASURES));
-    const measures = activeMeasures(rows, rhythmRows, rowIndex, count);
-    if (replaceEmpty && measures.length === 1 && !measureHasNotes(measures[0])) measures[0] = measure;
+    const measures = measuresFor(rows, rowIndex, count);
+    if (replaceEmpty && measures.length === 1 && !hasNotes(measures[0])) measures[0] = measure;
     else measures.splice(Math.max(0, Math.min(measures.length, boundary)), 0, measure);
     const overflow = measures.length > MEASURES ? measures.pop() : null;
     counts[rowIndex] = Math.max(1, measures.length);
-    writeMeasuresToRow(rows, rhythmRows, rowIndex, measures);
-    if (overflow) insertWithOverflow(rows, rhythmRows, counts, rowIndex + 1, 0, overflow, true);
+    writeMeasures(rows, rowIndex, measures);
+    if (overflow) cascadeInsert(rows, counts, rowIndex + 1, 0, overflow, true);
   }
-
   function clearVisual() {
-    activeBoundary?.classList.remove('is-active');
-    activeBoundary = null;
+    activeLine?.classList.remove('is-active');
+    activeLine = null;
     shifted.forEach(node => node.classList.remove('measure-insert-shift'));
     shifted = [];
   }
-
   function cacheGeometry() {
-    geometry = Array.from(document.querySelectorAll('.tab-grid[data-row]')).map(grid => {
-      const rect = grid.getBoundingClientRect();
+    grids = Array.from(document.querySelectorAll('.tab-grid[data-row]')).map(grid => {
+      const r = grid.getBoundingClientRect();
       const row = Number(grid.dataset.row);
       const count = Number(grid.dataset.measureCount) || rowMeasureCount(row);
-      return {
-        grid,
-        row,
-        count,
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-        bottom: rect.bottom,
-        boundaries: Array.from(grid.querySelectorAll('.measure-insert-boundary')),
-        hitboxes: Array.from(grid.querySelectorAll('.measure-module-hitbox'))
-      };
+      return { row, count, left:r.left, right:r.right, top:r.top, bottom:r.bottom,
+        boundaries:Array.from(grid.querySelectorAll('.measure-insert-boundary')),
+        hitboxes:Array.from(grid.querySelectorAll('.measure-module-hitbox')) };
     });
   }
-
   function targetAt(x, y) {
-    const item = geometry.find(g => y >= g.top && y <= g.bottom && x >= g.left && x <= g.right);
-    if (!item) return null;
-    const width = Math.max(1, item.right - item.left);
-    const ratio = Math.max(0, Math.min(1, (x - item.left) / width));
-    const boundary = Math.max(0, Math.min(item.count, Math.round(ratio * item.count)));
-    return { ...item, boundary };
+    const g = grids.find(item => y >= item.top && y <= item.bottom && x >= item.left && x <= item.right);
+    if (!g) return null;
+    const ratio = Math.max(0, Math.min(1, (x - g.left) / Math.max(1, g.right - g.left)));
+    return { ...g, boundary: Math.max(0, Math.min(g.count, Math.round(ratio * g.count))) };
   }
-
-  function renderTarget(next) {
-    if (target && next && target.row === next.row && target.boundary === next.boundary) return;
-    clearVisual();
-    target = next;
-    if (!next) return;
-    activeBoundary = next.boundaries.find(node => Number(node.dataset.boundary) === next.boundary) || null;
-    activeBoundary?.classList.add('is-active');
-    shifted = next.hitboxes.filter(hitbox => Number(hitbox.dataset.measure) >= next.boundary);
+  function showTarget(next) {
+    if (active && next && active.row === next.row && active.boundary === next.boundary) return;
+    clearVisual(); active = next; if (!next) return;
+    activeLine = next.boundaries.find(node => Number(node.dataset.boundary) === next.boundary) || null;
+    activeLine?.classList.add('is-active');
+    shifted = next.hitboxes.filter(node => Number(node.dataset.measure) >= next.boundary);
     shifted.forEach(node => node.classList.add('measure-insert-shift'));
   }
-
-  function scheduleTarget(x, y) {
-    pendingPoint = { x, y };
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      const point = pendingPoint;
-      pendingPoint = null;
-      if (point) renderTarget(targetAt(point.x, point.y));
-    });
+  function schedule(x, y) {
+    point = {x,y};
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; const p = point; point = null; if (p) showTarget(targetAt(p.x,p.y)); });
   }
-
   function commitMove() {
-    if (!state || !target) return;
+    if (!drag || !active) return;
     const song = currentSong();
     if (!song || previewSong) return;
     const rows = deepClone(song.rows || []);
-    const rhythmRows = rhythmRowsFor(rows.length);
     const counts = countsFor(rows.length);
-    const sourceRow = state.sourceRow;
-    const sourceMeasure = state.sourceMeasure;
-    if (!rows[sourceRow] || sourceMeasure < 0 || sourceMeasure >= counts[sourceRow]) return;
-
-    if (sourceRow === target.row) {
-      const measures = activeMeasures(rows, rhythmRows, sourceRow, counts[sourceRow]);
-      const [moved] = measures.splice(sourceMeasure, 1);
-      let insertAt = target.boundary;
-      if (sourceMeasure < insertAt) insertAt -= 1;
-      insertAt = Math.max(0, Math.min(measures.length, insertAt));
-      if (insertAt === sourceMeasure) return;
-      measures.splice(insertAt, 0, moved);
-      writeMeasuresToRow(rows, rhythmRows, sourceRow, measures);
+    if (!rows[drag.row] || drag.measure < 0 || drag.measure >= counts[drag.row]) return;
+    if (drag.row === active.row) {
+      const measures = measuresFor(rows, drag.row, counts[drag.row]);
+      const [moved] = measures.splice(drag.measure,1);
+      let at = active.boundary;
+      if (drag.measure < at) at--;
+      at = Math.max(0, Math.min(measures.length, at));
+      if (at === drag.measure) return;
+      measures.splice(at,0,moved);
+      writeMeasures(rows, drag.row, measures);
     } else {
-      const sourceMeasures = activeMeasures(rows, rhythmRows, sourceRow, counts[sourceRow]);
-      const [moved] = sourceMeasures.splice(sourceMeasure, 1);
-      if (sourceMeasures.length === 0) {
-        sourceMeasures.push({ notes: Array.from({ length: STRINGS }, () => Array(slotsPerMeasure()).fill('')), rhythm: {} });
-        counts[sourceRow] = 1;
-      } else counts[sourceRow] = sourceMeasures.length;
-      writeMeasuresToRow(rows, rhythmRows, sourceRow, sourceMeasures);
-      insertWithOverflow(rows, rhythmRows, counts, target.row, target.boundary, moved, true);
+      const source = measuresFor(rows, drag.row, counts[drag.row]);
+      const [moved] = source.splice(drag.measure,1);
+      if (!source.length) {
+        source.push({notes:Array.from({length:STRINGS},()=>Array(slotsPerMeasure()).fill(''))});
+        counts[drag.row]=1;
+      } else counts[drag.row]=source.length;
+      writeMeasures(rows, drag.row, source);
+      cascadeInsert(rows, counts, active.row, active.boundary, moved, true);
     }
-
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
     song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts[index]) || MEASURES)));
+    song.rowMeasureCounts = Array.from({length:song.rows.length},(_,i)=>Math.max(1,Math.min(MEASURES,Number(counts[i])||MEASURES)));
     song.updatedAt = Date.now();
     renderRows(song.rows);
     showToast('已移動小節');
@@ -336,51 +234,35 @@ jobs:
     const source = event.target.closest?.('.measure-drag-grip,.measure-module-hitbox');
     if (!source || scoreViewEnabled || previewSong) return;
     event.stopPropagation();
-    state = { sourceRow: Number(source.dataset.row), sourceMeasure: Number(source.dataset.measure) };
-    target = null;
+    drag = {row:Number(source.dataset.row),measure:Number(source.dataset.measure)};
+    active = null;
     clearVisual();
     cacheGeometry();
     document.body.classList.add('measure-drag-active');
     if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', `measure:${state.sourceRow}:${state.sourceMeasure}`);
+      event.dataTransfer.effectAllowed='move';
+      event.dataTransfer.setData('text/plain',`measure:${drag.row}:${drag.measure}`);
     }
   }, true);
-
   window.addEventListener('dragover', event => {
-    if (!state) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    scheduleTarget(event.clientX, event.clientY);
+    if (!drag) return;
+    event.preventDefault(); event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect='move';
+    schedule(event.clientX,event.clientY);
   }, true);
-
   window.addEventListener('drop', event => {
-    if (!state) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (frame) { cancelAnimationFrame(frame); frame = 0; }
-    if (pendingPoint) {
-      target = targetAt(pendingPoint.x, pendingPoint.y);
-      pendingPoint = null;
-    }
+    if (!drag) return;
+    event.preventDefault(); event.stopPropagation();
+    if (raf) { cancelAnimationFrame(raf); raf=0; }
+    if (point) { active=targetAt(point.x,point.y); point=null; }
     commitMove();
-    state = null;
-    target = null;
-    geometry = [];
-    clearVisual();
-    document.body.classList.remove('measure-drag-active');
+    drag=null; active=null; grids=[]; clearVisual(); document.body.classList.remove('measure-drag-active');
   }, true);
-
   window.addEventListener('dragend', () => {
-    if (!state) return;
-    state = null;
-    target = null;
-    geometry = [];
-    pendingPoint = null;
-    if (frame) { cancelAnimationFrame(frame); frame = 0; }
-    clearVisual();
-    document.body.classList.remove('measure-drag-active');
+    if (!drag) return;
+    drag=null; active=null; grids=[]; point=null;
+    if (raf) { cancelAnimationFrame(raf); raf=0; }
+    clearVisual(); document.body.classList.remove('measure-drag-active');
   }, true);
 })();
 ''')
@@ -388,19 +270,21 @@ jobs:
           p = Path('src/bootstrap.js')
           s = p.read_text()
           needle = "  './src/app-editor-drag-grip.js',\n  './src/app-editor-performance.js',"
-          replacement = "  './src/app-editor-drag-grip.js',\n  './src/app-editor-fast-drag.js',\n  './src/app-editor-performance.js',"
           if needle not in s:
             raise SystemExit('bootstrap insertion point not found')
-          p.write_text(s.replace(needle, replacement))
+          p.write_text(s.replace(needle, "  './src/app-editor-drag-grip.js',\n  './src/app-editor-fast-drag.js',\n  './src/app-editor-performance.js',"))
+
+          for name in ['noop.txt','tmp.txt','oops.txt','really.tmp','stop.tmp','why.tmp']:
+            Path(name).unlink(missing_ok=True)
           PY
       - run: npm test
       - run: npm run check
       - run: npm run build
-      - name: Commit fixes and remove temporary workflow
+      - name: Commit final patch and remove temporary workflow
         run: |
           rm .github/workflows/tmp-editor-hotpath.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "perf: optimize editor structure and drag hot paths"
-          git push origin HEAD:fix/editor-hotpath
+          git push origin HEAD:main
