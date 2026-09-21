@@ -6,6 +6,10 @@
 .measure-insert-boundary{position:absolute;top:0;bottom:0;width:0;z-index:12;pointer-events:none}
 .measure-insert-boundary::after{content:'';position:absolute;top:0;bottom:0;left:0;width:3px;border-radius:2px;background:#1ed760;transform:translateX(-50%);opacity:0;pointer-events:none}
 .measure-insert-boundary.is-active::after{opacity:1}
+.measure-drag-grip{position:absolute;top:-8px;z-index:14;width:28px;height:12px;transform:translateX(-50%);border-radius:999px;background:#8a8a8a;box-shadow:0 0 0 2px #fff;cursor:grab;opacity:.42;transition:opacity .12s ease,background .12s ease,transform .12s ease;user-select:none}
+.measure-drag-grip::after{content:'⋮⋮';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:8px;line-height:1;letter-spacing:-2px;transform:rotate(90deg)}
+.measure-drag-grip:hover,.measure-drag-grip:focus-visible{opacity:1;background:#1ed760;transform:translateX(-50%) scale(1.08);outline:none}
+.measure-drag-active .measure-drag-grip{opacity:.72}
 .row-drag-active .editor-row-module.drop-before,.row-drag-active .editor-row-module.drop-after{transform:none!important;box-shadow:none!important}
 .row-insert-zone.is-drag-target::after{content:'';position:absolute;left:96px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}
-@media(max-width:900px){.row-insert-zone.is-drag-target::after{left:78px}}
+@media(max-width:900px){.row-insert-zone.is-drag-target::after{left:78px}.measure-drag-grip{width:24px;height:10px;top:-6px}}
