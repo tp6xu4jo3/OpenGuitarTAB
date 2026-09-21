@@ -10,6 +10,51 @@
       return mark;
     }
 
+    function rhythmOnsetsFromRow(row, beats = activeBeatsPerMeasure) {
+      const positions = positionsPerRow(beats);
+      const measureSlots = slotsPerMeasure(beats);
+      const onsets = [];
+      for (let position = 0; position < positions; position++) {
+        let lowestString = -1;
+        for (let string = 0; string < STRINGS; string++) {
+          if (String(row?.[string]?.[position] ?? '').trim() !== '') lowestString = string;
+        }
+        if (lowestString >= 0) onsets.push({ position, duration: 1, lowestString });
+      }
+      onsets.forEach((onset, index) => {
+        const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
+        const next = onsets[index + 1];
+        onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
+      });
+      return onsets;
+    }
+
+    function rhythmRowFromRow(row, beats = activeBeatsPerMeasure) {
+      const rhythm = {};
+      rhythmOnsetsFromRow(row, beats).forEach(onset => { rhythm[onset.position] = onset.duration; });
+      return rhythm;
+    }
+
+    function readTabRowFromDom(rowIndex) {
+      const row = blankRow();
+      document.querySelectorAll(`.note-input[data-row="${rowIndex}"]`).forEach(input => {
+        const string = Number(input.dataset.string);
+        const position = Number(input.dataset.position);
+        if (!row[string] || position < 0 || position >= row[string].length) return;
+        row[string][position] = normalizeTabValue(input.value);
+      });
+      return row;
+    }
+
+    function syncRhythmRowFromDom(rowIndex) {
+      const song = currentSong();
+      if (!song || previewSong) return;
+      const rowCount = Math.max(song.rows?.length || 0, rowIndex + 1);
+      if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
+      while (song.rhythmRows.length < rowCount) song.rhythmRows.push({});
+      song.rhythmRows[rowIndex] = rhythmRowFromRow(readTabRowFromDom(rowIndex), song.beatsPerMeasure);
+    }
+
     function renderRhythmNotation(rowIndex) {
       const layer = document.querySelector(`.rhythm-layer[data-row="${rowIndex}"]`);
       if (!layer) return;
@@ -19,30 +64,9 @@
       const valueHeight = parseFloat(gridStyles.getPropertyValue('--value-height')) || 34;
       const stemEnd = parseFloat(gridStyles.getPropertyValue('--stem-end')) || 35;
       const staffHeight = rowHeight * STRINGS;
-      const onsets = [];
       const positions = positionsPerRow();
       const measureSlots = slotsPerMeasure();
-      const explicitRhythm = currentSong()?.rhythmRows?.[rowIndex];
-      if (explicitRhythm && Object.keys(explicitRhythm).length > 0) {
-        for (const [rawPosition, rawDuration] of Object.entries(explicitRhythm)) {
-          const position = Number(rawPosition);
-          if (position < 0 || position >= positions) continue;
-          const notes = getFilledInputsAt(rowIndex, position);
-          const lowestString = notes.length > 0 ? Math.max(...notes.map(input => Number(input.dataset.string))) : STRINGS - 1;
-          onsets.push({ position, duration: Number(rawDuration), lowestString });
-        }
-        onsets.sort((a, b) => a.position - b.position);
-      } else {
-        for (let position = 0; position < positions; position++) {
-          const notes = getFilledInputsAt(rowIndex, position);
-          if (notes.length > 0) onsets.push({ position, duration: 1, lowestString: Math.max(...notes.map(input => Number(input.dataset.string))) });
-        }
-        onsets.forEach((onset, index) => {
-          const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
-          const next = onsets[index + 1];
-          onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
-        });
-      }
+      const onsets = rhythmOnsetsFromRow(readTabRowFromDom(rowIndex), activeBeatsPerMeasure);
       onsets.forEach(onset => {
         const left = rhythmPositionPercent(onset.position);
         if (onset.duration < measureSlots || activeBeatsPerMeasure === 3) {
@@ -146,8 +170,10 @@
       const input = event.target;
       input.value = normalizeTabValue(input.value);
       input.classList.toggle('has-value', input.value.length > 0);
+      const rowIndex = Number(input.dataset.row);
+      syncRhythmRowFromDom(rowIndex);
       jumpToInput(input, false);
-      renderRhythmNotation(Number(input.dataset.row));
+      renderRhythmNotation(rowIndex);
       if (input.value.length === 2) focusRelative(input, 0, 1);
     }
 
@@ -205,6 +231,7 @@
     function saveRowsToCurrentSong(rows, persist = false) {
       const song = currentSong(); if (!song) return;
       song.rows = normalizeRows(rows, song.beatsPerMeasure);
+      song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
       song.tempo = getTempo();
       song.capo = getCapo();
       song.updatedAt = Date.now();

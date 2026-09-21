@@ -70,7 +70,7 @@
     const song = currentSong();
     if (!song || previewSong) return;
     song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = rhythmRows;
+    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
     song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts?.[index]) || MEASURES)));
     song.updatedAt = Date.now();
     writeStorage();
