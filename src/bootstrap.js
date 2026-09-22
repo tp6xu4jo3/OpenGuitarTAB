@@ -47,7 +47,8 @@ const EDITOR_SCRIPTS = [
   './src/app-density-fit-v2.js',
   './src/app-playback.js',
   './src/app-editor-drop-guard.js',
-  './src/app-editor-hotpath.js'
+  './src/app-editor-hotpath.js',
+  './src/app-row-clipboard.js'
 ];
 
 const APP_SCRIPTS = [
