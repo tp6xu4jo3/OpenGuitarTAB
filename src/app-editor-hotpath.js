@@ -3,17 +3,28 @@
   const fallbackRenderRows = renderRows;
   let rhythmRenderToken = 0;
 
-  function rowsSnapshot() {
-    const rows = currentSong()?.rows || [];
-    return rows.map(row => Array.from({ length: STRINGS }, (_, string) => {
-      const values = row?.[string];
-      return Array.isArray(values) ? values.slice() : [];
-    }));
+  function normalizedCount(value) {
+    const count = Number(value);
+    return Number.isInteger(count) ? Math.max(1, Math.min(MEASURES, count)) : MEASURES;
   }
 
-  function countsSnapshot(rowCount) {
-    const counts = ensureRowMeasureCounts(currentSong());
-    return Array.from({ length: rowCount }, (_, index) => counts[index] || MEASURES);
+  function cloneRow(row, beats = currentSong()?.beatsPerMeasure || activeBeatsPerMeasure) {
+    const positions = positionsPerRow(beats);
+    return Array.from({ length: STRINGS }, (_, string) => {
+      const source = Array.isArray(row?.[string]) ? row[string] : [];
+      const values = Array(positions).fill('');
+      for (let position = 0; position < Math.min(positions, source.length); position++) {
+        values[position] = normalizeTabValue(source[position]);
+      }
+      return values;
+    });
+  }
+
+  function ensureRhythmRows(song) {
+    if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
+    while (song.rhythmRows.length < song.rows.length) song.rhythmRows.push({});
+    if (song.rhythmRows.length > song.rows.length) song.rhythmRows.length = song.rows.length;
+    return song.rhythmRows;
   }
 
   function makeInsertZone(index) {
@@ -67,7 +78,10 @@
     system.dataset.centerKey = `row-${rowIndex}`;
     hydrateSystem(system, rowValues);
     const grid = system.querySelector('.tab-grid');
-    if (grid) installDragUi(grid, rowIndex);
+    if (grid) {
+      installDragUi(grid, rowIndex);
+      window.scheduleDensityFitGrid?.(grid, true);
+    }
     return system;
   }
 
@@ -103,9 +117,9 @@
     }
 
     stopPlayback();
-    const songRows = currentSong()?.rows;
-    const normalized = rows === songRows ? rows : normalizeRows(rows, activeBeatsPerMeasure);
-    ensureRowMeasureCounts(currentSong());
+    const song = currentSong();
+    const normalized = rows === song?.rows ? rows : normalizeRows(rows, activeBeatsPerMeasure);
+    ensureRowMeasureCounts(song);
     const rowCount = normalized.length;
     const safeStart = Math.max(0, Math.min(rowCount, Number(startIndex) || 0));
 
@@ -125,9 +139,6 @@
       return;
     }
 
-    // Keep all rows before the edit untouched. Rebuild only the affected tail so
-    // appending/removing the last row creates/removes one system instead of the
-    // entire editor DOM.
     let node = existingStartZone;
     while (node) {
       const next = node.nextSibling;
@@ -145,50 +156,66 @@
     finishStructureRender(rowCount, safeStart);
   }
 
-  renderRows = rows => renderRowsFast(rows, 0);
-
-  function commitRowsFast(rows, counts, message, startIndex = 0) {
+  function replaceRowFast(rowIndex) {
     const song = currentSong();
-    if (!song || previewSong) return;
-    const safeStart = Math.max(0, Math.min(rows.length, Number(startIndex) || 0));
-    const previousRhythm = Array.isArray(song.rhythmRows) ? song.rhythmRows : [];
+    if (!song || !song.rows?.[rowIndex]) return;
+    if (scoreViewEnabled || compactQuery.matches) {
+      fallbackRenderRows(song.rows);
+      return;
+    }
 
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = song.rows.map((row, index) => {
-      if (index < safeStart && previousRhythm[index]) return previousRhythm[index];
-      return rhythmRowFromRow(row, song.beatsPerMeasure);
-    });
-    song.rowMeasureCounts = Array.from(
-      { length: song.rows.length },
-      (_, index) => Math.max(1, Math.min(MEASURES, Number(counts?.[index]) || MEASURES))
-    );
-    song.updatedAt = Date.now();
-    renderRowsFast(song.rows, safeStart);
-    if (message) showToast(message);
+    const existing = tabArea.querySelector(`.tab-system[data-row="${rowIndex}"]`);
+    if (!existing) {
+      renderRowsFast(song.rows, rowIndex);
+      return;
+    }
+
+    const replacement = buildSystem(rowIndex, song.rows.length, song.rows[rowIndex]);
+    existing.replaceWith(replacement);
+    updateRemoveRowButton();
+    updateProgressRange();
+    setProgressIndex(Math.min(playIndex, Math.max(0, totalSlots() - 1)), true, true);
+    requestAnimationFrame(() => renderRhythmNotation(rowIndex));
   }
+
+  renderRows = rows => renderRowsFast(rows, 0);
 
   function insertRowFast(index) {
     if (previewSong || scoreViewEnabled) return;
-    const rows = rowsSnapshot();
-    const counts = countsSnapshot(rows.length);
-    const safe = Math.max(0, Math.min(rows.length, Number(index) || 0));
-    rows.splice(safe, 0, blankRow());
+    const song = currentSong();
+    if (!song || !Array.isArray(song.rows)) return;
+    const counts = ensureRowMeasureCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    const safe = Math.max(0, Math.min(song.rows.length, Number(index) || 0));
+
+    song.rows.splice(safe, 0, blankRow(song.beatsPerMeasure));
     counts.splice(safe, 0, MEASURES);
-    commitRowsFast(rows, counts, `已新增第 ${safe + 1} 列`, safe);
+    rhythms.splice(safe, 0, {});
+    song.updatedAt = Date.now();
+
+    renderRowsFast(song.rows, safe);
+    showToast(`已新增第 ${safe + 1} 列`);
   }
 
   function deleteRowFast(index) {
     if (previewSong || scoreViewEnabled) return;
-    const rows = rowsSnapshot();
-    if (rows.length <= 1) {
+    const song = currentSong();
+    if (!song || !Array.isArray(song.rows)) return;
+    if (song.rows.length <= 1) {
       showToast('至少保留一列');
       return;
     }
-    const safe = Math.max(0, Math.min(rows.length - 1, Number(index) || 0));
-    const counts = countsSnapshot(rows.length);
-    rows.splice(safe, 1);
+
+    const counts = ensureRowMeasureCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    const safe = Math.max(0, Math.min(song.rows.length - 1, Number(index) || 0));
+    song.rows.splice(safe, 1);
     counts.splice(safe, 1);
-    commitRowsFast(rows, counts, `已刪除第 ${safe + 1} 列`, safe);
+    rhythms.splice(safe, 1);
+    song.updatedAt = Date.now();
+
+    renderRowsFast(song.rows, safe);
+    showToast(`已刪除第 ${safe + 1} 列`);
   }
 
   addTabSystem = function fastAddTabSystem() {
@@ -200,73 +227,84 @@
     if (count > 1) deleteRowFast(count - 1);
   };
 
-  function measureFrom(rows, rowIndex, measureIndex) {
+  function measureFromRow(row, measureIndex) {
     const width = slotsPerMeasure();
     const start = measureIndex * width;
-    return { notes: Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, start + width)) };
+    return {
+      notes: Array.from({ length: STRINGS }, (_, string) =>
+        (Array.isArray(row?.[string]) ? row[string] : []).slice(start, start + width)
+      )
+    };
   }
 
-  function measuresFor(rows, rowIndex, count) {
-    return Array.from({ length: count }, (_, index) => measureFrom(rows, rowIndex, index));
+  function measuresForRow(row, count) {
+    return Array.from({ length: count }, (_, index) => measureFromRow(row, index));
   }
 
   function blankMeasure() {
     return { notes: Array.from({ length: STRINGS }, () => Array(slotsPerMeasure()).fill('')) };
   }
 
-  function writeMeasures(rows, rowIndex, measures) {
-    const width = slotsPerMeasure();
-    rows[rowIndex] = blankRow();
+  function rowFromMeasures(measures, beats = currentSong()?.beatsPerMeasure || activeBeatsPerMeasure) {
+    const width = slotsPerMeasure(beats);
+    const row = blankRow(beats);
     measures.slice(0, MEASURES).forEach((measure, measureIndex) => {
       const offset = measureIndex * width;
       for (let string = 0; string < STRINGS; string++) {
         const values = measure.notes?.[string] || [];
         for (let position = 0; position < width; position++) {
-          rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
+          row[string][offset + position] = normalizeTabValue(values[position]);
         }
       }
     });
+    return row;
+  }
+
+  function commitSingleRow(rowIndex, row, count, message) {
+    const song = currentSong();
+    if (!song || previewSong || !song.rows?.[rowIndex]) return;
+    const counts = ensureRowMeasureCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    song.rows[rowIndex] = row;
+    counts[rowIndex] = normalizedCount(count);
+    rhythms[rowIndex] = rhythmRowFromRow(row, song.beatsPerMeasure);
+    song.updatedAt = Date.now();
+    replaceRowFast(rowIndex);
+    if (message) showToast(message);
   }
 
   function insertMeasureFast(rowIndex, measureIndex) {
     if (previewSong || scoreViewEnabled) return;
-    const rows = rowsSnapshot();
-    if (!rows[rowIndex]) return;
-    const counts = countsSnapshot(rows.length);
-    const count = counts[rowIndex];
+    const song = currentSong();
+    if (!song?.rows?.[rowIndex]) return;
+    const count = rowMeasureCount(rowIndex, song);
     if (count >= MEASURES) {
       showToast('每列最多 4 個小節');
       return;
     }
-    const measures = measuresFor(rows, rowIndex, count);
+
+    const measures = measuresForRow(song.rows[rowIndex], count);
     const safe = Math.max(0, Math.min(count, Number(measureIndex) || 0));
     measures.splice(safe, 0, blankMeasure());
-    counts[rowIndex] = measures.length;
-    writeMeasures(rows, rowIndex, measures);
-    commitRowsFast(rows, counts, '已新增小節', rowIndex);
+    commitSingleRow(rowIndex, rowFromMeasures(measures, song.beatsPerMeasure), measures.length, '已新增小節');
   }
 
   function deleteMeasureFast(rowIndex, measureIndex) {
     if (previewSong || scoreViewEnabled) return;
-    const rows = rowsSnapshot();
-    if (!rows[rowIndex]) return;
-    const counts = countsSnapshot(rows.length);
-    const count = counts[rowIndex];
+    const song = currentSong();
+    if (!song?.rows?.[rowIndex]) return;
+    const count = rowMeasureCount(rowIndex, song);
     if (count <= 1) {
       showToast('每列至少保留 1 個小節');
       return;
     }
-    const measures = measuresFor(rows, rowIndex, count);
+
+    const measures = measuresForRow(song.rows[rowIndex], count);
     const safe = Math.max(0, Math.min(count - 1, Number(measureIndex) || 0));
     measures.splice(safe, 1);
-    counts[rowIndex] = measures.length;
-    writeMeasures(rows, rowIndex, measures);
-    commitRowsFast(rows, counts, '已刪除小節', rowIndex);
+    commitSingleRow(rowIndex, rowFromMeasures(measures, song.beatsPerMeasure), measures.length, '已刪除小節');
   }
 
-  // Intercept structural controls in capture phase. Several older modules bind
-  // handlers before the hot path is loaded, so replacing the global function alone
-  // does not replace those already-captured callbacks.
   window.addEventListener('click', event => {
     if (scoreViewEnabled || previewSong) return;
 
@@ -345,25 +383,84 @@
     );
   }
 
-  function cascadeInsert(rows, counts, rowIndex, boundary, measure, replaceEmpty = false) {
-    if (rowIndex >= rows.length) {
-      rows.push(blankRow());
-      counts.push(1);
-      writeMeasures(rows, rowIndex, [measure]);
+  function createWorkingState(song) {
+    const rows = new Map();
+    const counts = new Map();
+    const dirty = new Set();
+
+    return {
+      song,
+      rows,
+      counts,
+      dirty,
+      row(index) {
+        if (!rows.has(index)) {
+          const source = index < song.rows.length ? song.rows[index] : blankRow(song.beatsPerMeasure);
+          rows.set(index, cloneRow(source, song.beatsPerMeasure));
+        }
+        return rows.get(index);
+      },
+      count(index) {
+        if (!counts.has(index)) counts.set(index, index < song.rows.length ? rowMeasureCount(index, song) : 1);
+        return counts.get(index);
+      },
+      setRow(index, row, count) {
+        rows.set(index, row);
+        counts.set(index, normalizedCount(count));
+        dirty.add(index);
+      }
+    };
+  }
+
+  function cascadeInsertWorking(state, rowIndex, boundary, measure, replaceEmpty = false) {
+    if (rowIndex >= state.song.rows.length && !state.rows.has(rowIndex)) {
+      state.setRow(rowIndex, rowFromMeasures([measure], state.song.beatsPerMeasure), 1);
       return;
     }
 
-    const count = Math.max(1, Math.min(MEASURES, Number(counts[rowIndex]) || MEASURES));
-    const measures = measuresFor(rows, rowIndex, count);
+    const count = state.count(rowIndex);
+    const measures = measuresForRow(state.row(rowIndex), count);
     if (replaceEmpty && measures.length === 1 && !measureHasNotes(measures[0])) {
       measures[0] = measure;
     } else {
       measures.splice(Math.max(0, Math.min(measures.length, boundary)), 0, measure);
     }
+
     const overflow = measures.length > MEASURES ? measures.pop() : null;
-    counts[rowIndex] = Math.max(1, measures.length);
-    writeMeasures(rows, rowIndex, measures);
-    if (overflow) cascadeInsert(rows, counts, rowIndex + 1, 0, overflow, true);
+    state.setRow(rowIndex, rowFromMeasures(measures, state.song.beatsPerMeasure), Math.max(1, measures.length));
+    if (overflow) cascadeInsertWorking(state, rowIndex + 1, 0, overflow, true);
+  }
+
+  function commitWorkingRows(state, message) {
+    const song = state.song;
+    if (!state.dirty.size) return;
+    const counts = ensureRowMeasureCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    const oldLength = song.rows.length;
+    const dirty = Array.from(state.dirty).sort((a, b) => a - b);
+    const maxIndex = dirty[dirty.length - 1];
+
+    while (song.rows.length <= maxIndex) {
+      song.rows.push(blankRow(song.beatsPerMeasure));
+      counts.push(MEASURES);
+      rhythms.push({});
+    }
+
+    dirty.forEach(index => {
+      const row = state.rows.get(index);
+      if (!row) return;
+      song.rows[index] = row;
+      counts[index] = normalizedCount(state.counts.get(index));
+      rhythms[index] = rhythmRowFromRow(row, song.beatsPerMeasure);
+    });
+    song.updatedAt = Date.now();
+
+    if (song.rows.length !== oldLength) {
+      renderRowsFast(song.rows, Math.min(dirty[0], Math.max(0, oldLength - 1)));
+    } else {
+      dirty.forEach(replaceRowFast);
+    }
+    if (message) showToast(message);
   }
 
   function clearDragVisual() {
@@ -378,8 +475,6 @@
     const direct = pointed?.closest?.('.tab-grid[data-row]');
     if (direct) return direct;
 
-    // Fallback only for rare drag-image hit-testing cases. It is intentionally
-    // evaluated lazily instead of forcing layout for every row at drag start.
     for (const grid of tabArea.querySelectorAll('.tab-grid[data-row]')) {
       const rect = grid.getBoundingClientRect();
       if (y >= rect.top && y <= rect.bottom && x >= rect.left && x <= rect.right) return grid;
@@ -439,34 +534,35 @@
   function commitMeasureMove() {
     if (!drag || !activeTarget) return;
     const song = currentSong();
-    if (!song || previewSong) return;
-    const rows = rowsSnapshot();
-    const counts = countsSnapshot(rows.length);
-    if (!rows[drag.row] || drag.measure < 0 || drag.measure >= counts[drag.row]) return;
+    if (!song || previewSong || !song.rows?.[drag.row]) return;
+    const sourceCount = rowMeasureCount(drag.row, song);
+    if (drag.measure < 0 || drag.measure >= sourceCount) return;
 
     if (drag.row === activeTarget.row) {
-      const measures = measuresFor(rows, drag.row, counts[drag.row]);
+      const measures = measuresForRow(song.rows[drag.row], sourceCount);
       const [moved] = measures.splice(drag.measure, 1);
       let insertAt = activeTarget.boundary;
       if (drag.measure < insertAt) insertAt -= 1;
       insertAt = Math.max(0, Math.min(measures.length, insertAt));
       if (insertAt === drag.measure) return;
       measures.splice(insertAt, 0, moved);
-      writeMeasures(rows, drag.row, measures);
-    } else {
-      const sourceMeasures = measuresFor(rows, drag.row, counts[drag.row]);
-      const [moved] = sourceMeasures.splice(drag.measure, 1);
-      if (sourceMeasures.length === 0) {
-        sourceMeasures.push(blankMeasure());
-        counts[drag.row] = 1;
-      } else {
-        counts[drag.row] = sourceMeasures.length;
-      }
-      writeMeasures(rows, drag.row, sourceMeasures);
-      cascadeInsert(rows, counts, activeTarget.row, activeTarget.boundary, moved, true);
+      commitSingleRow(drag.row, rowFromMeasures(measures, song.beatsPerMeasure), measures.length, '已移動小節');
+      return;
     }
 
-    commitRowsFast(rows, counts, '已移動小節', Math.min(drag.row, activeTarget.row));
+    const state = createWorkingState(song);
+    const sourceMeasures = measuresForRow(state.row(drag.row), sourceCount);
+    const [moved] = sourceMeasures.splice(drag.measure, 1);
+    if (!moved) return;
+
+    if (sourceMeasures.length === 0) sourceMeasures.push(blankMeasure());
+    state.setRow(
+      drag.row,
+      rowFromMeasures(sourceMeasures, song.beatsPerMeasure),
+      Math.max(1, sourceMeasures.length)
+    );
+    cascadeInsertWorking(state, activeTarget.row, activeTarget.boundary, moved, true);
+    commitWorkingRows(state, '已移動小節');
   }
 
   function resetDragState() {
@@ -483,9 +579,6 @@
     document.body.classList.remove('measure-drag-active');
   }
 
-  // Run before the older document-level drag handlers. Do not pre-measure the
-  // whole score: only the grid under the pointer is measured, so hover feedback
-  // can appear immediately even on long songs.
   window.addEventListener('dragstart', event => {
     if (scoreViewEnabled || previewSong || compactQuery.matches) return;
     const source = event.target.closest?.('.measure-drag-grip,.measure-module-hitbox');
