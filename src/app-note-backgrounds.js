@@ -116,6 +116,9 @@
     tabArea.querySelectorAll('.tab-grid').forEach(syncGridBackgrounds);
   }
 
+  window.syncNoteInputBackground = syncInputBackground;
+  window.syncNoteGridBackgrounds = syncGridBackgrounds;
+
   const observer = new MutationObserver(mutations => {
     const dirtyGrids = new Set();
 
@@ -134,10 +137,6 @@
   observer.observe(tabArea, {
     subtree: true,
     childList: true
-  });
-
-  tabArea.addEventListener('input', event => {
-    if (event.target instanceof HTMLInputElement && event.target.classList.contains('note-input')) syncInputBackground(event.target);
   });
 
   syncAllBackgrounds();
