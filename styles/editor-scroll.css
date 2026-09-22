@@ -1,5 +1,11 @@
 .editor-view:not([hidden]){height:100vh;height:100dvh;min-height:0;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr)}
 .editor-view .editor-header{position:relative;top:auto}
 .editor-view>main{box-sizing:border-box;min-height:0;height:100%;padding:12px var(--editor-gutter,clamp(16px,3.2vw,42px)) 12px}
-.editor-view .sheet{box-sizing:border-box;height:100%;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.editor-view .sheet{box-sizing:border-box;height:100%;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#b9b9b9 transparent}
+.editor-view .sheet::-webkit-scrollbar{width:12px;height:12px}
+.editor-view .sheet::-webkit-scrollbar-track{background:transparent;margin:12px 0}
+.editor-view .sheet::-webkit-scrollbar-thumb{min-height:42px;border:3px solid transparent;border-radius:999px;background:#b9b9b9;background-clip:content-box}
+.editor-view .sheet::-webkit-scrollbar-thumb:hover{background:#8f8f8f;background-clip:content-box}
+.editor-view .sheet::-webkit-scrollbar-button{display:none;width:0;height:0}
+.editor-view .sheet::-webkit-scrollbar-corner{background:transparent}
 .editor-view .sheet>#tabArea{min-height:min-content}
