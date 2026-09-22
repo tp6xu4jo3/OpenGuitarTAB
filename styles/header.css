@@ -36,7 +36,7 @@
 .download-button { border: 1px solid #cfcfcf; background: #fff; color: #111; }
 .save-button:hover,.save-button:focus-visible { transform: translateY(-1px) scale(1.03); box-shadow: 0 14px 28px rgba(0,0,0,.18); outline: none; }
 .download-button:hover,.download-button:focus-visible { border-color: #111; outline: none; }
-.play-panel { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.play-panel { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: nowrap; }
 .tempo-box,.capo-box,.progress-box { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 999px; background: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.05); white-space: nowrap; }
 .tempo-box label,.capo-box label,.progress-label { font-size: 13px; color: #555; user-select: none; }
 #tempoInput,#capoInput { width: 72px; border: none; outline: none; text-align: center; font-size: 18px; font-weight: 750; color: #111; background: transparent; }
