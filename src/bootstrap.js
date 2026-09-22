@@ -35,6 +35,7 @@ const EDITOR_SCRIPTS = [
   './src/app-measure-lines.js',
   './src/app-editor-stability.js',
   './src/app-editor-modules.js',
+  './src/app-measure-clipboard.js',
   './src/app-editor-insert-zones.js',
   './src/app-editor-row-controls.js',
   './src/app-editor-drag-grip.js',
