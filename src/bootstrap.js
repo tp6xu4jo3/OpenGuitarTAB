@@ -45,6 +45,7 @@ const EDITOR_SCRIPTS = [
   './src/app-score-layout.js',
   './src/app-density-fit-v2.js',
   './src/app-playback.js',
+  './src/app-editor-drop-guard.js',
   './src/app-editor-hotpath.js'
 ];
 
