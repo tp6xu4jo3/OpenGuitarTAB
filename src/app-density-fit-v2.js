@@ -6,8 +6,11 @@
   const measureContext = measureCanvas.getContext('2d');
   const widthCache = new Map();
   const fitState = new WeakMap();
+  const dirtyGrids = new Set();
+  const forceGrids = new WeakSet();
   let scheduledFrame = 0;
-  let forceNextFit = false;
+  let forceAllNextFit = false;
+  let fitAllRequested = false;
   let observedSheetWidth = -1;
 
   function positionCountForGrid(grid) {
@@ -61,6 +64,7 @@
   }
 
   function fitGrid(grid, force = false) {
+    if (!(grid instanceof HTMLElement) || !grid.isConnected) return;
     const gridRect = grid.getBoundingClientRect();
     const positionCount = positionCountForGrid(grid);
     if (!gridRect.width || !positionCount) return;
@@ -142,23 +146,48 @@
     tabArea.querySelectorAll('.tab-grid').forEach(clearGrid);
   }
 
-  function fitAll(force = false) {
+  function flushFits() {
     scheduledFrame = 0;
-    const shouldForce = force || forceNextFit;
-    forceNextFit = false;
-    tabArea.querySelectorAll('.tab-grid').forEach(grid => fitGrid(grid, shouldForce));
+    if (fitAllRequested) {
+      const force = forceAllNextFit;
+      fitAllRequested = false;
+      forceAllNextFit = false;
+      dirtyGrids.clear();
+      tabArea.querySelectorAll('.tab-grid').forEach(grid => fitGrid(grid, force));
+      return;
+    }
+
+    const grids = Array.from(dirtyGrids);
+    dirtyGrids.clear();
+    grids.forEach(grid => fitGrid(grid, forceGrids.has(grid)));
   }
 
-  function scheduleFit(force = false) {
-    if (force) forceNextFit = true;
+  function ensureFrame() {
     if (scheduledFrame) return;
-    scheduledFrame = requestAnimationFrame(() => fitAll(forceNextFit));
+    scheduledFrame = requestAnimationFrame(flushFits);
   }
+
+  function scheduleGridFit(grid, force = false) {
+    if (!(grid instanceof HTMLElement)) return;
+    dirtyGrids.add(grid);
+    if (force) forceGrids.add(grid);
+    ensureFrame();
+  }
+
+  function scheduleFitAll(force = false) {
+    fitAllRequested = true;
+    if (force) forceAllNextFit = true;
+    ensureFrame();
+  }
+
+  window.fitDensityGrid = fitGrid;
+  window.scheduleDensityFitGrid = scheduleGridFit;
+  window.scheduleDensityFitAll = scheduleFitAll;
 
   const previousRenderRows = renderRows;
   renderRows = function renderRowsWithDensityFit(rows) {
     const result = previousRenderRows(rows);
-    scheduleFit(true);
+    scheduleFitAll(true);
     return result;
   };
 
@@ -166,13 +195,9 @@
   setScoreViewEnabled = function setScoreViewEnabledWithDensityFit(enabled) {
     const result = previousSetScoreViewEnabled(enabled);
     clearAll();
-    scheduleFit(true);
+    scheduleFitAll(true);
     return result;
   };
-
-  tabArea.addEventListener('input', event => {
-    if (event.target instanceof HTMLInputElement && event.target.classList.contains('note-input')) scheduleFit(false);
-  });
 
   const observedTarget = document.querySelector('.sheet') || tabArea;
   if (typeof ResizeObserver === 'function') {
@@ -180,12 +205,12 @@
       const width = entries[0]?.contentRect?.width;
       if (!Number.isFinite(width) || Math.abs(width - observedSheetWidth) < 0.5) return;
       observedSheetWidth = width;
-      scheduleFit(false);
+      scheduleFitAll(false);
     });
     resizeObserver.observe(observedTarget);
   } else {
-    window.addEventListener('resize', () => scheduleFit(false), { passive: true });
+    window.addEventListener('resize', () => scheduleFitAll(false), { passive: true });
   }
 
-  scheduleFit(true);
+  scheduleFitAll(true);
 })();
