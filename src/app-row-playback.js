@@ -1,31 +1,95 @@
 (() => {
-  totalSlots = function variableTotalSlots() {
-    const song = currentSong();
-    const rowCount = song?.rows?.length || document.querySelectorAll('.tab-grid[data-row]').length || 1;
-    let total = 0;
-    for (let row = 0; row < rowCount; row++) total += rowPositionCount(row, song);
-    return Math.max(1, total);
+  const baseUpdateProgressRange = updateProgressRange;
+  let playbackLayout = {
+    song: null,
+    rowCount: 0,
+    beatsPerMeasure: 0,
+    offsets: [0, 1],
+    total: 1
   };
 
-  slotToIndex = function variableSlotToIndex(row, position) {
-    const song = currentSong();
-    let index = 0;
-    for (let currentRow = 0; currentRow < row; currentRow++) index += rowPositionCount(currentRow, song);
-    index += Math.max(0, Math.min(rowPositionCount(row, song) - 1, Number(position) || 0));
-    return clamp(index, 0, totalSlots() - 1);
-  };
+  function logicalRowCount(song = currentSong()) {
+    return song?.rows?.length || document.querySelectorAll('.tab-grid[data-row]').length || 1;
+  }
 
-  indexToSlot = function variableIndexToSlot(index) {
-    const song = currentSong();
-    let remaining = clamp(Number(index) || 0, 0, totalSlots() - 1);
-    const rowCount = song?.rows?.length || 1;
+  function rebuildPlaybackLayout(song = currentSong()) {
+    const rowCount = logicalRowCount(song);
+    const offsets = new Array(rowCount + 1);
+    offsets[0] = 0;
     for (let row = 0; row < rowCount; row++) {
-      const positions = rowPositionCount(row, song);
-      if (remaining < positions) return { row, position: remaining };
-      remaining -= positions;
+      offsets[row + 1] = offsets[row] + rowPositionCount(row, song);
     }
-    const lastRow = Math.max(0, rowCount - 1);
-    return { row: lastRow, position: Math.max(0, rowPositionCount(lastRow, song) - 1) };
+    playbackLayout = {
+      song,
+      rowCount,
+      beatsPerMeasure: Number(song?.beatsPerMeasure) || activeBeatsPerMeasure,
+      offsets,
+      total: Math.max(1, offsets[rowCount] || 0)
+    };
+    return playbackLayout;
+  }
+
+  function ensurePlaybackLayout() {
+    const song = currentSong();
+    const rowCount = logicalRowCount(song);
+    const beatsPerMeasure = Number(song?.beatsPerMeasure) || activeBeatsPerMeasure;
+    if (
+      playbackLayout.song !== song ||
+      playbackLayout.rowCount !== rowCount ||
+      playbackLayout.beatsPerMeasure !== beatsPerMeasure
+    ) {
+      return rebuildPlaybackLayout(song);
+    }
+    return playbackLayout;
+  }
+
+  window.invalidateRowPlaybackLayout = function invalidateRowPlaybackLayout() {
+    playbackLayout.song = null;
+  };
+
+  totalSlots = function cachedVariableTotalSlots() {
+    return ensurePlaybackLayout().total;
+  };
+
+  slotToIndex = function cachedVariableSlotToIndex(row, position) {
+    const layout = ensurePlaybackLayout();
+    const safeRow = Math.max(0, Math.min(layout.rowCount - 1, Number(row) || 0));
+    const rowStart = layout.offsets[safeRow];
+    const rowEnd = layout.offsets[safeRow + 1];
+    const rowPositions = Math.max(1, rowEnd - rowStart);
+    const safePosition = Math.max(0, Math.min(rowPositions - 1, Number(position) || 0));
+    return clamp(rowStart + safePosition, 0, layout.total - 1);
+  };
+
+  indexToSlot = function cachedVariableIndexToSlot(index) {
+    const layout = ensurePlaybackLayout();
+    const cleanIndex = clamp(Number(index) || 0, 0, layout.total - 1);
+    let low = 0;
+    let high = layout.rowCount - 1;
+
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const start = layout.offsets[mid];
+      const end = layout.offsets[mid + 1];
+      if (cleanIndex < start) {
+        high = mid - 1;
+      } else if (cleanIndex >= end) {
+        low = mid + 1;
+      } else {
+        return { row: mid, position: cleanIndex - start };
+      }
+    }
+
+    const lastRow = Math.max(0, layout.rowCount - 1);
+    return {
+      row: lastRow,
+      position: Math.max(0, layout.offsets[lastRow + 1] - layout.offsets[lastRow] - 1)
+    };
+  };
+
+  updateProgressRange = function updateCachedProgressRange() {
+    rebuildPlaybackLayout();
+    return baseUpdateProgressRange();
   };
 
   highlightPlayhead = function variableHighlightPlayhead(row, position) {
