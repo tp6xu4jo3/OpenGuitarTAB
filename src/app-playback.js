@@ -1,4 +1,20 @@
-    function connectPluckedString(frequency, stringIndex, startTime, duration, destination) {
+    const PLUCK_BUFFER_CACHE_LIMIT = 48;
+    const pluckBufferCache = new Map();
+
+    function pluckBufferKey(frequency, stringIndex, duration) {
+      const sampleRate = audioContext?.sampleRate || 0;
+      return `${sampleRate}:${stringIndex}:${frequency.toFixed(4)}:${duration.toFixed(3)}`;
+    }
+
+    function cachedPluckBuffer(frequency, stringIndex, duration) {
+      const key = pluckBufferKey(frequency, stringIndex, duration);
+      const cached = pluckBufferCache.get(key);
+      if (cached) {
+        pluckBufferCache.delete(key);
+        pluckBufferCache.set(key, cached);
+        return cached;
+      }
+
       const isLowString = stringIndex >= 4;
       const sampleRate = audioContext.sampleRate;
       const frameCount = Math.max(1, Math.ceil((duration + 0.04) * sampleRate));
@@ -7,10 +23,12 @@
       const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
       const output = buffer.getChannelData(0);
       const damping = isLowString ? 0.9972 : 0.9958;
+
       for (let i = 0; i < delayLength; i++) {
         const pickPosition = i / delayLength;
         delayLine[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * pickPosition);
       }
+
       let cursor = 0;
       for (let i = 0; i < frameCount; i++) {
         const next = (cursor + 1) % delayLength;
@@ -19,8 +37,18 @@
         delayLine[cursor] = damping * 0.5 * (sample + delayLine[next]);
         cursor = next;
       }
+
+      pluckBufferCache.set(key, buffer);
+      if (pluckBufferCache.size > PLUCK_BUFFER_CACHE_LIMIT) {
+        const oldestKey = pluckBufferCache.keys().next().value;
+        pluckBufferCache.delete(oldestKey);
+      }
+      return buffer;
+    }
+
+    function connectPluckedString(frequency, stringIndex, startTime, duration, destination) {
       const source = audioContext.createBufferSource();
-      source.buffer = buffer;
+      source.buffer = cachedPluckBuffer(frequency, stringIndex, duration);
       source.connect(destination);
       source.start(startTime);
       source.stop(startTime + duration + 0.04);
@@ -61,9 +89,6 @@
       const sheetCenter = sheetRect.top + sheet.clientHeight / 2;
       const lineCenter = lineRect.top + lineRect.height / 2;
 
-      // Keep the opening lines where they naturally start. Once playback moves
-      // below the sheet's center line, follow one rendered TAB line at a time.
-      // If the user has manually scrolled past the playing line, recover it too.
       const shouldFollow = lineCenter > sheetCenter + 1 || lineRect.bottom < sheetRect.top;
       if (!shouldFollow) return;
 
@@ -73,15 +98,12 @@
       sheet.scrollTo({ top: nextScrollTop, behavior: 'smooth' });
     }
 
-    function playCurrentSlot(row, position) {
+    function playCurrentSlot(row, position, index = null) {
       const activeInput = getInput(row, 0, position) || document.querySelector(`.note-input[data-row="${row}"][data-position="${position}"]`);
       const playbackLine = activeInput?.closest('.tab-grid') || activeInput?.closest('.tab-system');
       const centerKey = playbackLine?.dataset.row !== undefined ? `row-${playbackLine.dataset.row}` : playbackLine?.closest('.tab-system')?.dataset.centerKey || `row-${row}`;
 
       if (playbackLine && centerKey !== lastCenteredPlaybackRow) {
-        // Let the follow helper decide whether movement is needed even on the
-        // first playback line. Starting from the top stays put naturally, while
-        // starting from a later progress position follows that line immediately.
         followPlaybackLineInSheet(playbackLine);
         lastCenteredPlaybackRow = centerKey;
       }
@@ -90,7 +112,7 @@
         const stringIndex = Number(input.dataset.string);
         if (!/^x$/i.test(input.value)) playGuitarNote(stringIndex, input.value);
       });
-      setProgressIndex(slotToIndex(row, position), true, true);
+      setProgressIndex(index === null ? slotToIndex(row, position) : index, true, true);
     }
 
     async function startPlayback() {
@@ -113,7 +135,7 @@
       const tick = () => {
         if (!isPlaying) return;
         const { row, position } = indexToSlot(playIndex);
-        playCurrentSlot(row, position);
+        playCurrentSlot(row, position, playIndex);
         if (playIndex >= totalSlots() - 1) {
           playbackTimer = window.setTimeout(() => stopPlayback(true, false), 60000 / getTempo());
           return;
