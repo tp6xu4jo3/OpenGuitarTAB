@@ -1,24 +1,29 @@
 (() => {
   const originalNormalizeSongRecord = normalizeSongRecord;
-  const originalCreateTabSystem = createTabSystem;
+
+  function normalizeCount(value) {
+    const count = Number(value);
+    return Number.isInteger(count) ? Math.max(1, Math.min(MEASURES, count)) : MEASURES;
+  }
 
   function normalizeCounts(rawCounts, rowCount) {
-    return Array.from({ length: rowCount }, (_, index) => {
-      const value = Number(rawCounts?.[index]);
-      return Number.isInteger(value) ? Math.max(1, Math.min(MEASURES, value)) : MEASURES;
-    });
+    return Array.from({ length: rowCount }, (_, index) => normalizeCount(rawCounts?.[index]));
   }
 
   window.ensureRowMeasureCounts = function ensureRowMeasureCounts(song = currentSong()) {
     if (!song) return [];
-    song.rowMeasureCounts = normalizeCounts(song.rowMeasureCounts, song.rows?.length || 1);
+    const rowCount = song.rows?.length || 1;
+    if (!Array.isArray(song.rowMeasureCounts) || song.rowMeasureCounts.length !== rowCount) {
+      song.rowMeasureCounts = normalizeCounts(song.rowMeasureCounts, rowCount);
+      return song.rowMeasureCounts;
+    }
+    for (let index = 0; index < rowCount; index++) song.rowMeasureCounts[index] = normalizeCount(song.rowMeasureCounts[index]);
     return song.rowMeasureCounts;
   };
 
   window.rowMeasureCount = function rowMeasureCount(rowIndex, song = currentSong()) {
     if (!song) return MEASURES;
-    const counts = normalizeCounts(song.rowMeasureCounts, song.rows?.length || 1);
-    return counts[rowIndex] || MEASURES;
+    return normalizeCount(song.rowMeasureCounts?.[rowIndex]);
   };
 
   window.rowPositionCount = function rowPositionCount(rowIndex, song = currentSong()) {
@@ -35,8 +40,113 @@
     return normalized;
   };
 
-  function rebuildBeatGuides(grid, measureCount) {
-    grid.querySelectorAll('.beat-guide').forEach(line => line.remove());
+  function createLeanInput({ rowIndex, string, position, originalStep = null, isSmall = false }) {
+    const input = document.createElement('input');
+    input.className = 'note-input';
+    if (!isSmall) {
+      const localStep = originalStep % stepsPerMeasure();
+      const shadeInterval = activeBeatsPerMeasure === 3 ? 3 : 2;
+      if (localStep % shadeInterval === 0) input.classList.add('odd-step');
+    }
+    if (isSmall) input.classList.add('small-step');
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.pattern = '[0-9xX]*';
+    input.maxLength = 2;
+    input.autocomplete = 'off';
+    input.ariaLabel = isSmall
+      ? `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，中間小輸入點 ${position + 1}`
+      : `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，第 ${originalStep + 1} 個原本輸入點`;
+    input.dataset.row = rowIndex;
+    input.dataset.string = string;
+    input.dataset.position = position;
+    if (originalStep !== null) input.dataset.step = originalStep;
+    input.dataset.size = isSmall ? 'small' : 'normal';
+    input.readOnly = scoreViewEnabled;
+    if (scoreViewEnabled) {
+      input.tabIndex = -1;
+      input.setAttribute('aria-readonly', 'true');
+    }
+    return input;
+  }
+
+  function appendEditorRowTools(system, rowIndex, rowCount) {
+    if (scoreViewEnabled) return;
+    const label = makeDiv('system-label');
+    const labelText = document.createElement('div');
+    labelText.textContent = `第 ${rowIndex + 1} 列`;
+    label.appendChild(labelText);
+
+    const tools = makeDiv('row-tool-group');
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'row-tool';
+    copyButton.textContent = '複製';
+    copyButton.addEventListener('click', () => copyRow(rowIndex));
+
+    const pasteButton = document.createElement('button');
+    pasteButton.type = 'button';
+    pasteButton.className = 'row-tool';
+    pasteButton.textContent = '貼上';
+    pasteButton.addEventListener('click', () => pasteRow(rowIndex));
+
+    const moveUpButton = document.createElement('button');
+    moveUpButton.type = 'button';
+    moveUpButton.className = 'row-tool';
+    moveUpButton.textContent = '↑';
+    moveUpButton.title = '與上一列交換';
+    moveUpButton.setAttribute('aria-label', `第 ${rowIndex + 1} 列與上一列交換`);
+    moveUpButton.disabled = rowIndex === 0;
+    moveUpButton.addEventListener('click', () => swapRow(rowIndex, rowIndex - 1));
+
+    const moveDownButton = document.createElement('button');
+    moveDownButton.type = 'button';
+    moveDownButton.className = 'row-tool';
+    moveDownButton.textContent = '↓';
+    moveDownButton.title = '與下一列交換';
+    moveDownButton.setAttribute('aria-label', `第 ${rowIndex + 1} 列與下一列交換`);
+    moveDownButton.disabled = rowIndex === rowCount - 1;
+    moveDownButton.addEventListener('click', () => swapRow(rowIndex, rowIndex + 1));
+
+    tools.append(copyButton, pasteButton, moveUpButton, moveDownButton);
+    label.appendChild(tools);
+    system.appendChild(label);
+  }
+
+  createTabSystem = function createVariableMeasureTabSystem(rowIndex, rowCount) {
+    const measureCount = rowMeasureCount(rowIndex);
+    const visibleSteps = measureCount * stepsPerMeasure();
+    const visiblePositions = measureCount * slotsPerMeasure();
+    const measureSteps = stepsPerMeasure();
+    const measureSlots = slotsPerMeasure();
+
+    const system = makeDiv('tab-system');
+    system.dataset.row = rowIndex;
+    appendEditorRowTools(system, rowIndex, rowCount);
+
+    const grid = makeDiv('tab-grid');
+    grid.dataset.row = rowIndex;
+    grid.dataset.measureCount = String(measureCount);
+    grid.dataset.positionStart = '0';
+    grid.dataset.positionCount = String(visiblePositions);
+    grid.style.setProperty('--steps', visibleSteps);
+    grid.style.width = `${measureCount * 25}%`;
+
+    for (let string = 0; string < STRINGS; string++) {
+      const line = makeDiv('string-line');
+      line.style.setProperty('--string-index', string);
+      grid.appendChild(line);
+    }
+
+    for (let measure = 0; measure <= measureCount; measure++) {
+      const line = makeDiv('measure-line');
+      line.style.setProperty('--measure-index', measure);
+      line.style.left = `${(measure / measureCount) * 100}%`;
+      if (measure === 0) line.classList.add('first');
+      if (measure === measureCount) line.classList.add('last');
+      grid.appendChild(line);
+    }
+
     const totalBeats = measureCount * activeBeatsPerMeasure;
     for (let guide = 1; guide < totalBeats; guide++) {
       if (guide % activeBeatsPerMeasure === 0) continue;
@@ -44,49 +154,43 @@
       line.style.setProperty('--guide-percent', `${(guide / totalBeats) * 100}%`);
       grid.appendChild(line);
     }
-  }
 
-  createTabSystem = function createVariableMeasureTabSystem(rowIndex, rowCount) {
-    const system = originalCreateTabSystem(rowIndex, rowCount);
-    const grid = system.querySelector('.tab-grid');
-    if (!grid) return system;
-
-    const measureCount = rowMeasureCount(rowIndex);
-    const visibleSteps = measureCount * stepsPerMeasure();
-    const visiblePositions = measureCount * slotsPerMeasure();
-    grid.dataset.measureCount = String(measureCount);
-    grid.style.setProperty('--steps', visibleSteps);
-    grid.style.width = `${measureCount * 25}%`;
-
-    grid.querySelectorAll('.cell').forEach(cell => {
-      const input = cell.querySelector('.note-input');
-      if (!input || Number(input.dataset.position) >= visiblePositions) cell.remove();
-    });
-
-    grid.querySelectorAll('.small-cell').forEach(cell => {
-      const input = cell.querySelector('.note-input');
-      if (!input || Number(input.dataset.position) >= visiblePositions) {
-        cell.remove();
-        return;
+    for (let string = 0; string < STRINGS; string++) {
+      for (let step = 0; step < visibleSteps; step++) {
+        const measure = Math.floor(step / measureSteps);
+        const localStep = step % measureSteps;
+        const position = measure * measureSlots + localStep * 2;
+        const cell = makeDiv('cell');
+        cell.style.gridColumn = step + 1;
+        cell.style.gridRow = string + 1;
+        cell.appendChild(createLeanInput({ rowIndex, string, position, originalStep: step, isSmall: false }));
+        grid.appendChild(cell);
       }
-      const position = Number(input.dataset.position);
-      const originalStep = Math.floor(position / 2);
-      cell.style.left = `${((originalStep + 1) / visibleSteps) * 100}%`;
-    });
+    }
 
-    const measureLines = Array.from(grid.querySelectorAll('.measure-line'));
-    measureLines.forEach(line => {
-      const index = Number(getComputedStyle(line).getPropertyValue('--measure-index'));
-      if (Number.isFinite(index) && index > measureCount) {
-        line.remove();
-        return;
+    for (let string = 0; string < STRINGS; string++) {
+      for (let measure = 0; measure < measureCount; measure++) {
+        for (let localStep = 0; localStep < measureSteps; localStep++) {
+          const absoluteOriginalStep = measure * measureSteps + localStep;
+          const cell = makeDiv('small-cell');
+          cell.style.left = `${((absoluteOriginalStep + 1) / visibleSteps) * 100}%`;
+          cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
+          cell.appendChild(createLeanInput({
+            rowIndex,
+            string,
+            position: measure * measureSlots + localStep * 2 + 1,
+            isSmall: true
+          }));
+          grid.appendChild(cell);
+        }
       }
-      line.classList.remove('last');
-      if (Number.isFinite(index)) line.style.left = `${(index / measureCount) * 100}%`;
-      if (index === measureCount) line.classList.add('last');
-    });
+    }
 
-    rebuildBeatGuides(grid, measureCount);
+    const rhythmLayer = makeDiv('rhythm-layer');
+    rhythmLayer.dataset.row = rowIndex;
+    rhythmLayer.setAttribute('aria-hidden', 'true');
+    grid.appendChild(rhythmLayer);
+    system.appendChild(grid);
     return system;
   };
 
