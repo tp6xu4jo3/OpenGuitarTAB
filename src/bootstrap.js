@@ -8,9 +8,11 @@ import {
   canDeleteSong
 } from './core/song-permissions.js';
 import { APP_CONFIG } from './config/app-config.js';
+import { installAudioEngine } from './editor/audio-engine.js';
 import { installEditorV3 } from './editor/controller.js';
 import { installGridLayoutAdapter } from './editor/grid-layout-adapter.js';
 import { installLegacyUiBridge } from './editor/legacy-ui-bridge.js';
+import { installPlaybackController } from './editor/playback-controller.js';
 import { installEditorPresentation } from './editor/presentation.js';
 import { installResponsiveScoreLayout } from './editor/responsive-score-layout.js';
 import { installStructureController } from './editor/structure-controller.js';
@@ -35,15 +37,6 @@ const RUNTIME_SCRIPTS = [
   './src/app-editor-core.js'
 ];
 
-const EDITOR_AUDIO_SCRIPTS = [
-  './src/app-audio.js',
-  './src/app-row-playback.js'
-];
-
-const EDITOR_PLAYBACK_SCRIPTS = [
-  './src/app-playback.js'
-];
-
 const APP_SCRIPTS = [
   './src/app-library.js',
   './src/app-catalog.js',
@@ -66,9 +59,9 @@ void cloudApi.catalog().catch(() => null);
 
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
 installGridLayoutAdapter();
-await loadClassicScriptsInOrder(EDITOR_AUDIO_SCRIPTS);
+installAudioEngine();
+installPlaybackController();
 installResponsiveScoreLayout();
-await loadClassicScriptsInOrder(EDITOR_PLAYBACK_SCRIPTS);
 installEditorPresentation();
 installLegacyUiBridge();
 installEditorV3();
