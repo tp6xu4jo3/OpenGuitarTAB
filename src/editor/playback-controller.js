@@ -1,8 +1,8 @@
 import { getAudioEngine } from './audio-engine.js';
+import { measureWidthsForGrid } from './grid-geometry.js';
+import { LEGACY_SLOTS_PER_BEAT } from './legacy-grid-compat.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
 import { buildPlaybackIndex, legacyPositionForEntry, nearestPlaybackIndex } from './playback-index.js';
-
-const SLOTS_PER_BEAT = 4;
 let installed = false;
 
 const state = {
@@ -96,17 +96,6 @@ function gridForEntry(entry) {
   }) || grids[0] || null;
 }
 
-function measureWidthsForGrid(grid) {
-  const count = Math.max(1, Number(grid?.dataset.measureCount) || 1);
-  const raw = String(grid?.dataset.measureWidths || '')
-    .split(',')
-    .map(Number)
-    .filter(Number.isFinite);
-  if (raw.length !== count || raw.some(value => value <= 0)) return Array(count).fill(100 / count);
-  const total = raw.reduce((sum, value) => sum + value, 0) || 100;
-  return raw.map(value => value / total * 100);
-}
-
 function playheadGeometry(entry, grid) {
   const startMeasure = Number(grid.dataset.measureStart) || 0;
   const widths = measureWidthsForGrid(grid);
@@ -118,7 +107,7 @@ function playheadGeometry(entry, grid) {
   const measureWidth = widths[localMeasure] || 100 / widths.length;
   return {
     left: measureLeft + measureWidth * withinMeasure,
-    width: Math.max(0.8, measureWidth / Math.max(16, entry.measureDurationBeats * SLOTS_PER_BEAT))
+    width: Math.max(0.8, measureWidth / Math.max(16, entry.measureDurationBeats * LEGACY_SLOTS_PER_BEAT))
   };
 }
 
@@ -155,7 +144,7 @@ function highlightEntry(entry) {
     state.currentNodes.forEach(node => node.classList.add('is-playing'));
   }
 
-  const legacyPosition = legacyPositionForEntry(entry, SLOTS_PER_BEAT);
+  const legacyPosition = legacyPositionForEntry(entry, LEGACY_SLOTS_PER_BEAT);
   if (Number.isInteger(legacyPosition)) {
     state.currentNodes = getInputsAt(entry.rowIndex, legacyPosition);
     state.currentNodes.forEach(node => node.classList.add('is-playing'));
@@ -207,12 +196,12 @@ function indexToSlot(index) {
   if (!entry) return { row: 0, position: 0 };
   return {
     row: entry.rowIndex,
-    position: Math.max(0, Math.round(legacyPositionForEntry(entry, SLOTS_PER_BEAT)))
+    position: Math.max(0, Math.round(legacyPositionForEntry(entry, LEGACY_SLOTS_PER_BEAT)))
   };
 }
 
 function slotToIndex(row, position) {
-  return nearestPlaybackIndex(ensureIndex(), row, position, SLOTS_PER_BEAT);
+  return nearestPlaybackIndex(ensureIndex(), row, position, LEGACY_SLOTS_PER_BEAT);
 }
 
 function setProgressIndex(index, updateSlider = true, highlight = true) {
@@ -256,7 +245,7 @@ function jumpToInput(input, highlight = true) {
 
 function highlightPlayhead(row, position) {
   const playback = ensureIndex();
-  highlightEntry(playback.entries[nearestPlaybackIndex(playback, row, position, SLOTS_PER_BEAT)] || null);
+  highlightEntry(playback.entries[nearestPlaybackIndex(playback, row, position, LEGACY_SLOTS_PER_BEAT)] || null);
 }
 
 function updatePlayButton(playing) {
