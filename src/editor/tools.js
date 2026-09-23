@@ -4,7 +4,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '泛音',
     glyph: '◇',
     target: 'note',
-    hint: '選取後點選要套用泛音的音符',
+    hint: '人工泛音：點選1品以上的音符，顯示左手品位與+12觸弦點',
     command(target) {
       return {
         type: 'note/technique/add',
@@ -18,7 +18,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '上刷',
     glyph: '↑',
     target: 'event',
-    hint: '選取後點選和弦或音符所在直欄',
+    hint: '點選同一時間位置的和弦，加入向上刷弦',
     command(target) {
       return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'up' } };
     }
@@ -28,19 +28,59 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '下刷',
     glyph: '↓',
     target: 'event',
-    hint: '選取後點選和弦或音符所在直欄',
+    hint: '點選同一時間位置的和弦，加入向下刷弦',
     command(target) {
       return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'down' } };
     }
   },
-  duration32: {
-    id: 'duration32',
-    label: '32分音',
-    glyph: '32',
+  arpeggioUp: {
+    id: 'arpeggioUp',
+    label: '向上琶音',
+    glyph: '≋↑',
     target: 'event',
-    hint: '選取後點選要改成32分音的時間位置',
+    hint: '點選同一時間位置的和弦，加入向上琶音',
     command(target) {
-      return { type: 'event/duration/set', eventId: target.eventId, duration: [1, 8] };
+      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'arpeggio', direction: 'up' } };
+    }
+  },
+  arpeggioDown: {
+    id: 'arpeggioDown',
+    label: '向下琶音',
+    glyph: '≋↓',
+    target: 'event',
+    hint: '點選同一時間位置的和弦，加入向下琶音',
+    command(target) {
+      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'arpeggio', direction: 'down' } };
+    }
+  },
+  arc: {
+    id: 'arc',
+    label: '弧線',
+    glyph: '⌒',
+    target: 'notePair',
+    hint: '依序點選兩個音符；同弦同品位建立延音，其餘建立圓滑線',
+    command(target) {
+      return {
+        type: 'relation/add',
+        relation: {
+          type: target.relationType === 'tie' ? 'tie' : 'slur',
+          fromNoteId: target.fromNoteId,
+          toNoteId: target.toNoteId
+        }
+      };
+    }
+  },
+  slide: {
+    id: 'slide',
+    label: '滑音',
+    glyph: '/',
+    target: 'notePair',
+    hint: '依序點選同一條弦、不同品位的兩個音符',
+    command(target) {
+      return {
+        type: 'relation/add',
+        relation: { type: 'slide', fromNoteId: target.fromNoteId, toNoteId: target.toNoteId }
+      };
     }
   },
   triplet: {
@@ -57,43 +97,14 @@ export const TOOL_DEFINITIONS = Object.freeze({
       };
     }
   },
-  slide: {
-    id: 'slide',
-    label: '滑音',
-    glyph: '/',
-    target: 'notePair',
-    hint: '選取後依序點選兩個音符',
+  duration32: {
+    id: 'duration32',
+    label: '32分音',
+    glyph: '32',
+    target: 'event',
+    hint: '選取後點選要改成32分音的時間位置',
     command(target) {
-      return {
-        type: 'relation/add',
-        relation: { type: 'slide', fromNoteId: target.fromNoteId, toNoteId: target.toNoteId }
-      };
-    }
-  },
-  tie: {
-    id: 'tie',
-    label: '延音線',
-    glyph: '⌒',
-    target: 'notePair',
-    hint: '選取後依序點選兩個音符',
-    command(target) {
-      return {
-        type: 'relation/add',
-        relation: { type: 'tie', fromNoteId: target.fromNoteId, toNoteId: target.toNoteId }
-      };
-    }
-  },
-  slur: {
-    id: 'slur',
-    label: '圓滑線',
-    glyph: '︵',
-    target: 'notePair',
-    hint: '選取後依序點選兩個音符',
-    command(target) {
-      return {
-        type: 'relation/add',
-        relation: { type: 'slur', fromNoteId: target.fromNoteId, toNoteId: target.toNoteId }
-      };
+      return { type: 'event/duration/set', eventId: target.eventId, duration: [1, 8] };
     }
   }
 });
