@@ -8,12 +8,16 @@ const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const gridRenderer = read('src/editor/grid-renderer.js');
 const layout = read('src/editor/layout.js');
+const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
 const stateSync = read('src/editor/state-sync.js');
 const structureController = read('src/editor/structure-controller.js');
+const toolSession = read('src/editor/tool-session.js');
+const tools = read('src/editor/tools.js');
 const viewState = read('src/editor/view-state.js');
 const appCatalog = read('src/app-catalog.js');
 const editorScroll = read('styles/editor-scroll.css');
+const editorTools = read('styles/editor-tools.css');
 
 for (const removed of [
   'legacy-ui-bridge',
@@ -26,7 +30,7 @@ for (const removed of [
   assert.equal(bootstrap.includes(removed), false, `bootstrap must not restore ${removed}`);
 }
 
-for (const moduleName of ['input-controller.js', 'state-sync.js', 'view-state.js', 'notation-renderer.js']) {
+for (const moduleName of ['input-controller.js', 'state-sync.js', 'tool-session.js', 'view-state.js', 'notation-renderer.js']) {
   assert.equal(controller.includes(`./${moduleName}`), true, `controller must compose ${moduleName}`);
 }
 
@@ -35,6 +39,7 @@ for (const moduleName of [
   'src/editor/layout.js',
   'src/editor/notation-renderer.js',
   'src/editor/song-actions.js',
+  'src/editor/tool-session.js',
   'src/editor/README.md',
   'src/library/song-import.js'
 ]) {
@@ -77,6 +82,24 @@ assert.ok(editorScroll.includes('*::-webkit-scrollbar-button'), 'all WebKit scro
 assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
 assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');
 assert.equal(playbackController.includes('stopImmediatePropagation'), false, 'playback controller must not intercept unrelated handlers');
+assert.equal(controller.includes("addEventListener('dragstart'"), false, 'tool controller must not restore dragstart');
+assert.equal(controller.includes("addEventListener('dragover'"), false, 'tool controller must not restore dragover');
+assert.equal(controller.includes("addEventListener('drop'"), false, 'tool controller must not restore tool drop');
+assert.equal(controller.includes('draggable = true'), false, 'tool buttons must be click-only');
+assert.equal(tools.includes('EDITOR_TOOL_MIME'), false, 'tool registry must not keep drag payload MIME state');
+assert.equal(tools.includes('writeToolDragData'), false, 'tool registry must not keep drag writers');
+assert.equal(tools.includes('readToolDragData'), false, 'tool registry must not keep drag readers');
+for (const targetKind of ['NoteTarget', 'ColumnTarget', 'NotePairTarget', 'RangeTarget']) {
+  assert.equal(toolSession.includes(targetKind), true, `ToolSession must support ${targetKind}`);
+}
+assert.equal(controller.includes("event.key !== 'Escape'"), true, 'Escape must cancel the active tool');
+assert.equal(controller.includes('ArrowLeft'), false, 'tool controller must leave arrow navigation to input-controller');
+assert.equal(controller.includes('ArrowRight'), false, 'tool controller must leave arrow navigation to input-controller');
+assert.equal(editorTools.includes('position: sticky'), true, 'tool palette must stay visible while the score scrolls');
+assert.equal(editorTools.includes('.editor-toolbox.is-collapsed'), true, 'tool palette must support collapse mode');
+assert.equal(editorTools.includes('cursor: grab'), false, 'tool palette must not advertise drag interaction');
+assert.equal(notationRenderer.includes('delete input.dataset.measureId'), false, 'notation sync must preserve measure/time metadata for empty column and range targets');
+
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');

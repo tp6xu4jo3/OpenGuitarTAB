@@ -4,7 +4,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '泛音',
     glyph: '◇',
     target: 'note',
-    hint: '套用人工泛音',
+    hint: '選取後點選要套用泛音的音符',
     command(target) {
       return {
         type: 'note/technique/add',
@@ -18,7 +18,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '上刷',
     glyph: '↑',
     target: 'event',
-    hint: '拖到和弦或音符事件',
+    hint: '選取後點選和弦或音符所在直欄',
     command(target) {
       return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'up' } };
     }
@@ -28,7 +28,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '下刷',
     glyph: '↓',
     target: 'event',
-    hint: '拖到和弦或音符事件',
+    hint: '選取後點選和弦或音符所在直欄',
     command(target) {
       return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'down' } };
     }
@@ -38,7 +38,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '32分音',
     glyph: '32',
     target: 'event',
-    hint: '拖到要改成32分音的事件',
+    hint: '選取後點選要改成32分音的時間位置',
     command(target) {
       return { type: 'event/duration/set', eventId: target.eventId, duration: [1, 8] };
     }
@@ -48,7 +48,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '三連音',
     glyph: '3',
     target: 'eventRange',
-    hint: '拖到三連音第一個音；會取同小節連續3個事件',
+    hint: '選取後依序點選同小節的範圍起點與終點',
     command(target) {
       return {
         type: 'group/add',
@@ -62,7 +62,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '滑音',
     glyph: '/',
     target: 'notePair',
-    hint: '依序選兩個音符',
+    hint: '選取後依序點選兩個音符',
     command(target) {
       return {
         type: 'relation/add',
@@ -75,7 +75,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '延音線',
     glyph: '⌒',
     target: 'notePair',
-    hint: '依序選兩個音符',
+    hint: '選取後依序點選兩個音符',
     command(target) {
       return {
         type: 'relation/add',
@@ -88,7 +88,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '圓滑線',
     glyph: '︵',
     target: 'notePair',
-    hint: '依序選兩個音符',
+    hint: '選取後依序點選兩個音符',
     command(target) {
       return {
         type: 'relation/add',
@@ -142,28 +142,4 @@ export class ToolRegistry {
     if (!definition) throw new Error(`UNKNOWN_EDITOR_TOOL:${toolId}`);
     return definition.command(target || {}, options);
   }
-}
-
-export const EDITOR_TOOL_MIME = 'application/x-openguitartab-tool';
-
-export function writeToolDragData(dataTransfer, toolId, options = {}) {
-  if (!dataTransfer) return;
-  const payload = JSON.stringify({ toolId: String(toolId), options });
-  dataTransfer.setData(EDITOR_TOOL_MIME, payload);
-  dataTransfer.setData('text/plain', `tool:${toolId}`);
-  dataTransfer.effectAllowed = 'copy';
-}
-
-export function readToolDragData(dataTransfer) {
-  if (!dataTransfer) return null;
-  const raw = dataTransfer.getData(EDITOR_TOOL_MIME);
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed?.toolId) return parsed;
-    } catch {}
-  }
-  const fallback = dataTransfer.getData('text/plain');
-  if (fallback?.startsWith('tool:')) return { toolId: fallback.slice(5), options: {} };
-  return null;
 }

@@ -3,6 +3,7 @@ import { applyCommand } from '../src/editor/commands.js';
 import { createDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
 import { documentToLegacyProjection, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
+import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from '../src/editor/tool-session.js';
 import { eventRangeFromEvent, ToolRegistry } from '../src/editor/tools.js';
 
 function idFactory() {
@@ -22,9 +23,66 @@ const expectedTargets = {
   slur: 'notePair'
 };
 
+const expectedTargetKinds = {
+  harmonic: TOOL_TARGET_KINDS.NOTE,
+  strumUp: TOOL_TARGET_KINDS.COLUMN,
+  strumDown: TOOL_TARGET_KINDS.COLUMN,
+  duration32: TOOL_TARGET_KINDS.COLUMN,
+  triplet: TOOL_TARGET_KINDS.RANGE,
+  slide: TOOL_TARGET_KINDS.NOTE_PAIR,
+  tie: TOOL_TARGET_KINDS.NOTE_PAIR,
+  slur: TOOL_TARGET_KINDS.NOTE_PAIR
+};
+
 for (const [toolId, target] of Object.entries(expectedTargets)) {
   assert.equal(definitions.get(toolId)?.target, target, `${toolId} target must stay stable`);
+  assert.equal(toolTargetKind(definitions.get(toolId)), expectedTargetKinds[toolId], `${toolId} must map to the V3 target kind`);
   assert.ok(definitions.get(toolId)?.label, `${toolId} must expose palette metadata`);
+  assert.equal(definitions.get(toolId)?.hint.includes('拖'), false, `${toolId} hint must describe click interaction`);
+}
+
+{
+  const session = new ToolSession();
+  session.activate('harmonic', TOOL_TARGET_KINDS.NOTE);
+  assert.equal(session.snapshot().state, 'selected');
+  const result = session.select({ noteId: 'n-1' });
+  assert.deepEqual(result, { status: 'complete', target: { noteId: 'n-1' } });
+  assert.equal(session.snapshot().toolId, 'harmonic', 'session stays active until the command succeeds');
+  session.commitSuccess();
+  assert.equal(session.snapshot().state, 'idle');
+
+  session.activate('harmonic', TOOL_TARGET_KINDS.NOTE);
+  session.activate('harmonic', TOOL_TARGET_KINDS.NOTE);
+  assert.equal(session.snapshot().state, 'idle', 'clicking the active tool again cancels it');
+}
+
+{
+  const session = new ToolSession();
+  session.activate('slide', TOOL_TARGET_KINDS.NOTE_PAIR);
+  assert.equal(session.select({ noteId: 'n-a' }).status, 'pending');
+  assert.equal(session.snapshot().state, 'selecting-target');
+  assert.equal(session.select({ noteId: 'n-a' }).reason, 'same-note');
+  assert.deepEqual(session.select({ noteId: 'n-b' }).target, {
+    fromNoteId: 'n-a',
+    toNoteId: 'n-b'
+  });
+  assert.equal(session.snapshot().firstTarget.noteId, 'n-a', 'failed or uncommitted pair selection must retain the first target');
+  session.commitSuccess();
+  assert.equal(session.snapshot().state, 'idle');
+}
+
+{
+  const session = new ToolSession();
+  session.activate('triplet', TOOL_TARGET_KINDS.RANGE);
+  assert.equal(session.select({ measureId: 'm-1', at: [2, 1] }).status, 'pending');
+  assert.equal(session.select({ measureId: 'm-2', at: [3, 1] }).reason, 'same-measure-required');
+  assert.equal(session.select({ measureId: 'm-1', at: [2, 1] }).reason, 'different-position-required');
+  assert.deepEqual(session.select({ measureId: 'm-1', at: [1, 1] }).target, {
+    measureId: 'm-1',
+    startAt: [1, 1],
+    endAt: [2, 1]
+  });
+  assert.deepEqual(session.snapshot().firstTarget, { measureId: 'm-1', at: [2, 1] });
 }
 
 {
