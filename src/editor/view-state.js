@@ -19,6 +19,7 @@ function syncModeUi(active) {
   const toggle = document.getElementById('rhythmToggleButton');
   if (!editorView || !toggle) return;
 
+  window.scoreViewEnabled = Boolean(active);
   editorView.classList.toggle('edit-view', !active);
   editorView.classList.toggle('score-view', active);
   toggle.setAttribute('aria-pressed', String(active));
@@ -31,16 +32,15 @@ function syncModeUi(active) {
   );
 }
 
+export function setScoreViewEnabled(enabled) {
+  const active = Boolean(enabled);
+  syncModeUi(active);
+  return active;
+}
+
 export function installViewState() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
-
-  const baseSetScoreViewEnabled = window.setScoreViewEnabled;
-  window.setScoreViewEnabled = enabled => {
-    const active = Boolean(enabled);
-    baseSetScoreViewEnabled?.(active);
-    syncModeUi(active);
-  };
-
-  syncModeUi(isScoreViewActive());
+  window.setScoreViewEnabled = setScoreViewEnabled;
+  syncModeUi(typeof window.scoreViewEnabled === 'boolean' ? window.scoreViewEnabled : isScoreViewActive());
 }
