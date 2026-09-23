@@ -1,193 +1,163 @@
 (() => {
   let selectedModule = null;
-  let moduleClipboard = null;
   let contextTarget = null;
 
   const originalCreateTabSystem = createTabSystem;
   const originalRenderRows = renderRows;
 
-  function currentRhythmRows(rowCount) {
-    const source = currentSong()?.rhythmRows;
-    return Array.from({ length: rowCount }, (_, index) => deepClone(source?.[index] || {}));
-  }
-
-  function currentCounts(rowCount) {
-    const song = currentSong();
-    const counts = ensureRowMeasureCounts(song);
-    return Array.from({ length: rowCount }, (_, index) => counts[index] || MEASURES);
+  function focusSelectedNode(node) {
+    if (!node) return;
+    node.tabIndex = -1;
+    try { node.focus({ preventScroll: true }); } catch { node.focus(); }
   }
 
   function setSelectedModule(type, rowIndex, measureIndex = null) {
     selectedModule = { type, rowIndex, measureIndex };
     document.querySelectorAll('.editor-row-module.is-selected,.measure-module-hitbox.is-selected').forEach(node => node.classList.remove('is-selected'));
-    if (type === 'row') document.querySelector(`.editor-row-module[data-row="${rowIndex}"]`)?.classList.add('is-selected');
-    else document.querySelector(`.measure-module-hitbox[data-row="${rowIndex}"][data-measure="${measureIndex}"]`)?.classList.add('is-selected');
+    const node = type === 'row'
+      ? document.querySelector(`.editor-row-module[data-row="${rowIndex}"]`)
+      : document.querySelector(`.measure-module-hitbox[data-row="${rowIndex}"][data-measure="${measureIndex}"]`);
+    node?.classList.add('is-selected');
+    focusSelectedNode(type === 'row' ? node?.querySelector('.row-module-handle') || node : node);
   }
 
   function clearDragVisuals() {
     document.querySelectorAll('.is-dragging').forEach(node => node.classList.remove('is-dragging'));
   }
 
-  function blankMeasureModule() {
-    const width = slotsPerMeasure();
-    return { notes: Array.from({ length: STRINGS }, () => Array(width).fill('')), rhythm: {} };
+  function ensureRhythmRows(song) {
+    if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
+    while (song.rhythmRows.length < song.rows.length) song.rhythmRows.push({});
+    if (song.rhythmRows.length > song.rows.length) song.rhythmRows.length = song.rows.length;
+    return song.rhythmRows;
   }
 
-  function extractMeasure(rows, rhythmRows, rowIndex, measureIndex) {
-    const width = slotsPerMeasure();
+  function currentCounts(song) {
+    return ensureRowMeasureCounts(song);
+  }
+
+  function cloneMeasure(row, measureIndex, beats = activeBeatsPerMeasure) {
+    const width = slotsPerMeasure(beats);
     const start = measureIndex * width;
-    const notes = Array.from({ length: STRINGS }, (_, string) => rows[rowIndex][string].slice(start, start + width));
-    const rhythm = {};
-    for (const [rawPosition, rawDuration] of Object.entries(rhythmRows[rowIndex] || {})) {
-      const position = Number(rawPosition);
-      if (position >= start && position < start + width) rhythm[position - start] = Number(rawDuration);
-    }
-    return { notes, rhythm };
+    return Array.from({ length: STRINGS }, (_, string) =>
+      Array.from({ length: width }, (_, offset) => normalizeTabValue(row?.[string]?.[start + offset] ?? ''))
+    );
   }
 
-  function activeMeasuresForRow(rows, rhythmRows, rowIndex, count = rowMeasureCount(rowIndex)) {
-    return Array.from({ length: count }, (_, measureIndex) => extractMeasure(rows, rhythmRows, rowIndex, measureIndex));
-  }
-
-  function writeMeasuresToRow(rows, rhythmRows, rowIndex, measures) {
-    const width = slotsPerMeasure();
-    rows[rowIndex] = blankRow();
-    rhythmRows[rowIndex] = {};
+  function rowFromMeasures(measures, beats = activeBeatsPerMeasure) {
+    const width = slotsPerMeasure(beats);
+    const row = blankRow(beats);
     measures.slice(0, MEASURES).forEach((measure, measureIndex) => {
       const offset = measureIndex * width;
       for (let string = 0; string < STRINGS; string++) {
-        const values = measure.notes?.[string] || [];
-        for (let position = 0; position < width; position++) rows[rowIndex][string][offset + position] = normalizeTabValue(values[position]);
-      }
-      for (const [rawPosition, rawDuration] of Object.entries(measure.rhythm || {})) {
-        const localPosition = Number(rawPosition);
-        if (localPosition >= 0 && localPosition < width) rhythmRows[rowIndex][offset + localPosition] = Number(rawDuration);
+        for (let position = 0; position < width; position++) {
+          row[string][offset + position] = normalizeTabValue(measure?.[string]?.[position] ?? '');
+        }
       }
     });
+    return row;
   }
 
-  function commitStructure(rows, rhythmRows, counts, message) {
-    const song = currentSong();
-    if (!song || previewSong) return;
-    song.rows = normalizeRows(rows, song.beatsPerMeasure);
-    song.rhythmRows = song.rows.map(row => rhythmRowFromRow(row, song.beatsPerMeasure));
-    song.rowMeasureCounts = Array.from({ length: song.rows.length }, (_, index) => Math.max(1, Math.min(MEASURES, Number(counts?.[index]) || MEASURES)));
+  function blankMeasure(beats = activeBeatsPerMeasure) {
+    return Array.from({ length: STRINGS }, () => Array(slotsPerMeasure(beats)).fill(''));
+  }
+
+  function syncLegacyStructure(song, startRow = 0) {
+    const rhythms = ensureRhythmRows(song);
+    for (let rowIndex = Math.max(0, startRow); rowIndex < song.rows.length; rowIndex++) {
+      rhythms[rowIndex] = rhythmRowFromRow(song.rows[rowIndex], song.beatsPerMeasure);
+    }
     song.updatedAt = Date.now();
-    writeStorage();
-    renderRows(song.rows);
-    renderSongList();
-    renderLibraryGrid();
-    if (message) showToast(message);
+    window.editorV3?.reconcileCurrentSong?.();
   }
 
   function insertMeasureBeside(target, side) {
     if (!target || target.type !== 'measure' || previewSong || scoreViewEnabled) return;
-    const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
-    const count = counts[target.rowIndex];
+    const song = currentSong();
+    if (!song?.rows?.[target.rowIndex]) return;
+    const counts = currentCounts(song);
+    const count = rowMeasureCount(target.rowIndex, song);
     if (count >= MEASURES) {
       showToast('每列最多 4 個小節');
       return;
     }
-    const measures = activeMeasuresForRow(rows, rhythmRows, target.rowIndex, count);
+    const measures = Array.from({ length: count }, (_, index) => cloneMeasure(song.rows[target.rowIndex], index, song.beatsPerMeasure));
     const insertIndex = Math.max(0, Math.min(count, target.measureIndex + (side === 'right' ? 1 : 0)));
-    measures.splice(insertIndex, 0, blankMeasureModule());
+    measures.splice(insertIndex, 0, blankMeasure(song.beatsPerMeasure));
+    song.rows[target.rowIndex] = rowFromMeasures(measures, song.beatsPerMeasure);
     counts[target.rowIndex] = measures.length;
-    writeMeasuresToRow(rows, rhythmRows, target.rowIndex, measures);
+    syncLegacyStructure(song, target.rowIndex);
     selectedModule = { type: 'measure', rowIndex: target.rowIndex, measureIndex: insertIndex };
-    commitStructure(rows, rhythmRows, counts, side === 'right' ? '已在右方新增小節' : '已在左方新增小節');
+    renderRows(song.rows);
+    showToast(side === 'right' ? '已在右方新增小節' : '已在左方新增小節');
   }
 
   function deleteMeasureModule(target) {
     if (!target || target.type !== 'measure' || previewSong || scoreViewEnabled) return;
-    const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
-    const count = counts[target.rowIndex];
+    const song = currentSong();
+    if (!song?.rows?.[target.rowIndex]) return;
+    const counts = currentCounts(song);
+    const count = rowMeasureCount(target.rowIndex, song);
     if (count <= 1) {
       showToast('每列至少保留 1 個小節');
       return;
     }
-    const measures = activeMeasuresForRow(rows, rhythmRows, target.rowIndex, count);
+    const measures = Array.from({ length: count }, (_, index) => cloneMeasure(song.rows[target.rowIndex], index, song.beatsPerMeasure));
     measures.splice(target.measureIndex, 1);
+    song.rows[target.rowIndex] = rowFromMeasures(measures, song.beatsPerMeasure);
     counts[target.rowIndex] = measures.length;
-    writeMeasuresToRow(rows, rhythmRows, target.rowIndex, measures);
+    syncLegacyStructure(song, target.rowIndex);
     selectedModule = { type: 'measure', rowIndex: target.rowIndex, measureIndex: Math.min(target.measureIndex, measures.length - 1) };
-    commitStructure(rows, rhythmRows, counts, '已刪除小節');
+    renderRows(song.rows);
+    showToast('已刪除小節');
   }
 
   function copySelectedModule(target = selectedModule) {
     if (!target || previewSong || scoreViewEnabled) return;
-    const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    if (target.type === 'row') {
-      moduleClipboard = {
-        type: 'row',
-        row: deepClone(rows[target.rowIndex]),
-        rhythm: deepClone(rhythmRows[target.rowIndex] || {}),
-        measureCount: rowMeasureCount(target.rowIndex)
-      };
-      rowClipboard = deepClone(rows[target.rowIndex]);
-      showToast(`已複製第 ${target.rowIndex + 1} 列`);
-      return;
-    }
-    moduleClipboard = { type: 'measure', measure: extractMeasure(rows, rhythmRows, target.rowIndex, target.measureIndex) };
-    showToast(`已複製第 ${target.rowIndex + 1} 列第 ${target.measureIndex + 1} 小節`);
+    if (window.editorV3?.clipboard?.copyModule?.(target)) return;
+    showToast('Editor V3 尚未完成初始化');
   }
 
   function pasteSelectedModule(target = selectedModule) {
-    if (!target || !moduleClipboard || previewSong || scoreViewEnabled) {
-      if (!moduleClipboard) showToast('目前沒有可貼上的模塊');
-      return;
-    }
-    const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
-
-    if (target.type === 'row' && moduleClipboard.type === 'row') {
-      rows[target.rowIndex] = deepClone(moduleClipboard.row);
-      rhythmRows[target.rowIndex] = deepClone(moduleClipboard.rhythm || {});
-      counts[target.rowIndex] = Math.max(1, Math.min(MEASURES, Number(moduleClipboard.measureCount) || MEASURES));
-      commitStructure(rows, rhythmRows, counts, `已貼到第 ${target.rowIndex + 1} 列`);
-      return;
-    }
-
-    if (target.type === 'measure' && moduleClipboard.type === 'measure') {
-      const measures = activeMeasuresForRow(rows, rhythmRows, target.rowIndex, counts[target.rowIndex]);
-      if (!measures[target.measureIndex]) return;
-      measures[target.measureIndex] = deepClone(moduleClipboard.measure);
-      writeMeasuresToRow(rows, rhythmRows, target.rowIndex, measures);
-      commitStructure(rows, rhythmRows, counts, `已貼到第 ${target.rowIndex + 1} 列第 ${target.measureIndex + 1} 小節`);
-      return;
-    }
-
-    showToast(target.type === 'row' ? '請先複製整列模塊' : '請先複製小節模塊');
+    if (!target || previewSong || scoreViewEnabled) return;
+    if (window.editorV3?.clipboard?.pasteModule?.(target)) return;
+    showToast('Editor V3 尚未完成初始化');
   }
 
   function deleteSelectedRow(rowIndex) {
-    const rows = readRowsFromDom();
-    if (rows.length <= 1) { showToast('至少保留一列'); return; }
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
-    rows.splice(rowIndex, 1);
-    rhythmRows.splice(rowIndex, 1);
-    counts.splice(rowIndex, 1);
+    if (previewSong || scoreViewEnabled) return;
+    const song = currentSong();
+    if (!song?.rows?.length) return;
+    if (song.rows.length <= 1) {
+      showToast('至少保留一列');
+      return;
+    }
+    const counts = currentCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    const safe = Math.max(0, Math.min(song.rows.length - 1, Number(rowIndex) || 0));
+    song.rows.splice(safe, 1);
+    counts.splice(safe, 1);
+    rhythms.splice(safe, 1);
     selectedModule = null;
-    commitStructure(rows, rhythmRows, counts, `已刪除第 ${rowIndex + 1} 列`);
+    syncLegacyStructure(song, safe);
+    renderRows(song.rows);
+    showToast(`已刪除第 ${safe + 1} 列`);
   }
 
   function insertRowAt(index) {
     if (previewSong || scoreViewEnabled) return;
-    const rows = readRowsFromDom();
-    const rhythmRows = currentRhythmRows(rows.length);
-    const counts = currentCounts(rows.length);
-    const safeIndex = Math.max(0, Math.min(rows.length, index));
-    rows.splice(safeIndex, 0, blankRow());
-    rhythmRows.splice(safeIndex, 0, {});
-    counts.splice(safeIndex, 0, MEASURES);
-    selectedModule = { type: 'row', rowIndex: safeIndex, measureIndex: null };
-    commitStructure(rows, rhythmRows, counts, `已新增第 ${safeIndex + 1} 列`);
+    const song = currentSong();
+    if (!song?.rows) return;
+    const counts = currentCounts(song);
+    const rhythms = ensureRhythmRows(song);
+    const safe = Math.max(0, Math.min(song.rows.length, Number(index) || 0));
+    song.rows.splice(safe, 0, blankRow(song.beatsPerMeasure));
+    counts.splice(safe, 0, MEASURES);
+    rhythms.splice(safe, 0, {});
+    selectedModule = { type: 'row', rowIndex: safe, measureIndex: null };
+    syncLegacyStructure(song, safe);
+    renderRows(song.rows);
+    showToast(`已新增第 ${safe + 1} 列`);
   }
 
   function ensureContextMenu() {
@@ -331,7 +301,7 @@
     }
 
     stopPlayback();
-    const normalized = normalizeRows(rows, activeBeatsPerMeasure);
+    const normalized = rows === currentSong()?.rows ? rows : normalizeRows(rows, activeBeatsPerMeasure);
     ensureRowMeasureCounts(currentSong());
     tabArea.innerHTML = '';
 
@@ -361,21 +331,20 @@
     if (selectedModule) setSelectedModule(selectedModule.type, selectedModule.rowIndex, selectedModule.measureIndex);
   };
 
-  copyRow = function enhancedCopyRow(rowIndex) {
+  copyRow = function v3CopyRow(rowIndex) {
     setSelectedModule('row', rowIndex);
     copySelectedModule();
   };
 
-  pasteRow = function enhancedPasteRow(rowIndex) {
+  pasteRow = function v3PasteRow(rowIndex) {
     setSelectedModule('row', rowIndex);
-    if (!moduleClipboard && rowClipboard) moduleClipboard = { type: 'row', row: deepClone(rowClipboard), rhythm: {}, measureCount: MEASURES };
     pasteSelectedModule();
   };
 
-  addTabSystem = function enhancedAddTabSystem() { insertRowAt(readRowsFromDom().length); };
-  removeLastTabSystem = function enhancedRemoveLastTabSystem() {
-    const rows = readRowsFromDom();
-    if (rows.length > 1) deleteSelectedRow(rows.length - 1);
+  addTabSystem = function addEditorRow() { insertRowAt(currentSong()?.rows?.length || 0); };
+  removeLastTabSystem = function removeEditorRow() {
+    const count = currentSong()?.rows?.length || 0;
+    if (count > 1) deleteSelectedRow(count - 1);
   };
 
   document.addEventListener('keydown', event => {
