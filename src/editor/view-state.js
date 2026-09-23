@@ -38,9 +38,24 @@ export function setScoreViewEnabled(enabled) {
   return active;
 }
 
+function installModeToggle() {
+  const toggle = document.getElementById('rhythmToggleButton');
+  if (!toggle) return;
+  toggle.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const active = setScoreViewEnabled(!isScoreViewActive());
+    const song = typeof window.currentSong === 'function' ? window.currentSong() : null;
+    if (song?.rows && typeof window.renderRows === 'function') window.renderRows(song.rows);
+    window.scheduleDensityFitAll?.(true);
+    return active;
+  }, true);
+}
+
 export function installViewState() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.setScoreViewEnabled = setScoreViewEnabled;
   syncModeUi(typeof window.scoreViewEnabled === 'boolean' ? window.scoreViewEnabled : isScoreViewActive());
+  installModeToggle();
 }
