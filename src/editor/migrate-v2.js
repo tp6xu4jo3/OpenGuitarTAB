@@ -182,7 +182,7 @@ function mergeLegacyMeasure(existingMeasure, generatedMeasure) {
       return {
         ...cloneValue(existingNote),
         string: generatedNote.string,
-        fret: harmonic ? '' : generatedNote.fret,
+        fret: generatedNote.fret,
         techniques
       };
     });

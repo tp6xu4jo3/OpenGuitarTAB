@@ -97,9 +97,11 @@ export function harmonicTechnique(note) {
 }
 
 export function noteBaseFret(note) {
+  const fret = String(note?.fret ?? '');
+  if (fret !== '') return fret;
   const harmonic = harmonicTechnique(note);
   if (harmonic) return String(Math.max(0, Math.trunc(Number(harmonic.touchFret)) - ARTIFICIAL_HARMONIC_OFFSET));
-  return String(note?.fret ?? '');
+  return '';
 }
 
 export function noteSoundingFret(note) {
@@ -120,12 +122,19 @@ function normalizeNote(note, idFactory) {
   const techniques = Array.isArray(note?.techniques)
     ? note.techniques.map(technique => normalizeTechnique(technique, idFactory, sourceFret))
     : [];
-  const hasCanonicalHarmonic = techniques.some(technique => technique.type === 'harmonic' && Number.isFinite(Number(technique.touchFret)));
+  const harmonic = techniques.find(technique =>
+    technique.type === 'harmonic' && Number.isFinite(Number(technique.touchFret))
+  );
+  const canonicalFret = sourceFret !== ''
+    ? sourceFret
+    : harmonic
+      ? String(Math.max(0, Math.trunc(Number(harmonic.touchFret)) - ARTIFICIAL_HARMONIC_OFFSET))
+      : '';
   return {
     ...(note && typeof note === 'object' ? cloneValue(note) : {}),
     id: String(note?.id || idFactory('n')),
     string,
-    fret: hasCanonicalHarmonic ? '' : sourceFret,
+    fret: canonicalFret,
     techniques
   };
 }

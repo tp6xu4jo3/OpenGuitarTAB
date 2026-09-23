@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { applyCommand } from '../src/editor/commands.js';
-import { createDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
+import { createDocumentV3, normalizeDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
 import { documentToLegacyProjection, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 import { resolveTechniqueTarget } from '../src/editor/technique-rules.js';
@@ -208,7 +208,7 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
   const note = added.document.measures[0].events[0].notes[0];
   const technique = note.techniques[0];
 
-  assert.equal(note.fret, '', 'canonical harmonic notes must not duplicate the base fret');
+  assert.equal(note.fret, '1', 'the note keeps its actual fretted position; harmonic metadata stores only the touch fret');
   assert.equal(technique.type, 'harmonic');
   assert.equal(technique.touchFret, 13, '1st fret artificial harmonic must store only touch fret 13');
   assert.ok(technique.id, 'techniques must own stable IDs');
@@ -220,8 +220,48 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
 
   const removed = applyCommand(added.document, { type: 'technique/delete', techniqueId: technique.id });
   const restored = removed.document.measures[0].events[0].notes[0];
-  assert.equal(restored.fret, '1', 'deleting a harmonic restores the derived base fret');
+  assert.equal(restored.fret, '1', 'deleting a harmonic must leave the original note untouched');
   assert.deepEqual(restored.techniques, []);
+
+  const edited = applyCommand(added.document, {
+    type: 'note/set',
+    measureId: 'm-harmonic',
+    at: [0, 1],
+    duration: [1, 1],
+    string: 0,
+    fret: '3'
+  }).document.measures[0].events[0].notes[0];
+  assert.equal(edited.fret, '3', 'editing a harmonic note updates the actual fretted note');
+  assert.equal(edited.techniques[0].touchFret, 15, 'editing the base fret keeps the +12 artificial harmonic relationship');
+  assert.equal(noteDisplayValue(edited), '3<15>');
+
+  const migratedLegacyHarmonic = normalizeDocumentV3({
+    version: 3,
+    measures: [{
+      id: 'm-old-harmonic',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [{
+        id: 'e-old-harmonic',
+        at: [0, 1],
+        duration: [1, 1],
+        notes: [{
+          id: 'n-old-harmonic',
+          string: 0,
+          fret: '',
+          techniques: [{ id: 't-old-harmonic', type: 'harmonic', touchFret: 13 }]
+        }],
+        marks: []
+      }],
+      groups: []
+    }],
+    relations: [],
+    layout: { systemBreakAfter: [] }
+  });
+  assert.equal(
+    migratedLegacyHarmonic.measures[0].events[0].notes[0].fret,
+    '1',
+    'older V3 harmonic documents with an empty fret must normalize into the canonical note structure'
+  );
 }
 
 {

@@ -53,8 +53,8 @@ Playback must read V3 Events, never legacy slots or `.note-input` values.
 
 - `tools.js` — Tool Registry metadata and command factories. It contains no drag payload transport.
 - `tool-session.js` — interaction state only; it never writes song data.
-- note-local behavior belongs in `note.techniques`.
-- event-local notation belongs in `event.marks`.
+- note-local behavior belongs in `note.techniques`. Artificial harmonics keep the actual fretted note in `note.fret`; the technique stores only its own `touchFret` metadata.
+- event-local notation belongs in `event.marks`. Sweep symbols derive their vertical span from the event's actual note strings, never from all six UI inputs in the column.
 - grouped rhythm belongs in `measure.groups`.
 - note-to-note notation such as slide/tie/slur belongs in `document.relations`.
 

@@ -1,4 +1,6 @@
+import { renderRhythmNotation, renderRows } from './grid-renderer.js';
 import { projectDocumentToLegacySong } from './legacy-grid-compat.js';
+import { scheduleGridFit, syncInputBackground } from './presentation.js';
 
 function currentSongDefault() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
@@ -45,12 +47,12 @@ export class EditorStateSync {
       const value = String(row?.[string]?.[position] ?? '');
       input.value = value;
       input.classList.toggle('has-value', value.length > 0);
-      window.syncNoteInputBackground?.(input);
+      syncInputBackground(input);
     });
 
-    window.renderRhythmNotation?.(rowIndex);
+    renderRhythmNotation(rowIndex);
     const grid = document.querySelector(`.tab-grid[data-row="${rowIndex}"]`);
-    if (grid) window.scheduleDensityFitGrid?.(grid, true);
+    if (grid) scheduleGridFit(grid, true);
     window.editorPlayback?.invalidate?.();
     window.updateProgressRange?.();
   }
@@ -74,7 +76,7 @@ export class EditorStateSync {
       return true;
     }
 
-    window.renderRows?.(song.rows);
+    renderRows(song.rows);
     return true;
   }
 
