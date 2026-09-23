@@ -198,12 +198,13 @@ export function fractionalGridTimes(measure) {
     .map(item => ({ at: item.at, kinds: [...item.kinds], duration: item.duration }));
 }
 
-export function isTimeInsideTupletReplacement(measure, at) {
+export function isTimeReplacedByFractionalGrid(measure, at) {
+  for (const event of measure?.events || []) {
+    if (event?.rhythmAnchor && compareFractions(event.at, at) === 0) return true;
+  }
   for (const group of measure?.groups || []) {
     if (group?.type !== 'tuplet' || !Array.isArray(group.startAt) || !Array.isArray(group.endExclusive)) continue;
-    if (!inHalfOpenRange(at, group.startAt, group.endExclusive)) continue;
-    if ((group.slots || []).some(slot => compareFractions(slot, at) === 0)) return false;
-    return true;
+    if (inHalfOpenRange(at, group.startAt, group.endExclusive)) return true;
   }
   return false;
 }
