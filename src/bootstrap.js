@@ -12,6 +12,7 @@ import { installEditorV3 } from './editor/controller.js';
 import { installGridLayoutAdapter } from './editor/grid-layout-adapter.js';
 import { installLegacyUiBridge } from './editor/legacy-ui-bridge.js';
 import { installEditorPresentation } from './editor/presentation.js';
+import { installResponsiveScoreLayout } from './editor/responsive-score-layout.js';
 import { installStructureController } from './editor/structure-controller.js';
 import { cloudApi } from './services/cloud-api.js';
 
@@ -34,11 +35,12 @@ const RUNTIME_SCRIPTS = [
   './src/app-editor-core.js'
 ];
 
-const EDITOR_COMPAT_SCRIPTS = [
+const EDITOR_AUDIO_SCRIPTS = [
   './src/app-audio.js',
-  './src/app-row-playback.js',
-  './src/app-adaptive-measures.js',
-  './src/app-score-layout.js',
+  './src/app-row-playback.js'
+];
+
+const EDITOR_PLAYBACK_SCRIPTS = [
   './src/app-playback.js'
 ];
 
@@ -64,7 +66,9 @@ void cloudApi.catalog().catch(() => null);
 
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
 installGridLayoutAdapter();
-await loadClassicScriptsInOrder(EDITOR_COMPAT_SCRIPTS);
+await loadClassicScriptsInOrder(EDITOR_AUDIO_SCRIPTS);
+installResponsiveScoreLayout();
+await loadClassicScriptsInOrder(EDITOR_PLAYBACK_SCRIPTS);
 installEditorPresentation();
 installLegacyUiBridge();
 installEditorV3();
