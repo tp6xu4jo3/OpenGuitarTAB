@@ -1,0 +1,380 @@
+import { buildSystems } from './layout.js';
+import { documentToLegacyProjection } from './migrate-v2.js';
+import {
+  deleteMeasureAt,
+  deleteSystem,
+  insertMeasureAt,
+  insertSystem,
+  moveMeasureAt,
+  moveSystem
+} from './structure-commands.js';
+
+let installed = false;
+let selected = null;
+let contextTarget = null;
+let dragState = null;
+let activeDrop = null;
+let baseRenderRows = null;
+
+function editingBlocked() {
+  const editorView = document.getElementById('editorView');
+  const previewBadge = document.getElementById('previewBadge');
+  return Boolean(editorView?.hidden || editorView?.classList.contains('score-view') || (previewBadge && !previewBadge.hidden));
+}
+
+function toast(message) {
+  window.showToast?.(message);
+}
+
+function currentStore() {
+  return window.editorV3?.getStore?.() || null;
+}
+
+function focusNode(node) {
+  if (!node) return;
+  node.tabIndex = -1;
+  try { node.focus({ preventScroll: true }); } catch { node.focus(); }
+}
+
+function setSelected(target) {
+  selected = target || null;
+  document.querySelectorAll('.editor-row-module.is-selected,.measure-module-hitbox.is-selected').forEach(node => node.classList.remove('is-selected'));
+  if (!selected) return;
+  const node = selected.type === 'row'
+    ? document.querySelector(`.editor-row-module[data-row="${selected.rowIndex}"]`)
+    : document.querySelector(`.measure-module-hitbox[data-row="${selected.rowIndex}"][data-measure="${selected.measureIndex}"]`);
+  node?.classList.add('is-selected');
+  focusNode(selected.type === 'row' ? node?.querySelector('.row-module-handle') || node : node);
+}
+
+function closeMenu() {
+  document.getElementById('editorModuleMenu')?.classList.remove('open');
+  contextTarget = null;
+}
+
+function ensureMenu() {
+  let menu = document.getElementById('editorModuleMenu');
+  if (menu) return menu;
+  menu = document.createElement('div');
+  menu.id = 'editorModuleMenu';
+  menu.className = 'editor-module-menu';
+  menu.setAttribute('role', 'menu');
+  document.body.appendChild(menu);
+  return menu;
+}
+
+function projectAndRender(store, message = '') {
+  const song = store?.getSong();
+  if (!store || !song) return false;
+  const projection = documentToLegacyProjection(store.getDocument());
+  if (projection.lossy) {
+    toast('此曲譜包含新版節奏，請使用新版編輯器顯示');
+    return false;
+  }
+  song.rows = projection.rows;
+  song.rhythmRows = projection.rhythmRows;
+  song.rowMeasureCounts = projection.rowMeasureCounts;
+  song.beatsPerMeasure = projection.beatsPerMeasure;
+  song.meter = projection.meter;
+  song.updatedAt = Date.now();
+  baseRenderRows?.(song.rows);
+  decorateEditor();
+  window.invalidateRowPlaybackLayout?.();
+  window.updateProgressRange?.();
+  if (message) toast(message);
+  return true;
+}
+
+function commitResult(result, message, nextSelection = null) {
+  const store = currentStore();
+  if (!store || !result || result.document === store.getDocument()) return false;
+  store.commit(result.document, result.changeSet);
+  const ok = projectAndRender(store, message);
+  if (ok && nextSelection) requestAnimationFrame(() => setSelected(nextSelection));
+  return ok;
+}
+
+function copyTarget(target) {
+  return window.editorV3?.clipboard?.copyModule?.(target) || false;
+}
+
+function pasteTarget(target) {
+  const ok = window.editorV3?.clipboard?.pasteModule?.(target) || false;
+  if (ok) requestAnimationFrame(() => { decorateEditor(); setSelected(target); });
+  return ok;
+}
+
+function structuralAction(target, action) {
+  if (editingBlocked()) return;
+  const store = currentStore();
+  if (!store) return;
+  const documentModel = store.getDocument();
+
+  if (target.type === 'row') {
+    if (action === 'insert-before') return commitResult(insertSystem(documentModel, target.rowIndex), `已新增第 ${target.rowIndex + 1} 列`, { type: 'row', rowIndex: target.rowIndex });
+    if (action === 'insert-after') return commitResult(insertSystem(documentModel, target.rowIndex + 1), `已新增第 ${target.rowIndex + 2} 列`, { type: 'row', rowIndex: target.rowIndex + 1 });
+    if (action === 'delete') return commitResult(deleteSystem(documentModel, target.rowIndex), `已刪除第 ${target.rowIndex + 1} 列`);
+  }
+
+  if (target.type === 'measure') {
+    const system = buildSystems(documentModel)[target.rowIndex] || [];
+    if (action.startsWith('insert') && system.length >= 4) {
+      toast('每列最多 4 個小節');
+      return false;
+    }
+    if (action === 'delete' && system.length <= 1) {
+      toast('每列至少保留 1 個小節');
+      return false;
+    }
+    if (action === 'insert-before') return commitResult(insertMeasureAt(documentModel, target.rowIndex, target.measureIndex), '已在左方新增小節', target);
+    if (action === 'insert-after') return commitResult(insertMeasureAt(documentModel, target.rowIndex, target.measureIndex + 1), '已在右方新增小節', { ...target, measureIndex: target.measureIndex + 1 });
+    if (action === 'delete') return commitResult(deleteMeasureAt(documentModel, target.rowIndex, target.measureIndex), '已刪除小節');
+  }
+  return false;
+}
+
+function openMenu(target, x, y) {
+  if (editingBlocked()) return;
+  setSelected(target);
+  contextTarget = target;
+  const menu = ensureMenu();
+  menu.replaceChildren();
+  const add = (label, fn, danger = false) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `editor-module-menu-action${danger ? ' danger' : ''}`;
+    button.textContent = label;
+    button.addEventListener('click', () => { closeMenu(); fn(); });
+    menu.appendChild(button);
+  };
+  add('複製', () => copyTarget(target));
+  add('貼上', () => pasteTarget(target));
+  if (target.type === 'measure') {
+    add('在左方新增', () => structuralAction(target, 'insert-before'));
+    add('在右方新增', () => structuralAction(target, 'insert-after'));
+    add('刪除', () => structuralAction(target, 'delete'), true);
+  } else {
+    add('在上方新增列', () => structuralAction(target, 'insert-before'));
+    add('在下方新增列', () => structuralAction(target, 'insert-after'));
+    add('刪除列', () => structuralAction(target, 'delete'), true);
+  }
+  menu.classList.add('open');
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
+}
+
+function makeRowHandle(rowIndex) {
+  const handle = document.createElement('div');
+  handle.className = 'system-label row-module-handle';
+  handle.draggable = true;
+  handle.dataset.row = String(rowIndex);
+  handle.setAttribute('aria-label', `第 ${rowIndex + 1} 列，可拖曳排序`);
+  const grip = document.createElement('span');
+  grip.className = 'row-drag-grip';
+  grip.textContent = '⠿';
+  const label = document.createElement('span');
+  label.className = 'row-module-label';
+  label.textContent = `第 ${rowIndex + 1} 列`;
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'row-module-more';
+  more.textContent = '…';
+  more.setAttribute('aria-label', `第 ${rowIndex + 1} 列操作`);
+  more.addEventListener('click', event => {
+    event.stopPropagation();
+    const rect = more.getBoundingClientRect();
+    openMenu({ type: 'row', rowIndex }, rect.right + 6, rect.top);
+  });
+  handle.append(grip, label, more);
+  handle.addEventListener('click', event => { if (!event.target.closest('button')) setSelected({ type: 'row', rowIndex }); });
+  handle.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'row', rowIndex }, event.clientX, event.clientY); });
+  handle.addEventListener('dragstart', event => {
+    dragState = { type: 'row', rowIndex };
+    event.dataTransfer?.setData('text/plain', `row:${rowIndex}`);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  });
+  return handle;
+}
+
+function addMeasureUi(grid, rowIndex, count) {
+  grid.querySelectorAll('.measure-module-hitbox,.measure-insert-boundary').forEach(node => node.remove());
+  for (let boundary = 0; boundary <= count; boundary++) {
+    const line = document.createElement('div');
+    line.className = 'measure-insert-boundary';
+    line.dataset.boundary = String(boundary);
+    line.style.left = `${boundary / count * 100}%`;
+    grid.appendChild(line);
+  }
+  for (let measureIndex = 0; measureIndex < count; measureIndex++) {
+    const hitbox = document.createElement('div');
+    hitbox.className = 'measure-module-hitbox';
+    hitbox.dataset.row = String(rowIndex);
+    hitbox.dataset.measure = String(measureIndex);
+    hitbox.style.left = `${measureIndex / count * 100}%`;
+    hitbox.style.width = `${100 / count}%`;
+    hitbox.draggable = true;
+    hitbox.addEventListener('click', () => setSelected({ type: 'measure', rowIndex, measureIndex }));
+    hitbox.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'measure', rowIndex, measureIndex }, event.clientX, event.clientY); });
+    hitbox.addEventListener('dragstart', event => {
+      dragState = { type: 'measure', rowIndex, measureIndex };
+      event.dataTransfer?.setData('text/plain', `measure:${rowIndex}:${measureIndex}`);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    grid.appendChild(hitbox);
+  }
+}
+
+function makeInsertZone(index) {
+  const zone = document.createElement('div');
+  zone.className = 'row-insert-zone';
+  zone.dataset.insertIndex = String(index);
+  const controls = document.createElement('div');
+  controls.className = 'row-insert-controls';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'row-boundary-button row-boundary-add';
+  add.setAttribute('aria-label', `在第 ${index + 1} 列位置新增列`);
+  add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>';
+  add.addEventListener('click', () => structuralAction({ type: 'row', rowIndex: index }, 'insert-before'));
+  controls.appendChild(add);
+  zone.appendChild(controls);
+  return zone;
+}
+
+function decorateEditor() {
+  if (editingBlocked()) return;
+  const tabArea = document.getElementById('tabArea');
+  if (!tabArea) return;
+  tabArea.querySelectorAll('.row-insert-zone').forEach(node => node.remove());
+  const systems = [...tabArea.querySelectorAll('.tab-system')];
+  const docSystems = buildSystems(currentStore()?.getDocument() || { measures: [] });
+  systems.forEach((system, rowIndex) => {
+    system.classList.add('editor-row-module');
+    system.dataset.row = String(rowIndex);
+    system.querySelector('.row-module-handle')?.remove();
+    system.querySelector('.system-label')?.remove();
+    system.prepend(makeRowHandle(rowIndex));
+    const grid = system.querySelector('.tab-grid');
+    if (grid) addMeasureUi(grid, rowIndex, Math.max(1, docSystems[rowIndex]?.length || Number(grid.dataset.measureCount) || 1));
+    tabArea.insertBefore(makeInsertZone(rowIndex), system);
+  });
+  tabArea.appendChild(makeInsertZone(systems.length));
+  if (selected) setSelected(selected);
+}
+
+function rowBoundaryFromPoint(y) {
+  const zones = [...document.querySelectorAll('.row-insert-zone')];
+  let best = null;
+  zones.forEach(zone => {
+    const rect = zone.getBoundingClientRect();
+    const distance = Math.abs(y - (rect.top + rect.height / 2));
+    if (!best || distance < best.distance) best = { index: Number(zone.dataset.insertIndex), zone, distance };
+  });
+  return best && best.distance <= 42 ? best : null;
+}
+
+function measureBoundaryFromPoint(x, y) {
+  const pointed = document.elementFromPoint(x, y);
+  const grid = pointed?.closest?.('.tab-grid[data-row]');
+  if (!grid) return null;
+  const rect = grid.getBoundingClientRect();
+  const rowIndex = Number(grid.dataset.row);
+  const count = Math.max(1, buildSystems(currentStore()?.getDocument() || { measures: [] })[rowIndex]?.length || Number(grid.dataset.measureCount) || 1);
+  const ratio = Math.max(0, Math.min(1, (x - rect.left) / Math.max(1, rect.width)));
+  return { rowIndex, boundary: Math.max(0, Math.min(count, Math.round(ratio * count))), grid };
+}
+
+function clearDropUi() {
+  document.querySelectorAll('.measure-insert-boundary.is-active,.row-insert-zone.is-drag-target').forEach(node => node.classList.remove('is-active', 'is-drag-target'));
+  activeDrop = null;
+}
+
+function updateDropUi(event) {
+  clearDropUi();
+  if (!dragState) return;
+  if (dragState.type === 'row') {
+    const target = rowBoundaryFromPoint(event.clientY);
+    if (!target) return;
+    target.zone.classList.add('is-drag-target');
+    activeDrop = { type: 'row', index: target.index };
+    return;
+  }
+  const target = measureBoundaryFromPoint(event.clientX, event.clientY);
+  if (!target) return;
+  target.grid.querySelector(`.measure-insert-boundary[data-boundary="${target.boundary}"]`)?.classList.add('is-active');
+  activeDrop = { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary };
+}
+
+function commitDrop() {
+  const store = currentStore();
+  if (!store || !dragState || !activeDrop) return;
+  const documentModel = store.getDocument();
+  if (dragState.type === 'row' && activeDrop.type === 'row') {
+    commitResult(moveSystem(documentModel, dragState.rowIndex, activeDrop.index), '已移動列');
+  } else if (dragState.type === 'measure' && activeDrop.type === 'measure') {
+    commitResult(moveMeasureAt(documentModel, dragState.rowIndex, dragState.measureIndex, activeDrop.rowIndex, activeDrop.boundary), '已移動小節');
+  }
+}
+
+function installDragHandlers() {
+  window.addEventListener('dragover', event => {
+    if (!dragState) return;
+    const target = dragState.type === 'row' ? rowBoundaryFromPoint(event.clientY) : measureBoundaryFromPoint(event.clientX, event.clientY);
+    if (!target) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    updateDropUi(event);
+  }, true);
+  window.addEventListener('drop', event => {
+    if (!dragState) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateDropUi(event);
+    commitDrop();
+    dragState = null;
+    clearDropUi();
+  }, true);
+  window.addEventListener('dragend', () => { dragState = null; clearDropUi(); }, true);
+}
+
+function installGlobalActions() {
+  window.copyRow = rowIndex => { setSelected({ type: 'row', rowIndex }); copyTarget(selected); };
+  window.pasteRow = rowIndex => { setSelected({ type: 'row', rowIndex }); pasteTarget(selected); };
+  window.addTabSystem = () => {
+    const count = buildSystems(currentStore()?.getDocument() || { measures: [] }).length;
+    structuralAction({ type: 'row', rowIndex: count }, 'insert-before');
+  };
+  window.removeLastTabSystem = () => {
+    const count = buildSystems(currentStore()?.getDocument() || { measures: [] }).length;
+    if (count > 1) structuralAction({ type: 'row', rowIndex: count - 1 }, 'delete');
+  };
+}
+
+function installKeyboard() {
+  document.addEventListener('keydown', event => {
+    if (editingBlocked() || !(event.ctrlKey || event.metaKey) || !selected) return;
+    if (event.target.closest('input,textarea,[contenteditable="true"]')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'c') { event.preventDefault(); copyTarget(selected); }
+    if (key === 'v') { event.preventDefault(); pasteTarget(selected); }
+  });
+  document.addEventListener('click', event => {
+    if (!event.target.closest('#editorModuleMenu,.row-module-more')) closeMenu();
+  });
+}
+
+export function installStructureController() {
+  if (installed || typeof window === 'undefined') return;
+  installed = true;
+  baseRenderRows = window.renderRows;
+  window.renderRows = rows => {
+    baseRenderRows?.(rows);
+    decorateEditor();
+  };
+  installGlobalActions();
+  installKeyboard();
+  installDragHandlers();
+  decorateEditor();
+  window.editorV3.structure = { decorate: decorateEditor, selected: () => selected };
+}
