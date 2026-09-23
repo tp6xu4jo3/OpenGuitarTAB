@@ -8,6 +8,8 @@ const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const stateSync = read('src/editor/state-sync.js');
 const viewState = read('src/editor/view-state.js');
+const appCatalog = read('src/app-catalog.js');
+const editorScroll = read('styles/editor-scroll.css');
 
 for (const removed of [
   'legacy-ui-bridge',
@@ -48,6 +50,15 @@ for (const forbiddenOverride of [
 ]) {
   assert.equal(stateSync.includes(forbiddenOverride), false, `state-sync must not restore ${forbiddenOverride}`);
 }
+
+const previewStart = appCatalog.indexOf('async function openCatalogPreview');
+const localStart = appCatalog.indexOf('function openLocalEditor');
+const routeStart = appCatalog.indexOf('function handleRoute');
+const previewEditor = appCatalog.slice(previewStart, localStart);
+const localEditor = appCatalog.slice(localStart, routeStart);
+assert.ok(previewEditor.indexOf("showPage('editor')") < previewEditor.indexOf('renderRows(previewSong.rows)'), 'preview must be visible before score layout renders');
+assert.ok(localEditor.indexOf("showPage('editor')") < localEditor.indexOf('loadSong(id)'), 'editor must be visible before song layout renders');
+assert.ok(editorScroll.includes('*::-webkit-scrollbar-button'), 'all WebKit scrollbars must suppress arrow buttons');
 
 assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
 assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');
