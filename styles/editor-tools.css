@@ -1,4 +1,7 @@
 .editor-toolbox {
+  position: sticky;
+  top: 0;
+  z-index: 18;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -13,6 +16,42 @@
 
 .editor-toolbox[hidden] {
   display: none;
+}
+
+.editor-toolbox.is-collapsed {
+  width: max-content;
+  max-width: 100%;
+  padding: 6px;
+  overflow: visible;
+}
+
+.editor-toolbox.is-collapsed .editor-toolbox-label,
+.editor-toolbox.is-collapsed .editor-tool-button {
+  display: none;
+}
+
+.editor-toolbox-toggle {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: #161616;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.editor-toolbox-toggle:hover,
+.editor-toolbox-toggle:focus-visible {
+  border-color: var(--focus);
+  outline: none;
 }
 
 .editor-toolbox-label {
@@ -34,7 +73,7 @@
   border-radius: 9px;
   background: #fff;
   color: #161616;
-  cursor: grab;
+  cursor: pointer;
   user-select: none;
 }
 
@@ -45,12 +84,10 @@
 }
 
 .editor-tool-button.is-active {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 18%, transparent);
-}
-
-.editor-tool-button:active {
-  cursor: grabbing;
+  border-color: #a8a8a8;
+  background: #ececec;
+  color: #555;
+  box-shadow: inset 0 0 0 1px #d0d0d0;
 }
 
 .editor-tool-glyph {
@@ -71,7 +108,8 @@
   z-index: 2;
 }
 
-.note-input.tool-link-source {
+.note-input.tool-link-source,
+.note-input.tool-range-source {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -126,5 +164,9 @@
   .editor-tool-button {
     min-height: 34px;
     padding: 5px 8px;
+  }
+
+  .editor-toolbox.is-collapsed {
+    padding: 5px;
   }
 }
