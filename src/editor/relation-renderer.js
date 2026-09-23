@@ -22,6 +22,23 @@ function centerIn(element, container) {
   };
 }
 
+function edgePoint(grid, container, side, y) {
+  const rect = grid.getBoundingClientRect();
+  const base = container.getBoundingClientRect();
+  const left = rect.left - base.left;
+  const right = rect.right - base.left;
+  const top = rect.top - base.top;
+  const bottom = rect.bottom - base.top;
+  return {
+    x: side === 'left' ? left + 6 : right - 6,
+    y: Math.max(top + 4, Math.min(bottom - 4, y))
+  };
+}
+
+function relationGrid(node) {
+  return node?.closest?.('.tab-grid') || null;
+}
+
 function relationPath(type, from, to) {
   if (type === 'tie' || type === 'slur') {
     const dx = to.x - from.x;
@@ -117,20 +134,55 @@ export class RelationRenderer {
     for (const relation of documentModel.relations || []) {
       const noteIds = relationNoteIds(relation);
       if (noteIds.length < 2) continue;
-      const locations = noteIds.map(id => index.noteLocation.get(id));
-      if (locations.some(location => !location || !measureSet.has(location.measureId))) continue;
-      const fromId = relation.fromNoteId || noteIds[0];
-      const toId = relation.toNoteId || noteIds[noteIds.length - 1];
-      const fromNode = systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(fromId)}"]`);
-      const toNode = systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(toId)}"]`);
-      if (!fromNode || !toNode) continue;
 
-      appendRelationPath(svg, {
-        type: relation.type,
-        from: centerIn(fromNode, systemElement),
-        to: centerIn(toNode, systemElement),
-        relationId: relation.id
-      });
+      const fromId = String(relation.fromNoteId || noteIds[0]);
+      const toId = String(relation.toNoteId || noteIds[noteIds.length - 1]);
+      const fromLocation = index.noteLocation.get(fromId);
+      const toLocation = index.noteLocation.get(toId);
+      if (!fromLocation || !toLocation) continue;
+
+      const fromInSystem = measureSet.has(String(fromLocation.measureId));
+      const toInSystem = measureSet.has(String(toLocation.measureId));
+      if (!fromInSystem && !toInSystem) continue;
+
+      const fromNode = fromInSystem
+        ? systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(fromId)}"]`)
+        : null;
+      const toNode = toInSystem
+        ? systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(toId)}"]`)
+        : null;
+      const fromGrid = relationGrid(fromNode);
+      const toGrid = relationGrid(toNode);
+
+      if (fromNode && toNode && fromGrid === toGrid) {
+        appendRelationPath(svg, {
+          type: relation.type,
+          from: centerIn(fromNode, systemElement),
+          to: centerIn(toNode, systemElement),
+          relationId: relation.id
+        });
+        continue;
+      }
+
+      if (fromNode && fromGrid) {
+        const from = centerIn(fromNode, systemElement);
+        appendRelationPath(svg, {
+          type: relation.type,
+          from,
+          to: edgePoint(fromGrid, systemElement, 'right', from.y),
+          relationId: relation.id
+        });
+      }
+
+      if (toNode && toGrid) {
+        const to = centerIn(toNode, systemElement);
+        appendRelationPath(svg, {
+          type: relation.type,
+          from: edgePoint(toGrid, systemElement, 'left', to.y),
+          to,
+          relationId: relation.id
+        });
+      }
     }
   }
 }
