@@ -1,4 +1,5 @@
 import { buildSystems } from './layout.js';
+import { documentToLegacyProjection } from './migrate-v2.js';
 
 export const LEGACY_STRING_COUNT = 6;
 export const LEGACY_SLOTS_PER_BEAT = 4;
@@ -91,4 +92,18 @@ export function rhythmRowFromLegacyRow(row, beats = 4) {
     rhythm[onset.position] = onset.duration;
   });
   return rhythm;
+}
+
+export function projectDocumentToLegacySong(song, documentModel, { touch = true } = {}) {
+  if (!song || !documentModel) return { ok: false, projection: null };
+  const projection = documentToLegacyProjection(documentModel);
+  if (projection.structuralLossy) return { ok: false, projection };
+
+  song.rows = projection.rows;
+  song.rhythmRows = projection.rhythmRows;
+  song.rowMeasureCounts = projection.rowMeasureCounts;
+  song.beatsPerMeasure = projection.beatsPerMeasure;
+  song.meter = projection.meter;
+  if (touch) song.updatedAt = Date.now();
+  return { ok: true, projection };
 }
