@@ -9,6 +9,14 @@ import {
   reconcileLegacyMeasure
 } from '../src/editor/migrate-v2.js';
 import { ScoreStore } from '../src/editor/store.js';
+import {
+  deleteMeasureAt,
+  deleteSystem,
+  insertMeasureAt,
+  insertSystem,
+  moveMeasureAt,
+  moveSystem
+} from '../src/editor/structure-commands.js';
 import { ToolRegistry } from '../src/editor/tools.js';
 import { deserializeSong, serializeSong } from '../src/core/song-codec.js';
 
@@ -188,6 +196,31 @@ let slideId;
   }, { idFactory: idFactory() });
   assert.deepEqual(result.changeSet.measures, [measureId]);
   assert.equal(store.getDocument().measures[0].events.some(event => event.notes.some(note => note.fret === '9')), true);
+}
+
+{
+  const ids = idFactory();
+  let structure = migrateSongToDocumentV3(legacySong);
+  structure = insertSystem(structure, 1, { measureCount: 2, idFactory: ids }).document;
+  assert.deepEqual(buildSystems(structure).map(system => system.length), [2, 2]);
+
+  structure = insertMeasureAt(structure, 0, 1, { idFactory: ids }).document;
+  assert.deepEqual(buildSystems(structure).map(system => system.length), [3, 2]);
+
+  const movedMeasureId = buildSystems(structure)[0][0].id;
+  structure = moveMeasureAt(structure, 0, 0, 1, 1, { idFactory: ids }).document;
+  assert.deepEqual(buildSystems(structure).map(system => system.length), [2, 3]);
+  assert.equal(buildSystems(structure)[1][1].id, movedMeasureId);
+
+  structure = moveSystem(structure, 1, 0).document;
+  assert.equal(buildSystems(structure)[0].some(measure => measure.id === movedMeasureId), true);
+
+  structure = deleteMeasureAt(structure, 0, 0).document;
+  assert.equal(buildSystems(structure)[0].length, 2);
+
+  structure = deleteSystem(structure, 1).document;
+  assert.equal(buildSystems(structure).length, 1);
+  assert.equal(documentToLegacyProjection(structure).lossy, false);
 }
 
 {
