@@ -126,14 +126,30 @@
   pointer-events: none;
 }
 
-.notation-harmonic {
-  stroke-width: 1.25;
+.notation-harmonic-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.content.edit-view .note-input.notation-harmonic-target:not(:focus),
+.content.score-view .note-input.notation-harmonic-target {
+  color: transparent !important;
+  caret-color: transparent;
+}
+
+.content.edit-view .tab-system:has(.note-input.notation-harmonic-target:focus) .notation-harmonic-label {
+  visibility: hidden;
+}
+
+.notation-strum,
+.notation-arpeggio {
+  stroke-width: 1.35;
   fill: none;
 }
 
-.notation-strum {
-  font-size: 20px;
-  font-weight: 700;
+.notation-arpeggio {
+  stroke-width: 1.25;
 }
 
 .notation-duration-32 {
@@ -149,6 +165,94 @@
 .notation-tuplet-number {
   font-size: 11px;
   font-weight: 800;
+}
+
+
+.notation-relation,
+.notation-relation-preview {
+  pointer-events: none;
+}
+
+.notation-relation-preview {
+  opacity: .48;
+  stroke-dasharray: 4 3;
+}
+
+.technique-marker-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.content.score-view .technique-marker-layer {
+  display: none;
+}
+
+.technique-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid #c8c8c8;
+  border-radius: 999px;
+  background: #fff;
+  color: #555;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.technique-marker:hover,
+.technique-marker:focus-visible {
+  border-color: #8f8f8f;
+  outline: none;
+}
+
+.technique-marker.is-selected {
+  border-color: #8b8b8b;
+  background: #d8d8d8;
+  color: #222;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.08);
+}
+
+.technique-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 112px;
+  padding: 5px;
+  border: 1px solid #d5d5d5;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(0,0,0,.16);
+}
+
+.technique-context-menu[hidden] {
+  display: none;
+}
+
+.technique-context-menu button {
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #222;
+  text-align: left;
+  cursor: pointer;
+}
+
+.technique-context-menu button:hover,
+.technique-context-menu button:focus-visible {
+  background: #ededed;
+  outline: none;
 }
 
 @media (max-width: 720px) {
