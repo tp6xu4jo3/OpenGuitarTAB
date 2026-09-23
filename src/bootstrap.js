@@ -10,6 +10,7 @@ import {
 import { APP_CONFIG } from './config/app-config.js';
 import { installEditorV3 } from './editor/controller.js';
 import { installLegacyUiBridge } from './editor/legacy-ui-bridge.js';
+import { installEditorPresentation } from './editor/presentation.js';
 import { installStructureController } from './editor/structure-controller.js';
 import { cloudApi } from './services/cloud-api.js';
 
@@ -33,14 +34,11 @@ const RUNTIME_SCRIPTS = [
 ];
 
 const EDITOR_COMPAT_SCRIPTS = [
-  './src/app-note-backgrounds.js',
   './src/app-row-layout.js',
-  './src/app-measure-lines.js',
   './src/app-audio.js',
   './src/app-row-playback.js',
   './src/app-adaptive-measures.js',
   './src/app-score-layout.js',
-  './src/app-density-fit-v2.js',
   './src/app-playback.js'
 ];
 
@@ -65,6 +63,7 @@ function loadClassicScriptsInOrder(sources) {
 void cloudApi.catalog().catch(() => null);
 
 await loadClassicScriptsInOrder([...RUNTIME_SCRIPTS, ...EDITOR_COMPAT_SCRIPTS]);
+installEditorPresentation();
 installLegacyUiBridge();
 installEditorV3();
 installStructureController();
