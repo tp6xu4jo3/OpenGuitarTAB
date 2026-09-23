@@ -29,6 +29,7 @@ const SONG_FIELD_ORDER = [
   'artist',
   'album',
   'cover',
+  'document',
   'rowMeasureCounts',
   'rhythmRows',
   'rows'
@@ -356,6 +357,7 @@ export function cleanSongForWrite(song, meta) {
     artist: String(input.artist || ''),
     album: String(input.album || ''),
     cover: String(input.cover || ''),
+    document: input.document && typeof input.document === 'object' && !Array.isArray(input.document) ? structuredClone(input.document) : undefined,
     rowMeasureCounts: Array.isArray(input.rowMeasureCounts) ? structuredClone(input.rowMeasureCounts) : undefined,
     rhythmRows: Array.isArray(input.rhythmRows) ? input.rhythmRows : [],
     rows: Array.isArray(input.rows) ? input.rows : []
