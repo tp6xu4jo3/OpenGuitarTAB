@@ -8,6 +8,7 @@ const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const gridRenderer = read('src/editor/grid-renderer.js');
 const layout = read('src/editor/layout.js');
+const playbackController = read('src/editor/playback-controller.js');
 const stateSync = read('src/editor/state-sync.js');
 const structureController = read('src/editor/structure-controller.js');
 const viewState = read('src/editor/view-state.js');
@@ -62,6 +63,7 @@ assert.equal(gridRenderer.includes('score-grid-pair'), false, 'edit and score mo
 assert.equal(gridRenderer.includes('buildAdaptiveLayout'), true, 'grid renderer must consume the shared adaptive layout engine');
 assert.equal(layout.includes('measureComplexity'), true, 'layout must account for notation complexity');
 assert.equal(layout.includes('measureWidths'), true, 'layout must allocate per-measure widths');
+assert.equal(playbackController.includes('measureWidthsForGrid'), true, 'playback playhead must honor adaptive measure widths');
 
 const previewStart = appCatalog.indexOf('async function openCatalogPreview');
 const localStart = appCatalog.indexOf('function openLocalEditor');
@@ -74,6 +76,7 @@ assert.ok(editorScroll.includes('*::-webkit-scrollbar-button'), 'all WebKit scro
 
 assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
 assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');
+assert.equal(playbackController.includes('stopImmediatePropagation'), false, 'playback controller must not intercept unrelated handlers');
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');
