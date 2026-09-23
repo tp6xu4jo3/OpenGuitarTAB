@@ -93,6 +93,13 @@ function representativeEventNode(systemElement, eventId) {
   return systemElement.querySelector(`.note-input[data-event-id="${escapeSelector(eventId)}"]`);
 }
 
+function representativeTimeNode(systemElement, measureId, at) {
+  const atKey = Array.isArray(at) ? `${at[0]}/${at[1]}` : String(at || '');
+  return systemElement.querySelector(
+    `.note-input[data-measure-id="${escapeSelector(measureId)}"][data-at="${escapeSelector(atKey)}"]`
+  );
+}
+
 function appendText(svg, { x, y, text, className, eventId = '', noteId = '' }) {
   const node = svgNode('text', {
     x,
@@ -296,11 +303,7 @@ export class NotationRenderer {
   annotateMeasure(measureId, locations) {
     const entry = locations.flatMap(system => system.measures).find(item => String(item.measure.id) === String(measureId));
     if (!entry) return;
-    const start = entry.offset;
-    const end = start + measureSlots(entry.measure);
-    this.root.querySelectorAll(`.note-input[data-row="${entry.rowIndex}"]`).forEach(input => {
-      const position = Number(input.dataset.position);
-      if (position < start || position >= end) return;
+    this.root.querySelectorAll(`.note-input[data-measure-id="${escapeSelector(measureId)}"]`).forEach(input => {
       delete input.dataset.noteId;
       delete input.dataset.eventId;
       delete input.dataset.notationDisplay;
@@ -309,13 +312,11 @@ export class NotationRenderer {
     this.annotateMeasureEntry(entry);
   }
 
-  annotateMeasureEntry({ measure, rowIndex, offset }) {
+  annotateMeasureEntry({ measure, rowIndex }) {
     for (const event of measure.events || []) {
-      const local = legacySlot(event.at);
-      if (local == null) continue;
-      const absolutePosition = offset + local;
+      const at = `${event.at?.[0] ?? 0}/${event.at?.[1] ?? 1}`;
       for (const note of event.notes || []) {
-        const selector = `.note-input[data-row="${rowIndex}"][data-string="${Number(note.string)}"][data-position="${absolutePosition}"]`;
+        const selector = `.note-input[data-row="${rowIndex}"][data-measure-id="${escapeSelector(measure.id)}"][data-at="${escapeSelector(at)}"][data-string="${Number(note.string)}"]`;
         this.root.querySelectorAll(selector).forEach(input => {
           const harmonic = (note.techniques || []).some(technique => technique.type === 'harmonic');
           input.dataset.noteId = note.id;
@@ -423,9 +424,15 @@ export class NotationRenderer {
       }
 
       for (const group of measure.groups || []) {
-        if (group.type !== 'tuplet' || !Array.isArray(group.eventIds) || group.eventIds.length < 2) continue;
-        const firstNode = representativeEventNode(systemElement, group.eventIds[0]);
-        const lastNode = representativeEventNode(systemElement, group.eventIds[group.eventIds.length - 1]);
+        if (group.type !== 'tuplet') continue;
+        const firstSlot = group.slots?.[0];
+        const lastSlot = group.slots?.[group.slots.length - 1];
+        const firstNode = firstSlot
+          ? representativeTimeNode(systemElement, measure.id, firstSlot)
+          : representativeEventNode(systemElement, group.eventIds?.[0]);
+        const lastNode = lastSlot
+          ? representativeTimeNode(systemElement, measure.id, lastSlot)
+          : representativeEventNode(systemElement, group.eventIds?.[group.eventIds.length - 1]);
         if (!firstNode || !lastNode) continue;
         const first = centerIn(firstNode, systemElement);
         const last = centerIn(lastNode, systemElement);
