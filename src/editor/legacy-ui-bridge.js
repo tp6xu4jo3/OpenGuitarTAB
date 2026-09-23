@@ -127,8 +127,11 @@ function handleEditorClick(event) {
 }
 
 function installScoreModeState() {
+  const legacySetScoreViewEnabled = window.setScoreViewEnabled;
   window.setScoreViewEnabled = enabled => {
     const active = Boolean(enabled);
+    legacySetScoreViewEnabled?.(active);
+
     const editorView = document.getElementById('editorView');
     const toggle = document.getElementById('rhythmToggleButton');
     if (!editorView || !toggle) return;
@@ -139,9 +142,6 @@ function installScoreModeState() {
     const label = toggle.querySelector('.mode-toggle-label');
     if (label) label.textContent = '看譜模式';
     toggle.setAttribute('aria-label', active ? '看譜模式已開啟，關閉看譜模式' : '看譜模式已關閉，開啟看譜模式');
-
-    // Keep the legacy global binding synchronized until the old renderer is removed.
-    try { scoreViewEnabled = active; } catch {}
   };
 }
 
