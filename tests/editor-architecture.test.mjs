@@ -11,6 +11,7 @@ const layout = read('src/editor/layout.js');
 const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
 const stateSync = read('src/editor/state-sync.js');
+const techniqueRules = read('src/editor/technique-rules.js');
 const structureController = read('src/editor/structure-controller.js');
 const toolSession = read('src/editor/tool-session.js');
 const tools = read('src/editor/tools.js');
@@ -98,6 +99,16 @@ assert.equal(controller.includes('ArrowRight'), false, 'tool controller must lea
 assert.equal(editorTools.includes('position: sticky'), true, 'tool palette must stay visible while the score scrolls');
 assert.equal(editorTools.includes('.editor-toolbox.is-collapsed'), true, 'tool palette must support collapse mode');
 assert.equal(editorTools.includes('cursor: grab'), false, 'tool palette must not advertise drag interaction');
+assert.equal(controller.includes("resolveTechniqueTarget"), true, 'controller must validate music rules before dispatching a technique command');
+assert.equal(controller.includes("data-delete-technique"), true, 'controller must expose marker deletion through the context menu');
+assert.equal(controller.includes("event.key === 'Delete'"), true, 'selected technique markers must support Delete');
+assert.equal(controller.includes("event.key === 'Backspace'"), true, 'selected technique markers must support Backspace');
+assert.equal(notationRenderer.includes('technique-marker-layer'), true, 'notation renderer must place stable deletion markers below the staff');
+assert.equal(notationRenderer.includes('notation-harmonic-label'), true, 'artificial harmonic notation must render its fret label');
+assert.equal(notationRenderer.includes('notation-arpeggio'), true, 'arpeggio must use a dedicated notation symbol');
+assert.equal(editorTools.includes('.notation-relation-preview'), true, 'pair preview must stay in the noninteractive notation layer');
+assert.equal(editorTools.includes('pointer-events: none'), true, 'notation relations must not block score inputs');
+assert.equal(techniqueRules.includes("same string"), false, 'music-rule messages stay localized rather than leaking implementation comments');
 assert.equal(notationRenderer.includes('delete input.dataset.measureId'), false, 'notation sync must preserve measure/time metadata for empty column and range targets');
 
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
