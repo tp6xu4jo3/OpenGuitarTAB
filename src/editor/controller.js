@@ -182,7 +182,6 @@ function commandTarget(definition, target, documentModel) {
 
   if (definition.target === 'eventRange') {
     const events = eventsInRange(documentModel, target);
-    if (events.length !== 3) return null;
     return {
       measureId: target.measureId,
       startAt: target.startAt,
@@ -227,8 +226,7 @@ function dispatchTool(toolId, target, options = {}) {
 
   const resolved = commandTarget(definition, target, store.getDocument());
   if (!resolved) {
-    if (definition.target === 'eventRange') toast('目前三連音範圍需包含3個既有事件');
-    else toast('這個時間位置沒有可套用技巧的音符');
+    toast('這個時間位置沒有可套用技巧的目標');
     return false;
   }
 
