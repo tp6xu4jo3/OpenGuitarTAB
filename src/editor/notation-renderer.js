@@ -315,13 +315,16 @@ export class NotationRenderer {
   annotateMeasureEntry({ measure, rowIndex }) {
     for (const event of measure.events || []) {
       const at = `${event.at?.[0] ?? 0}/${event.at?.[1] ?? 1}`;
+      const timeSelector = `.note-input[data-row="${rowIndex}"][data-measure-id="${escapeSelector(measure.id)}"][data-at="${escapeSelector(at)}"]`;
+      this.root.querySelectorAll(timeSelector).forEach(input => {
+        input.dataset.eventId = event.id;
+        input.dataset.measureId = measure.id;
+      });
       for (const note of event.notes || []) {
-        const selector = `.note-input[data-row="${rowIndex}"][data-measure-id="${escapeSelector(measure.id)}"][data-at="${escapeSelector(at)}"][data-string="${Number(note.string)}"]`;
+        const selector = `${timeSelector}[data-string="${Number(note.string)}"]`;
         this.root.querySelectorAll(selector).forEach(input => {
           const harmonic = (note.techniques || []).some(technique => technique.type === 'harmonic');
           input.dataset.noteId = note.id;
-          input.dataset.eventId = event.id;
-          input.dataset.measureId = measure.id;
           input.classList.toggle('notation-harmonic-target', harmonic);
           if (harmonic) input.dataset.notationDisplay = noteDisplayValue(note);
           else delete input.dataset.notationDisplay;
