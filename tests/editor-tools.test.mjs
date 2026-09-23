@@ -35,7 +35,7 @@ const expectedTargets = {
   arc: 'notePair',
   slide: 'notePair',
   triplet: 'eventRange',
-  duration32: 'event'
+  duration32: 'eventRange'
 };
 
 const expectedTargetKinds = {
@@ -47,7 +47,7 @@ const expectedTargetKinds = {
   arc: TOOL_TARGET_KINDS.NOTE_PAIR,
   slide: TOOL_TARGET_KINDS.NOTE_PAIR,
   triplet: TOOL_TARGET_KINDS.RANGE,
-  duration32: TOOL_TARGET_KINDS.COLUMN
+  duration32: TOOL_TARGET_KINDS.RANGE
 };
 
 for (const [toolId, target] of Object.entries(expectedTargets)) {
@@ -182,28 +182,6 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
 }
 
 {
-  const row = Array.from({ length: 6 }, () => Array(64).fill(''));
-  row[0][0] = '5';
-  const legacySong = {
-    id: 'duration32-compat',
-    beatsPerMeasure: 4,
-    rows: [row],
-    rowMeasureCounts: [1],
-    rhythmRows: [{ 0: 4 }]
-  };
-  const documentModel = migrateSongToDocumentV3(legacySong);
-  const event = documentModel.measures[0].events[0];
-  const result = applyCommand(documentModel, definitions.createCommand('duration32', { eventId: event.id }));
-  const projection = documentToLegacyProjection(result.document);
-
-  assert.deepEqual(result.document.measures[0].events[0].duration, [1, 8]);
-  assert.equal(projection.lossy, true, 'legacy rhythm cannot exactly express a 32nd duration');
-  assert.equal(projection.structuralLossy, false, '32nd duration must remain safe for the compatibility grid');
-  assert.equal(projection.rows[0][0][0], '5', 'compatibility projection must not drop a 32nd-note event');
-  assert.equal(projection.rhythmRows[0][0], 1, 'legacy rhythm should use its smallest visual slot only');
-}
-
-{
   const documentModel = createDocumentV3({
     measures: [{
       id: 'm-harmonic',
@@ -247,7 +225,7 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
   assert.equal(definitions.createCommand('strumDown', { eventId: 'e' }).mark.direction, 'down');
   assert.equal(definitions.createCommand('arpeggioUp', { eventId: 'e' }).mark.type, 'arpeggio');
   assert.equal(definitions.createCommand('arpeggioDown', { eventId: 'e' }).mark.direction, 'down');
-  assert.deepEqual(definitions.createCommand('duration32', { eventId: 'e' }).duration, [1, 8]);
+  assert.equal(definitions.createCommand('duration32', { measureId: 'm', startAt: [0, 1], endAt: [1, 4] }).type, 'rhythm/32nd/apply');
   assert.equal(definitions.createCommand('slide', { fromNoteId: 'a', toNoteId: 'b' }).relation.type, 'slide');
   assert.equal(definitions.createCommand('arc', { fromNoteId: 'a', toNoteId: 'b', relationType: 'tie' }).relation.type, 'tie');
   assert.equal(definitions.createCommand('arc', { fromNoteId: 'a', toNoteId: 'b', relationType: 'slur' }).relation.type, 'slur');
