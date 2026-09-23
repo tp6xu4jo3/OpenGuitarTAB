@@ -1,4 +1,4 @@
-import { documentToLegacyProjection } from './migrate-v2.js';
+import { projectDocumentToLegacySong } from './legacy-grid-compat.js';
 
 function currentSongDefault() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
@@ -58,16 +58,8 @@ export class EditorStateSync {
   projectStoreToView(store, target = null, previousCounts = null) {
     const song = store?.getSong();
     if (!song) return false;
-    const projection = documentToLegacyProjection(store.getDocument());
-    const structurallyLossy = projection.structuralLossy ?? projection.lossy;
-    if (structurallyLossy) return false;
-
-    song.rows = projection.rows;
-    song.rhythmRows = projection.rhythmRows;
-    song.rowMeasureCounts = projection.rowMeasureCounts;
-    song.beatsPerMeasure = projection.beatsPerMeasure;
-    song.meter = projection.meter;
-    song.updatedAt = Date.now();
+    const { ok, projection } = projectDocumentToLegacySong(song, store.getDocument());
+    if (!ok) return false;
 
     const sameShape = Array.isArray(previousCounts)
       && previousCounts.length === projection.rowMeasureCounts.length
