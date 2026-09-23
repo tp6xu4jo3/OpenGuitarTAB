@@ -76,7 +76,10 @@ for (const forbiddenOverride of [
 }
 
 assert.equal(structureController.includes('window.renderRows ='), false, 'structure controller must react to render events instead of overriding renderRows');
-assert.equal(gridRenderer.includes('score-grid-pair'), false, 'edit and score modes must not use separate row geometry');
+assert.equal(gridRenderer.includes('score-grid-pair'), false, 'the removed 8/4 render override must stay deleted');
+assert.equal(gridRenderer.includes('buildCompactScoreLayout'), true, 'score density must use the shared layout engine instead of a render override');
+assert.equal(viewState.includes('score-density-compact'), true, 'score view must expose presentation-only normal/compact density modes');
+assert.equal(viewState.includes('window.renderRows'), false, 'view-state must request layout through an event instead of calling the renderer through window');
 assert.equal(gridRenderer.includes('buildAdaptiveLayout'), true, 'grid renderer must consume the shared adaptive layout engine');
 assert.equal(layout.includes('measureComplexity'), true, 'layout must account for notation complexity');
 assert.equal(layout.includes('measureWidths'), true, 'layout must allocate per-measure widths');
