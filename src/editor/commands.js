@@ -304,7 +304,7 @@ function applyRhythmRange(document, command, idFactory, transformer) {
   if (!transformed.ok) return { document, changeSet: createChangeSet() };
   return {
     document: withMeasure(document, measureIndex, transformed.measure),
-    changeSet: changedMeasure(sourceMeasure.id, { playback: true })
+    changeSet: changedMeasure(sourceMeasure.id, { playback: true, layoutFrom: sourceMeasure.id })
   };
 }
 
@@ -318,7 +318,10 @@ function addGroup(document, command, idFactory) {
     return { document, changeSet: createChangeSet() };
   }
   measure.groups.push(group);
-  return { document: withMeasure(document, measureIndex, measure), changeSet: changedMeasure(measure.id) };
+  return {
+    document: withMeasure(document, measureIndex, measure),
+    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id })
+  };
 }
 
 function deleteGroup(document, groupId) {
@@ -328,7 +331,7 @@ function deleteGroup(document, groupId) {
   measure.groups = (measure.groups || []).filter(group => group.id !== groupId);
   return {
     document: withMeasure(document, location.measureIndex, measure),
-    changeSet: changedMeasure(measure.id)
+    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id })
   };
 }
 
@@ -349,7 +352,10 @@ function replaceMeasureContent(document, command) {
   next = { ...next, relations: pruned.relations };
   return {
     document: next,
-    changeSet: changedMeasure(target.id, { relations: pruned.removedRelationIds })
+    changeSet: changedMeasure(target.id, {
+      relations: pruned.removedRelationIds,
+      layoutFrom: target.id
+    })
   };
 }
 
