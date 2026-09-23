@@ -129,7 +129,7 @@ function handleInput(event, { getStore, markStoreCurrent }) {
 
   window.jumpToInput?.(input, false);
   markDirty(input, rowIndex);
-  if (previousDensity !== nextDensity) window.scheduleEditorLayout?.();
+  if (previousDensity !== nextDensity) input.dataset.layoutDirty = 'true';
   if (normalized.length === 2) window.focusRelative?.(input, 0, 1);
 }
 
@@ -144,6 +144,13 @@ function handleFocus(event) {
   if (!input || isPreviewActive() || isScoreViewActive()) return;
   input.select();
   window.jumpToInput?.(input, false);
+}
+
+function handleFocusOut(event) {
+  const input = event.target.closest?.('.note-input');
+  if (!input || input.dataset.layoutDirty !== 'true') return;
+  delete input.dataset.layoutDirty;
+  window.scheduleEditorLayout?.();
 }
 
 function handleClick(event) {
@@ -162,5 +169,6 @@ export function installEditorInputController({ getStore, markStoreCurrent }) {
   tabArea.addEventListener('input', event => handleInput(event, { getStore, markStoreCurrent }));
   tabArea.addEventListener('keydown', handleKeydown);
   tabArea.addEventListener('focusin', handleFocus);
+  tabArea.addEventListener('focusout', handleFocusOut);
   tabArea.addEventListener('click', handleClick);
 }
