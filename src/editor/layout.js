@@ -1,11 +1,15 @@
-import { fractionToNumber, indexDocument, normalizeDocumentV3, normalizeFraction } from './model.js';
+import { fractionToNumber, indexDocument, isDocumentV3, normalizeDocumentV3, normalizeFraction } from './model.js';
 
 export const MAX_MEASURES_PER_SYSTEM = 4;
 export const DEFAULT_LAYOUT_WIDTH = 1120;
 export const MIN_MEASURE_WIDTH = 205;
 
+function sourceDocument(document) {
+  return isDocumentV3(document) ? document : normalizeDocumentV3(document);
+}
+
 export function buildSystems(document, { maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM } = {}) {
-  const normalized = normalizeDocumentV3(document);
+  const normalized = sourceDocument(document);
   const breaks = new Set(normalized.layout?.systemBreakAfter || []);
   const systems = [];
   let current = [];
@@ -35,14 +39,9 @@ function relationCountsByMeasure(document) {
   return counts;
 }
 
-export function measureComplexity(documentModel, measure) {
-  const document = normalizeDocumentV3(documentModel);
-  const target = measure || document.measures[0];
-  if (!target) return 1;
-  const relations = relationCountsByMeasure(document).get(target.id) || 0;
+function complexityForMeasure(measure, relationCount = 0) {
   let score = 1;
-
-  for (const event of target.events || []) {
+  for (const event of measure?.events || []) {
     const notes = event.notes || [];
     score += 0.52;
     if (notes.length > 1) score += (notes.length - 1) * 0.18;
@@ -52,20 +51,43 @@ export function measureComplexity(documentModel, measure) {
       score += (note.techniques || []).length * 0.72;
     }
   }
-
-  score += (target.groups || []).length * 1.15;
-  score += relations * 0.95;
+  score += (measure?.groups || []).length * 1.15;
+  score += relationCount * 0.95;
   return Math.max(1, score);
 }
 
-export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = MIN_MEASURE_WIDTH } = {}) {
-  const complexity = measureComplexity(documentModel, measure);
+export function measureComplexity(documentModel, measure) {
+  const document = sourceDocument(documentModel);
+  const target = measure || document.measures[0];
+  if (!target) return 1;
+  return complexityForMeasure(target, relationCountsByMeasure(document).get(target.id) || 0);
+}
+
+function minimumWidthForComplexity(complexity, minMeasureWidth) {
   return Math.round(minMeasureWidth + Math.min(155, Math.max(0, complexity - 1) * 18));
 }
 
-function allocateWidths(document, measures, availableWidth, options) {
-  const minimums = measures.map(measure => measureMinimumWidth(document, measure, options));
-  const weights = measures.map(measure => Math.sqrt(measureComplexity(document, measure)));
+export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = MIN_MEASURE_WIDTH } = {}) {
+  return minimumWidthForComplexity(measureComplexity(documentModel, measure), minMeasureWidth);
+}
+
+function buildMetrics(document, minMeasureWidth) {
+  const relations = relationCountsByMeasure(document);
+  const metrics = new Map();
+  for (const measure of document.measures || []) {
+    const complexity = complexityForMeasure(measure, relations.get(measure.id) || 0);
+    metrics.set(measure.id, {
+      complexity,
+      minimumWidth: minimumWidthForComplexity(complexity, minMeasureWidth),
+      weight: Math.sqrt(complexity)
+    });
+  }
+  return metrics;
+}
+
+function allocateWidths(measures, availableWidth, metrics) {
+  const minimums = measures.map(measure => metrics.get(measure.id)?.minimumWidth || MIN_MEASURE_WIDTH);
+  const weights = measures.map(measure => metrics.get(measure.id)?.weight || 1);
   const minimumTotal = minimums.reduce((sum, value) => sum + value, 0);
   const remaining = Math.max(0, availableWidth - minimumTotal);
   const weightTotal = weights.reduce((sum, value) => sum + value, 0) || 1;
@@ -78,17 +100,17 @@ function allocateWidths(document, measures, availableWidth, options) {
   };
 }
 
-function splitLogicalSystem(document, measures, sourceSystemIndex, availableWidth, options) {
+function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeasuresPerSystem, metrics) {
   const result = [];
   let cursor = 0;
-  const maxMeasures = Math.max(1, Math.min(MAX_MEASURES_PER_SYSTEM, Number(options.maxMeasuresPerSystem) || MAX_MEASURES_PER_SYSTEM));
+  const maxMeasures = Math.max(1, Math.min(MAX_MEASURES_PER_SYSTEM, Number(maxMeasuresPerSystem) || MAX_MEASURES_PER_SYSTEM));
 
   while (cursor < measures.length) {
     let count = 0;
     let required = 0;
     while (cursor + count < measures.length && count < maxMeasures) {
       const measure = measures[cursor + count];
-      const nextRequired = required + measureMinimumWidth(document, measure, options);
+      const nextRequired = required + (metrics.get(measure.id)?.minimumWidth || MIN_MEASURE_WIDTH);
       if (count > 0 && nextRequired > availableWidth) break;
       required = nextRequired;
       count += 1;
@@ -96,7 +118,7 @@ function splitLogicalSystem(document, measures, sourceSystemIndex, availableWidt
     if (!count) count = 1;
 
     const slice = measures.slice(cursor, cursor + count);
-    const allocation = allocateWidths(document, slice, availableWidth, options);
+    const allocation = allocateWidths(slice, availableWidth, metrics);
     result.push({
       sourceSystemIndex,
       startMeasure: cursor,
@@ -116,23 +138,17 @@ export function buildAdaptiveLayout(documentModel, {
   maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM,
   minMeasureWidth = MIN_MEASURE_WIDTH
 } = {}) {
-  const document = normalizeDocumentV3(documentModel);
+  const document = sourceDocument(documentModel);
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
+  const metrics = buildMetrics(document, minMeasureWidth);
   const systems = [];
 
   logicalSystems.forEach((measures, sourceSystemIndex) => {
-    systems.push(...splitLogicalSystem(document, measures, sourceSystemIndex, width, {
-      maxMeasuresPerSystem,
-      minMeasureWidth
-    }));
+    systems.push(...splitLogicalSystem(measures, sourceSystemIndex, width, maxMeasuresPerSystem, metrics));
   });
 
-  return {
-    availableWidth: width,
-    systems,
-    logicalSystems
-  };
+  return { availableWidth: width, systems, logicalSystems };
 }
 
 export function systemIndexForMeasure(document, measureId, options) {
