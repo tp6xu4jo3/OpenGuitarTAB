@@ -2,24 +2,26 @@ import { EditorClipboard } from './clipboard.js';
 import { createChangeSet } from './commands.js';
 import { installEditorInputController } from './input-controller.js';
 import { buildSystems } from './layout.js';
+import { compareFractions, fractionKey, normalizeFraction } from './model.js';
 import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
 import { EditorStateSync } from './state-sync.js';
 import { StoreRegistry } from './store.js';
-import { eventRangeFromEvent, readToolDragData, ToolRegistry, writeToolDragData } from './tools.js';
+import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from './tool-session.js';
+import { ToolRegistry } from './tools.js';
 import { installViewState, isPreviewActive, isScoreViewActive } from './view-state.js';
 
 const registry = new StoreRegistry();
 const stateSync = new EditorStateSync(registry);
 const clipboardState = new EditorClipboard();
 const toolRegistry = new ToolRegistry();
+const toolSession = new ToolSession();
 const boundStores = new WeakSet();
 
 let installed = false;
-let pendingLinkTool = null;
-let activeToolId = null;
 let notationRenderer = null;
 let toolPalette = null;
+let toolboxCollapsed = false;
 
 function toast(message) {
   window.showToast?.(message);
@@ -124,77 +126,143 @@ function pasteModule(target) {
   return false;
 }
 
-function toolTargetFromNode(definition, node, documentModel) {
-  if (!definition || !node) return null;
-  const noteNode = node.closest?.('[data-note-id]');
-  const eventNode = node.closest?.('[data-event-id]');
+function atFromNode(node) {
+  const input = node?.closest?.('.note-input[data-measure-id][data-at]');
+  if (!input) return null;
+  const [numerator, denominator] = String(input.dataset.at || '').split('/').map(Number);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return null;
+  return {
+    measureId: String(input.dataset.measureId || ''),
+    at: normalizeFraction([numerator, denominator])
+  };
+}
 
-  if (definition.target === 'note' || definition.target === 'notePair') {
-    const noteId = noteNode?.dataset.noteId;
-    return noteId ? { noteId } : null;
+function toolTargetFromNode(definition, node) {
+  if (!definition || !node) return null;
+  const kind = toolTargetKind(definition);
+
+  if (kind === TOOL_TARGET_KINDS.NOTE || kind === TOOL_TARGET_KINDS.NOTE_PAIR) {
+    const noteId = node.closest?.('[data-note-id]')?.dataset.noteId;
+    return noteId ? { noteId: String(noteId) } : null;
   }
-  if (definition.target === 'event') {
-    const eventId = eventNode?.dataset.eventId;
-    return eventId ? { eventId } : null;
+
+  if (kind === TOOL_TARGET_KINDS.COLUMN || kind === TOOL_TARGET_KINDS.RANGE) {
+    return atFromNode(node);
   }
-  if (definition.target === 'eventRange') {
-    const eventId = eventNode?.dataset.eventId;
-    return eventId ? eventRangeFromEvent(documentModel, eventId, 3) : null;
-  }
+
   return null;
 }
 
-function clearLinkSource() {
-  document.querySelectorAll('.note-input.tool-link-source').forEach(node => node.classList.remove('tool-link-source'));
+function eventAtColumn(documentModel, target) {
+  const measure = (documentModel?.measures || []).find(item => String(item.id) === String(target?.measureId || ''));
+  if (!measure || !Array.isArray(target?.at)) return null;
+  const key = fractionKey(target.at);
+  return (measure.events || []).find(event => fractionKey(event.at) === key) || null;
 }
 
-function markLinkSource(noteId) {
-  clearLinkSource();
-  document.querySelectorAll(`[data-note-id="${escapeSelector(noteId)}"]`).forEach(node => node.classList.add('tool-link-source'));
+function eventsInRange(documentModel, target) {
+  const measure = (documentModel?.measures || []).find(item => String(item.id) === String(target?.measureId || ''));
+  if (!measure || !Array.isArray(target?.startAt) || !Array.isArray(target?.endAt)) return [];
+  return (measure.events || []).filter(event =>
+    compareFractions(event.at, target.startAt) >= 0 && compareFractions(event.at, target.endAt) <= 0
+  );
+}
+
+function commandTarget(definition, target, documentModel) {
+  if (definition.target === 'note') return target;
+  if (definition.target === 'notePair') return target;
+
+  if (definition.target === 'event') {
+    const event = eventAtColumn(documentModel, target);
+    return event ? { eventId: event.id, measureId: target.measureId, at: target.at } : null;
+  }
+
+  if (definition.target === 'eventRange') {
+    const events = eventsInRange(documentModel, target);
+    if (events.length !== 3) return null;
+    return {
+      measureId: target.measureId,
+      startAt: target.startAt,
+      endAt: target.endAt,
+      eventIds: events.map(event => event.id)
+    };
+  }
+
+  return target;
+}
+
+function clearToolSource() {
+  document.querySelectorAll('.note-input.tool-link-source,.note-input.tool-range-source').forEach(node => {
+    node.classList.remove('tool-link-source', 'tool-range-source');
+  });
+}
+
+function markToolSource(kind, target) {
+  clearToolSource();
+
+  if (kind === TOOL_TARGET_KINDS.NOTE_PAIR && target?.noteId) {
+    document.querySelectorAll(`[data-note-id="${escapeSelector(target.noteId)}"]`).forEach(node => {
+      node.classList.add('tool-link-source');
+    });
+    return;
+  }
+
+  if (kind === TOOL_TARGET_KINDS.RANGE && target?.measureId && Array.isArray(target.at)) {
+    const measureId = escapeSelector(target.measureId);
+    const at = escapeSelector(fractionKey(target.at));
+    document.querySelectorAll(`.note-input[data-measure-id="${measureId}"][data-at="${at}"]`).forEach(node => {
+      node.classList.add('tool-range-source');
+    });
+  }
 }
 
 function dispatchTool(toolId, target, options = {}) {
   const definition = toolRegistry.get(toolId);
   if (!definition || editingBlocked()) return false;
+  const store = ensureStore({ reconcile: false });
+  if (!store) return false;
 
-  if (definition.target === 'notePair') {
-    const noteId = target?.noteId;
-    if (!noteId) return false;
-    if (!pendingLinkTool || pendingLinkTool.toolId !== toolId) {
-      pendingLinkTool = { toolId, fromNoteId: noteId, options };
-      markLinkSource(noteId);
-      toast('已選擇第一個音符，請選擇第二個音符');
-      return true;
-    }
-    if (pendingLinkTool.fromNoteId === noteId) {
-      toast('第二個音符需與第一個不同');
-      return true;
-    }
-
-    const command = toolRegistry.createCommand(toolId, {
-      fromNoteId: pendingLinkTool.fromNoteId,
-      toNoteId: noteId
-    }, pendingLinkTool.options);
-    pendingLinkTool = null;
-    clearLinkSource();
-    dispatchCommand(command);
-    return true;
+  const resolved = commandTarget(definition, target, store.getDocument());
+  if (!resolved) {
+    if (definition.target === 'eventRange') toast('目前三連音範圍需包含3個既有事件');
+    else toast('這個時間位置沒有可套用技巧的音符');
+    return false;
   }
 
-  dispatchCommand(toolRegistry.createCommand(toolId, target, options));
+  dispatchCommand(toolRegistry.createCommand(toolId, resolved, options));
   return true;
 }
 
-function setActiveTool(toolId) {
-  activeToolId = toolRegistry.get(toolId) ? String(toolId) : null;
-  pendingLinkTool = null;
-  clearLinkSource();
+function syncToolButtons() {
+  const activeToolId = toolSession.snapshot().toolId;
   toolPalette?.querySelectorAll('[data-editor-tool]').forEach(button => {
     const active = button.dataset.editorTool === activeToolId;
     button.classList.toggle('is-active', active);
     button.setAttribute('aria-pressed', String(active));
   });
-  return activeToolId;
+}
+
+function setToolboxCollapsed(collapsed) {
+  toolboxCollapsed = Boolean(collapsed);
+  const palette = toolPalette;
+  if (!palette) return toolboxCollapsed;
+  palette.classList.toggle('is-collapsed', toolboxCollapsed);
+  const toggle = palette.querySelector('[data-editor-toolbox-toggle]');
+  if (toggle) {
+    toggle.textContent = toolboxCollapsed ? '技巧 ›' : '‹';
+    toggle.title = toolboxCollapsed ? '展開技巧' : '收合技巧';
+    toggle.setAttribute('aria-expanded', String(!toolboxCollapsed));
+  }
+  return toolboxCollapsed;
+}
+
+function setActiveTool(toolId) {
+  const definition = toolRegistry.get(toolId);
+  if (!definition) toolSession.cancel();
+  else toolSession.activate(definition.id, toolTargetKind(definition));
+  clearToolSource();
+  syncToolButtons();
+  return toolSession.snapshot().toolId;
 }
 
 function ensureToolPalette() {
@@ -207,6 +275,12 @@ function ensureToolPalette() {
   palette.id = 'editorToolbox';
   palette.setAttribute('aria-label', '吉他技巧工具');
 
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'editor-toolbox-toggle';
+  toggle.dataset.editorToolboxToggle = 'true';
+  palette.appendChild(toggle);
+
   const label = document.createElement('span');
   label.className = 'editor-toolbox-label';
   label.textContent = '技巧';
@@ -217,7 +291,6 @@ function ensureToolPalette() {
     button.type = 'button';
     button.className = 'editor-tool-button';
     button.dataset.editorTool = definition.id;
-    button.draggable = true;
     button.title = definition.hint || definition.label || definition.id;
     button.setAttribute('aria-pressed', 'false');
 
@@ -235,7 +308,8 @@ function ensureToolPalette() {
 
   tabArea.before(palette);
   toolPalette = palette;
-  syncToolPalette();
+  setToolboxCollapsed(toolboxCollapsed);
+  syncToolButtons();
   return palette;
 }
 
@@ -245,61 +319,89 @@ function syncToolPalette() {
   const editorView = document.getElementById('editorView');
   const hidden = Boolean(editorView?.hidden || editingBlocked());
   palette.hidden = hidden;
-  if (hidden && (activeToolId || pendingLinkTool)) setActiveTool(null);
+  if (hidden && toolSession.active) {
+    toolSession.cancel();
+    clearToolSource();
+    syncToolButtons();
+  }
+}
+
+function invalidSelectionMessage(reason) {
+  if (reason === 'same-note') return '第二個音符需與第一個不同';
+  if (reason === 'same-measure-required') return '範圍起點與終點需在同一小節';
+  if (reason === 'different-position-required') return '範圍終點需與起點不同';
+  return '請點選有效的譜面目標';
+}
+
+function handleToolSelection(target) {
+  const snapshot = toolSession.snapshot();
+  if (!snapshot.toolId) return false;
+  const result = toolSession.select(target);
+
+  if (result.status === 'invalid') {
+    toast(invalidSelectionMessage(result.reason));
+    return true;
+  }
+
+  if (result.status === 'pending') {
+    markToolSource(snapshot.targetKind, result.source);
+    toast(snapshot.targetKind === TOOL_TARGET_KINDS.NOTE_PAIR
+      ? '已選擇第一個音符，請選擇第二個音符'
+      : '已選擇範圍起點，請選擇終點');
+    return true;
+  }
+
+  if (result.status === 'complete') {
+    const committed = dispatchTool(snapshot.toolId, result.target);
+    if (committed) {
+      toolSession.commitSuccess();
+      clearToolSource();
+      syncToolButtons();
+    }
+    return true;
+  }
+
+  return false;
 }
 
 function installToolInteractions() {
-  document.addEventListener('dragstart', event => {
-    const source = event.target?.closest?.('[data-editor-tool]');
-    if (!source) return;
-    let options = {};
-    if (source.dataset.toolOptions) {
-      try { options = JSON.parse(source.dataset.toolOptions); } catch { options = {}; }
-    }
-    writeToolDragData(event.dataTransfer, source.dataset.editorTool, options);
-  });
-
-  document.addEventListener('dragover', event => {
-    if (editingBlocked()) return;
-    const payload = readToolDragData(event.dataTransfer);
-    if (!payload) return;
-    const definition = toolRegistry.get(payload.toolId);
-    const store = ensureStore({ reconcile: false });
-    if (!definition || !store) return;
-    if (toolTargetFromNode(definition, event.target, store.getDocument())) event.preventDefault();
-  });
-
-  document.addEventListener('drop', event => {
-    if (editingBlocked()) return;
-    const payload = readToolDragData(event.dataTransfer);
-    if (!payload) return;
-    const definition = toolRegistry.get(payload.toolId);
-    const store = ensureStore({ reconcile: false });
-    if (!definition || !store) return;
-    const target = toolTargetFromNode(definition, event.target, store.getDocument());
-    if (!target) return;
-    event.preventDefault();
-    dispatchTool(payload.toolId, target, payload.options || {});
-  });
-
   document.addEventListener('click', event => {
-    const toolButton = event.target?.closest?.('[data-editor-tool]');
-    if (toolButton) {
+    const collapseButton = event.target?.closest?.('[data-editor-toolbox-toggle]');
+    if (collapseButton) {
       event.preventDefault();
-      setActiveTool(activeToolId === toolButton.dataset.editorTool ? null : toolButton.dataset.editorTool);
+      setToolboxCollapsed(!toolboxCollapsed);
       return;
     }
 
-    if (!activeToolId || editingBlocked()) return;
-    const definition = toolRegistry.get(activeToolId);
-    const store = ensureStore({ reconcile: false });
-    if (!definition || !store) return;
-    const target = toolTargetFromNode(definition, event.target, store.getDocument());
-    if (target) dispatchTool(activeToolId, target);
+    const toolButton = event.target?.closest?.('[data-editor-tool]');
+    if (toolButton) {
+      event.preventDefault();
+      setActiveTool(toolButton.dataset.editorTool);
+      return;
+    }
+
+    const snapshot = toolSession.snapshot();
+    if (!snapshot.toolId || editingBlocked()) return;
+    const definition = toolRegistry.get(snapshot.toolId);
+    if (!definition) return;
+
+    const target = toolTargetFromNode(definition, event.target);
+    const inScore = Boolean(event.target?.closest?.('#tabArea'));
+    if (!target) {
+      if (inScore) toast('請點選有效的譜面目標');
+      return;
+    }
+
+    event.preventDefault();
+    handleToolSelection(target);
   });
 
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && (activeToolId || pendingLinkTool)) setActiveTool(null);
+    if (event.key !== 'Escape' || !toolSession.active) return;
+    event.preventDefault();
+    toolSession.cancel();
+    clearToolSource();
+    syncToolButtons();
   });
 }
 
@@ -340,6 +442,7 @@ export function installEditorV3() {
     version: 3,
     stores: registry,
     tools: toolRegistry,
+    toolSession,
     getStore: options => ensureStore(options),
     reconcileCurrentSong: () => stateSync.reconcileCurrentSong(),
     sync: {
