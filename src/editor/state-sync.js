@@ -8,39 +8,24 @@ export class EditorStateSync {
   constructor(registry, { currentSong = currentSongDefault } = {}) {
     this.registry = registry;
     this.currentSong = currentSong;
-    this.syncState = new WeakMap();
   }
 
-  ensureStore({ reconcile = true } = {}) {
+  ensureStore() {
     const song = this.currentSong();
-    if (!song) return null;
-    const store = this.registry.forSong(song);
-    let state = this.syncState.get(store);
-    if (!state) {
-      state = { sourceUpdatedAt: Number(song.updatedAt) || 0 };
-      this.syncState.set(store, state);
-    }
-    if (reconcile && state.sourceUpdatedAt !== (Number(song.updatedAt) || 0)) {
-      store.reconcileLegacySong(song, { silent: true });
-      this.markCurrent(store);
-    }
-    return store;
+    return song ? this.registry.forSong(song) : null;
   }
 
   markCurrent(store) {
-    const song = store?.getSong();
-    if (!store || !song) return;
-    this.syncState.set(store, { sourceUpdatedAt: Number(song.updatedAt) || 0 });
+    return store || null;
   }
 
-  prepareForPersistence(store = this.ensureStore({ reconcile: false })) {
+  prepareForPersistence(store = this.ensureStore()) {
     const song = store?.getSong();
     if (!store || !song) return null;
     store.prepareForPersistence({
       tempo: typeof window.getTempo === 'function' ? window.getTempo() : song.tempo,
       capo: typeof window.getCapo === 'function' ? window.getCapo() : song.capo
     });
-    this.markCurrent(store);
     return song;
   }
 
@@ -82,7 +67,6 @@ export class EditorStateSync {
     song.beatsPerMeasure = projection.beatsPerMeasure;
     song.meter = projection.meter;
     song.updatedAt = Date.now();
-    this.markCurrent(store);
 
     const sameShape = Array.isArray(previousCounts)
       && previousCounts.length === projection.rowMeasureCounts.length
@@ -102,10 +86,8 @@ export class EditorStateSync {
   }
 
   reconcileCurrentSong() {
-    const store = this.ensureStore({ reconcile: false });
+    const store = this.ensureStore();
     if (!store) return null;
-    const result = store.reconcileLegacySong(store.getSong(), { silent: true });
-    this.markCurrent(store);
-    return result;
+    return store.reconcileLegacySong(store.getSong(), { silent: true });
   }
 }
