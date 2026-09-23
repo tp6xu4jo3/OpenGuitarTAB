@@ -17,6 +17,15 @@ function currentSongSafe() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
 }
 
+function scoreViewActive() {
+  return Boolean(document.getElementById('editorView')?.classList.contains('score-view'));
+}
+
+function previewActive() {
+  const badge = document.getElementById('previewBadge');
+  return Boolean(badge && !badge.hidden);
+}
+
 function toast(message) {
   if (typeof window.showToast === 'function') window.showToast(message);
 }
@@ -103,7 +112,7 @@ function selectedSystemMeasures(store, rowIndex) {
 }
 
 function copyModule(target) {
-  if (!target || window.previewSong || window.scoreViewEnabled) return false;
+  if (!target || previewActive() || scoreViewActive()) return false;
   const store = ensureStore();
   if (!store) return false;
   if (target.type === 'measure') {
@@ -124,7 +133,7 @@ function copyModule(target) {
 }
 
 function pasteModule(target) {
-  if (!target || window.previewSong || window.scoreViewEnabled) return false;
+  if (!target || previewActive() || scoreViewActive()) return false;
   const store = ensureStore();
   if (!store) return false;
   const song = store.getSong();
@@ -164,7 +173,7 @@ function pasteModule(target) {
 
 function syncInputMeasure(event) {
   const input = event.target?.closest?.('.note-input');
-  if (!input || window.previewSong || window.scoreViewEnabled) return;
+  if (!input || previewActive() || scoreViewActive()) return;
   const song = currentSongSafe();
   const store = ensureStore({ reconcile: false });
   if (!song || !store) return;
@@ -268,7 +277,11 @@ function installToolDragDrop() {
   document.addEventListener('dragstart', event => {
     const source = event.target?.closest?.('[data-editor-tool]');
     if (!source) return;
-    writeToolDragData(event.dataTransfer, source.dataset.editorTool, source.dataset.toolOptions ? JSON.parse(source.dataset.toolOptions) : {});
+    let options = {};
+    if (source.dataset.toolOptions) {
+      try { options = JSON.parse(source.dataset.toolOptions); } catch { options = {}; }
+    }
+    writeToolDragData(event.dataTransfer, source.dataset.editorTool, options);
   });
 
   document.addEventListener('dragover', event => {
@@ -297,7 +310,8 @@ function installToolDragDrop() {
 }
 
 export function installEditorV3() {
-  if (installed || typeof window === 'undefined') return window?.editorV3 || null;
+  if (typeof window === 'undefined') return null;
+  if (installed) return window.editorV3 || null;
   installed = true;
   installStateSourceBridge();
   installToolDragDrop();
