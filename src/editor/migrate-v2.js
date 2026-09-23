@@ -1,6 +1,5 @@
 import {
   cloneValue,
-  compareFractions,
   createDocumentV3,
   fractionKey,
   indexDocument,
@@ -24,8 +23,7 @@ function clampMeasureCount(value) {
 }
 
 function noteValue(row, string, position) {
-  const value = String(row?.[string]?.[position] ?? '').trim();
-  return value;
+  return String(row?.[string]?.[position] ?? '').trim();
 }
 
 function deterministicMeasureId(rowIndex, measureIndex) {
@@ -40,7 +38,7 @@ function deterministicNoteId(rowIndex, measureIndex, localPosition, string) {
   return `n-${rowIndex + 1}-${measureIndex + 1}-${localPosition}-${string + 1}`;
 }
 
-function durationForOnset({ row, rhythm, absolutePosition, localPosition, measureSlots, onsets }) {
+function durationForOnset({ rhythm, absolutePosition, localPosition, measureSlots, onsets }) {
   const explicit = Number(rhythm?.[absolutePosition]);
   if (Number.isInteger(explicit) && explicit > 0) return Math.min(measureSlots, explicit);
   const currentIndex = onsets.indexOf(localPosition);
@@ -70,7 +68,7 @@ export function legacyMeasureToV3(song, rowIndex, measureIndex, { measureId } = 
 
   const events = onsets.map(localPosition => {
     const absolutePosition = start + localPosition;
-    const durationSlots = durationForOnset({ row, rhythm, absolutePosition, localPosition, measureSlots, onsets });
+    const durationSlots = durationForOnset({ rhythm, absolutePosition, localPosition, measureSlots, onsets });
     const notes = [];
     for (let string = 0; string < LEGACY_STRINGS; string++) {
       const fret = noteValue(row, string, absolutePosition);
@@ -183,6 +181,14 @@ function mergeLegacyMeasure(existingMeasure, generatedMeasure) {
   };
 }
 
+function noteIdsInMeasure(measure) {
+  const ids = new Set();
+  for (const event of measure?.events || []) {
+    for (const note of event.notes || []) ids.add(String(note.id));
+  }
+  return ids;
+}
+
 function remapBreaksFromLegacy(song, measures) {
   const breaks = [];
   let offset = 0;
@@ -198,7 +204,7 @@ function remapBreaksFromLegacy(song, measures) {
 
 export function reconcileLegacySongToDocument(song, existingDocument = song?.document) {
   const generated = migrateSongToDocumentV3({ ...song, document: undefined });
-  const existing = isDocumentV3(existingDocument) ? normalizeDocumentV3(existingDocument) : null;
+  const existing = isDocumentV3(existingDocument) ? existingDocument : null;
   if (!existing) return generated;
 
   const measures = generated.measures.map((measure, index) =>
@@ -220,7 +226,7 @@ export function reconcileLegacySongToDocument(song, existingDocument = song?.doc
 }
 
 export function reconcileLegacyMeasure(song, existingDocument, rowIndex, measureIndex) {
-  const existing = isDocumentV3(existingDocument) ? normalizeDocumentV3(existingDocument) : migrateSongToDocumentV3(song);
+  const existing = isDocumentV3(existingDocument) ? existingDocument : migrateSongToDocumentV3(song);
   const systems = buildSystems(existing);
   const target = systems?.[rowIndex]?.[measureIndex];
   if (!target) return existing;
@@ -230,13 +236,20 @@ export function reconcileLegacyMeasure(song, existingDocument, rowIndex, measure
   const targetIndex = existing.measures.findIndex(measure => measure.id === target.id);
   if (targetIndex < 0) return existing;
 
+  const oldNoteIds = noteIdsInMeasure(target);
+  const newNoteIds = noteIdsInMeasure(merged);
+  const removedNoteIds = new Set([...oldNoteIds].filter(id => !newNoteIds.has(id)));
+  const relations = removedNoteIds.size
+    ? (existing.relations || []).filter(relation => !relationNoteIds(relation).some(id => removedNoteIds.has(id)))
+    : existing.relations;
   const measures = existing.measures.slice();
   measures[targetIndex] = merged;
-  const liveNotes = new Set();
-  measures.forEach(measure => measure.events.forEach(event => event.notes.forEach(note => liveNotes.add(note.id))));
-  const relations = (existing.relations || []).filter(relation => relationNoteIds(relation).every(id => liveNotes.has(id)));
 
-  return normalizeDocumentV3({ ...existing, measures, relations });
+  return {
+    ...existing,
+    measures,
+    relations
+  };
 }
 
 function fractionToLegacySlots(value) {
