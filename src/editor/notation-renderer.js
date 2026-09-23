@@ -1,9 +1,8 @@
+import { buildSystems } from './layout.js';
 import { fractionToNumber, indexDocument, noteDisplayValue } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const LEGACY_SLOTS_PER_BEAT = 4;
-const MAX_MEASURES_PER_SYSTEM = 4;
 
 function svgNode(name, attributes = {}) {
   const node = document.createElementNS(SVG_NS, name);
@@ -16,41 +15,11 @@ function escapeSelector(value) {
   return globalThis.CSS?.escape ? CSS.escape(text) : text.replace(/["\\]/g, '\\$&');
 }
 
-function documentSystems(documentModel) {
-  const breaks = new Set(documentModel?.layout?.systemBreakAfter || []);
-  const systems = [];
-  let current = [];
-  for (const measure of documentModel?.measures || []) {
-    current.push(measure);
-    if (breaks.has(measure.id) || current.length >= MAX_MEASURES_PER_SYSTEM) {
-      systems.push(current);
-      current = [];
-    }
-  }
-  if (current.length) systems.push(current);
-  return systems.length ? systems : [[]];
-}
-
-function measureSlots(measure) {
-  const signature = measure?.timeSignature || { numerator: 4, denominator: 4 };
-  return Number(signature.numerator || 4) * (4 / Number(signature.denominator || 4)) * LEGACY_SLOTS_PER_BEAT;
-}
-
-function legacySlot(value) {
-  const slot = fractionToNumber(value) * LEGACY_SLOTS_PER_BEAT;
-  return Number.isInteger(slot) ? slot : null;
-}
-
-function systemsWithOffsets(systems) {
-  return systems.map((system, rowIndex) => {
-    let offset = 0;
-    const measures = system.map((measure, measureIndex) => {
-      const entry = { measure, rowIndex, measureIndex, offset };
-      offset += measureSlots(measure);
-      return entry;
-    });
-    return { rowIndex, measures };
-  });
+function systemsWithLocations(documentModel) {
+  return buildSystems(documentModel).map((system, rowIndex) => ({
+    rowIndex,
+    measures: system.map(measure => ({ measure, rowIndex }))
+  }));
 }
 
 function noteNodes(root, noteId) {
@@ -59,6 +28,19 @@ function noteNodes(root, noteId) {
 
 function eventNodes(root, eventId) {
   return [...root.querySelectorAll(`.note-input[data-event-id="${escapeSelector(eventId)}"]`)];
+}
+
+function eventNoteNodes(root, event) {
+  const nodes = [];
+  const seen = new Set();
+  for (const note of event?.notes || []) {
+    for (const node of noteNodes(root, note.id)) {
+      if (!node.classList?.contains('note-input') || seen.has(node)) continue;
+      seen.add(node);
+      nodes.push(node);
+    }
+  }
+  return nodes;
 }
 
 function centerIn(element, container) {
@@ -75,6 +57,12 @@ function centerIn(element, container) {
 function visibleMeasureIds(systemElement, systems) {
   const ids = new Set();
   systemElement.querySelectorAll('.tab-grid[data-row]').forEach(grid => {
+    const explicitIds = String(grid.dataset.measureIds || '').split(',').filter(Boolean);
+    if (explicitIds.length) {
+      explicitIds.forEach(id => ids.add(id));
+      return;
+    }
+
     const rowIndex = Number(grid.dataset.row);
     const system = systems[rowIndex];
     if (!system) return;
@@ -275,8 +263,8 @@ export class NotationRenderer {
   render(documentModel, changeSet = null) {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
-    const systems = documentSystems(this.document);
-    const locations = systemsWithOffsets(systems);
+    const systems = buildSystems(this.document);
+    const locations = systemsWithLocations(this.document);
     const full = !changeSet || changeSet.document || changeSet.layoutFrom;
     const dirtyMeasureIds = new Set((changeSet?.measures || []).map(String));
 
@@ -349,10 +337,11 @@ export class NotationRenderer {
       for (const event of measure.events || []) {
         const nodes = eventNodes(systemElement, event.id);
         if (!nodes.length) continue;
-        const points = nodes.map(node => centerIn(node, systemElement));
-        const anchor = points[0];
-        const top = Math.min(...points.map(point => point.y)) - 5;
-        const bottom = Math.max(...points.map(point => point.y)) + 5;
+        const noteTargets = eventNoteNodes(systemElement, event);
+        const notePoints = noteTargets.map(node => centerIn(node, systemElement));
+        const anchor = notePoints[0] || centerIn(nodes[0], systemElement);
+        const top = notePoints.length ? Math.min(...notePoints.map(point => point.y)) - 5 : anchor.y - 5;
+        const bottom = notePoints.length ? Math.max(...notePoints.map(point => point.y)) + 5 : anchor.y + 5;
 
         for (const mark of event.marks || []) {
           if (mark.type === 'strum') {
@@ -364,7 +353,7 @@ export class NotationRenderer {
               eventId: event.id
             });
             appendTechniqueMarker(markerLayer, markerOffsets, {
-              node: nodes[0],
+              node: noteTargets[0] || nodes[0],
               systemElement,
               kind: 'mark',
               id: mark.id,
@@ -382,7 +371,7 @@ export class NotationRenderer {
               eventId: event.id
             });
             appendTechniqueMarker(markerLayer, markerOffsets, {
-              node: nodes[0],
+              node: noteTargets[0] || nodes[0],
               systemElement,
               kind: 'mark',
               id: mark.id,
