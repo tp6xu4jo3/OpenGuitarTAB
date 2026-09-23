@@ -7,6 +7,10 @@ const exists = path => fs.existsSync(new URL(`../${path}`, import.meta.url));
 const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const gridRenderer = read('src/editor/grid-renderer.js');
+const gridGeometry = read('src/editor/grid-geometry.js');
+const gridNavigation = read('src/editor/grid-navigation.js');
+const inputController = read('src/editor/input-controller.js');
+const legacyGridCompat = read('src/editor/legacy-grid-compat.js');
 const layout = read('src/editor/layout.js');
 const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
@@ -38,6 +42,9 @@ for (const moduleName of ['input-controller.js', 'state-sync.js', 'tool-session.
 
 for (const moduleName of [
   'src/editor/grid-renderer.js',
+  'src/editor/grid-geometry.js',
+  'src/editor/grid-navigation.js',
+  'src/editor/legacy-grid-compat.js',
   'src/editor/layout.js',
   'src/editor/notation-renderer.js',
   'src/editor/rhythm-grid.js',
@@ -118,6 +125,17 @@ assert.equal(gridRenderer.includes('fractionalGridTimes'), true, 'grid renderer 
 assert.equal(gridRenderer.includes('data-v3-only'), false, 'grid renderer should set V3-only state through dataset APIs, not HTML patches');
 assert.equal(rhythmGrid.includes('ratio: [3, 2]'), true, 'triplet transform must retain explicit 3:2 semantics');
 assert.equal(rhythmGrid.includes('rhythmAnchor: true'), true, 'empty 32nd positions must persist as rhythm anchors');
+assert.equal(gridRenderer.includes('function handleKeydown'), false, 'grid renderer must not own keyboard navigation');
+assert.equal(inputController.includes('window.handleKeydown'), false, 'input controller must call navigation module directly');
+assert.equal(inputController.includes('window.rhythmRowFromRow'), false, 'input controller must call compatibility helpers directly');
+assert.equal(gridNavigation.includes("event.key === 'Enter'"), true, 'Enter behavior must be explicit');
+assert.equal(gridNavigation.includes('stringDelta: 1'), true, 'Down arrow must remain string navigation');
+assert.equal(gridNavigation.includes("event.key === 'Enter'") && gridNavigation.includes("stringDelta: 1, timeDelta"), false, 'Enter must not be implemented as arrow navigation');
+assert.equal(gridGeometry.includes('measureWidthsForGrid'), true, 'grid geometry must have one shared width parser');
+assert.equal(playbackController.includes('function measureWidthsForGrid'), false, 'playback must reuse shared grid geometry');
+assert.equal(structureController.includes('function measureWidths('), false, 'structure UI must reuse shared grid geometry');
+assert.equal(legacyGridCompat.includes('projectDocumentToLegacySong'), true, 'legacy projection must live behind an explicit compatibility boundary');
+assert.equal(stateSync.includes('documentToLegacyProjection'), false, 'state sync must not duplicate legacy projection logic');
 
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
