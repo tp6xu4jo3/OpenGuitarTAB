@@ -5,7 +5,8 @@ import { buildSystems } from '../src/editor/layout.js';
 import { fractionToNumber } from '../src/editor/model.js';
 import {
   documentToLegacyProjection,
-  migrateSongToDocumentV3
+  migrateSongToDocumentV3,
+  reconcileLegacyMeasure
 } from '../src/editor/migrate-v2.js';
 import { ScoreStore } from '../src/editor/store.js';
 import { ToolRegistry } from '../src/editor/tools.js';
@@ -55,6 +56,18 @@ assert.equal(projection.rows[0][0][4], '8');
 assert.equal(projection.rows[0][2][16], '12');
 assert.equal(projection.rhythmRows[0][4], 2);
 
+{
+  const legacy = structuredClone(legacySong);
+  const before = migrateSongToDocumentV3(legacy);
+  const untouched = before.measures[1];
+  legacy.rows[0][0][4] = '9';
+  legacy.rhythmRows[0] = { 0: 4, 4: 2, 16: 8 };
+  const after = reconcileLegacyMeasure(legacy, before, 0, 0);
+  assert.notEqual(after.measures[0], before.measures[0]);
+  assert.equal(after.measures[1], untouched, 'unaffected measures must keep identity');
+  assert.equal(after.measures[0].events[1].notes[0].fret, '9');
+}
+
 let documentModel = migrated;
 const firstMeasure = documentModel.measures[0];
 const firstEvent = firstMeasure.events[0];
@@ -83,6 +96,17 @@ const secondNote = firstEvent.notes[1];
   assert.deepEqual(documentModel.measures[0].events[0].duration, [1, 8]);
   assert.equal(fractionToNumber(documentModel.measures[0].events[0].duration), 0.125);
   assert.deepEqual(result.changeSet.playback, [firstMeasure.id]);
+}
+
+{
+  const result = applyCommand(documentModel, {
+    type: 'event/duration/set',
+    eventId: firstEvent.id,
+    duration: [1, 3]
+  });
+  documentModel = result.document;
+  assert.deepEqual(documentModel.measures[0].events[0].duration, [1, 3]);
+  assert.equal(fractionToNumber(documentModel.measures[0].events[0].duration), 1 / 3);
 }
 
 {
