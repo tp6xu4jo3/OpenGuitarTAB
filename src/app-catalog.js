@@ -341,8 +341,8 @@ async function openCatalogPreview(id) {
     addPreviewSongButton.hidden = catalogSongCanManage(meta) || catalogSongIsAdded(meta);
     setScoreViewEnabled(true);
     if (rhythmToggleButton.isConnected) rhythmToggleButton.remove();
-    renderRows(previewSong.rows);
     showPage('editor');
+    renderRows(previewSong.rows);
   } catch (error) {
     console.error(error);
     showToast('曲譜預覽載入失敗');
@@ -360,10 +360,10 @@ function openLocalEditor(id) {
   const previewBadge = document.getElementById('previewBadge');
   if (previewBadge) previewBadge.hidden = true;
   setScoreViewEnabled(false);
+  showPage('editor');
   loadSong(id);
   const song = currentSong();
   editorTitle.textContent = song?.name || '吉他 TAB 譜製作器';
-  showPage('editor');
 }
 
 function handleRoute() {
