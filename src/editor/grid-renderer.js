@@ -1,11 +1,26 @@
 import { buildAdaptiveLayout, buildSystems, DEFAULT_LAYOUT_WIDTH } from './layout.js';
-import { addFractions, fractionKey, fractionToNumber, normalizeFraction, noteBaseFret } from './model.js';
+import {
+  fractionalPercentForGrid,
+  legacyPositionPercentForGrid,
+  legacyPositionStepPercentForGrid,
+  measureBoundaryPercentForGrid
+} from './grid-geometry.js';
+import {
+  LEGACY_SLOTS_PER_BEAT,
+  LEGACY_STRING_COUNT,
+  legacyBeatsPerMeasure,
+  legacyRowMeasureCount,
+  legacyRowPositionCount,
+  legacyRowStepCount,
+  projectSystemCountsToLegacySong,
+  rhythmOnsetsFromLegacyRow,
+  rhythmRowFromLegacyRow
+} from './legacy-grid-compat.js';
+import { fractionKey, normalizeFraction, noteBaseFret } from './model.js';
 import { fractionalGridTimes, isTimeReplacedByFractionalGrid } from './rhythm-grid.js';
 import { isScoreViewActive } from './view-state.js';
 
-const STRINGS = 6;
-const MAX_MEASURES_PER_SYSTEM = 4;
-const SLOTS_PER_BEAT = 4;
+const STRINGS = LEGACY_STRING_COUNT;
 const EDITOR_RAIL_WIDTH = 102;
 
 let installed = false;
@@ -21,7 +36,7 @@ function currentDocumentSafe(song = currentSongSafe()) {
 }
 
 function beatsPerMeasure(song = currentSongSafe()) {
-  return Number(song?.beatsPerMeasure) === 3 ? 3 : 4;
+  return legacyBeatsPerMeasure(song);
 }
 
 function makeDiv(className) {
@@ -30,92 +45,34 @@ function makeDiv(className) {
   return node;
 }
 
-function normalizeMeasureCount(value) {
-  const count = Number(value);
-  return Number.isInteger(count)
-    ? Math.max(1, Math.min(MAX_MEASURES_PER_SYSTEM, count))
-    : MAX_MEASURES_PER_SYSTEM;
-}
-
-function logicalSystems(song = currentSongSafe()) {
-  const documentModel = currentDocumentSafe(song);
-  return documentModel ? buildSystems(documentModel) : null;
-}
-
-function normalizeMeasureCounts(rawCounts, rowCount) {
-  return Array.from({ length: rowCount }, (_, index) => normalizeMeasureCount(rawCounts?.[index]));
-}
-
 function ensureRowMeasureCounts(song = currentSongSafe()) {
-  if (!song) return [];
-  const systems = logicalSystems(song);
-  if (systems?.length) {
-    song.rowMeasureCounts = systems.map(system => normalizeMeasureCount(system.length));
-    return song.rowMeasureCounts;
-  }
-  const rowCount = song.rows?.length || 1;
-  song.rowMeasureCounts = normalizeMeasureCounts(song.rowMeasureCounts, rowCount);
-  return song.rowMeasureCounts;
+  return projectSystemCountsToLegacySong(song, currentDocumentSafe(song));
 }
 
 function rowMeasureCount(rowIndex, song = currentSongSafe()) {
-  const systems = logicalSystems(song);
-  if (systems?.[rowIndex]?.length) return normalizeMeasureCount(systems[rowIndex].length);
-  const counts = ensureRowMeasureCounts(song);
-  return normalizeMeasureCount(counts[rowIndex]);
+  return legacyRowMeasureCount(song, currentDocumentSafe(song), rowIndex);
 }
 
 function rowPositionCount(rowIndex, song = currentSongSafe()) {
-  return rowMeasureCount(rowIndex, song) * beatsPerMeasure(song) * SLOTS_PER_BEAT;
+  return legacyRowPositionCount(song, currentDocumentSafe(song), rowIndex);
 }
 
 function rowStepCount(rowIndex, song = currentSongSafe()) {
-  return rowMeasureCount(rowIndex, song) * beatsPerMeasure(song) * 2;
-}
-
-function parseMeasureWidths(grid) {
-  const count = Math.max(1, Number(grid?.dataset.measureCount) || 1);
-  const raw = String(grid?.dataset.measureWidths || '')
-    .split(',')
-    .map(Number)
-    .filter(Number.isFinite);
-  if (raw.length !== count || raw.some(value => value <= 0)) return Array(count).fill(100 / count);
-  const total = raw.reduce((sum, value) => sum + value, 0) || 100;
-  return raw.map(value => value / total * 100);
-}
-
-function measureBoundaryPercentForGrid(grid, localBoundary) {
-  const widths = parseMeasureWidths(grid);
-  const boundary = Math.max(0, Math.min(widths.length, Number(localBoundary) || 0));
-  return widths.slice(0, boundary).reduce((sum, value) => sum + value, 0);
+  return legacyRowStepCount(song, currentDocumentSafe(song), rowIndex);
 }
 
 function positionPercentForGrid(grid, absolutePosition) {
-  const beats = beatsPerMeasure();
-  const measureSlots = beats * SLOTS_PER_BEAT;
-  const startMeasure = Number(grid?.dataset.measureStart) || 0;
-  const widths = parseMeasureWidths(grid);
-  const position = Number(absolutePosition);
-  if (!Number.isFinite(position)) return 0;
-  const absoluteMeasure = Math.floor(Math.max(0, position) / measureSlots);
-  const localMeasure = absoluteMeasure - startMeasure;
-  if (localMeasure < 0) return 0;
-  if (localMeasure >= widths.length) return 100;
-  const slot = Math.max(0, Math.min(measureSlots - 1, position - absoluteMeasure * measureSlots));
-  const left = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
-  return left + widths[localMeasure] * ((slot + 1) / measureSlots);
+  return legacyPositionPercentForGrid(grid, absolutePosition, {
+    beatsPerMeasure: beatsPerMeasure(),
+    slotsPerBeat: LEGACY_SLOTS_PER_BEAT
+  });
 }
 
 function positionStepPercentForGrid(grid, absolutePosition) {
-  const beats = beatsPerMeasure();
-  const measureSlots = beats * SLOTS_PER_BEAT;
-  const startMeasure = Number(grid?.dataset.measureStart) || 0;
-  const widths = parseMeasureWidths(grid);
-  const position = Number(absolutePosition);
-  const absoluteMeasure = Math.floor(Math.max(0, position) / measureSlots);
-  const localMeasure = absoluteMeasure - startMeasure;
-  if (localMeasure < 0 || localMeasure >= widths.length) return 100 / Math.max(1, Number(grid?.dataset.positionCount) || measureSlots);
-  return widths[localMeasure] / measureSlots;
+  return legacyPositionStepPercentForGrid(grid, absolutePosition, {
+    beatsPerMeasure: beatsPerMeasure(),
+    slotsPerBeat: LEGACY_SLOTS_PER_BEAT
+  });
 }
 
 function createInput({
@@ -170,18 +127,6 @@ function createInput({
   return input;
 }
 
-function fractionalPercentForGrid(grid, absoluteMeasure, at, duration, measure) {
-  const startMeasure = Number(grid?.dataset.measureStart) || 0;
-  const widths = parseMeasureWidths(grid);
-  const localMeasure = Number(absoluteMeasure) - startMeasure;
-  if (localMeasure < 0 || localMeasure >= widths.length) return 0;
-  const left = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
-  const beats = Number(measure?.timeSignature?.numerator || 4) * (4 / Number(measure?.timeSignature?.denominator || 4));
-  const visualTime = addFractions(at, duration || [1, 4]);
-  const ratio = Math.max(0, Math.min(1, fractionToNumber(visualTime) / Math.max(0.000001, beats)));
-  return left + widths[localMeasure] * ratio;
-}
-
 function eventAtFraction(measure, at) {
   const key = fractionKey(at);
   return (measure?.events || []).find(event => fractionKey(event.at) === key) || null;
@@ -197,7 +142,7 @@ function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
   const song = currentSongSafe();
   const beats = beatsPerMeasure(song);
   const measureSteps = beats * 2;
-  const measureSlots = beats * SLOTS_PER_BEAT;
+  const measureSlots = beats * LEGACY_SLOTS_PER_BEAT;
   const measureCount = Math.max(1, segment.measures.length);
   const startMeasure = Math.max(0, Number(segment.startMeasure) || 0);
   const visibleSteps = measureCount * measureSteps;
@@ -249,7 +194,7 @@ function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
     const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
     for (let localStep = 0; localStep < measureSteps; localStep++, localGridStep++) {
       const position = absoluteMeasure * measureSlots + localStep * 2;
-      const at = normalizeFraction([localStep * 2, SLOTS_PER_BEAT]);
+      const at = normalizeFraction([localStep * 2, LEGACY_SLOTS_PER_BEAT]);
       const replaced = isTimeReplacedByFractionalGrid(measure, at);
       for (let string = 0; string < STRINGS; string++) {
         const cell = makeDiv('cell');
@@ -282,7 +227,7 @@ function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
     const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
     for (let localStep = 0; localStep < measureSteps; localStep++) {
       const position = absoluteMeasure * measureSlots + localStep * 2 + 1;
-      const at = normalizeFraction([localStep * 2 + 1, SLOTS_PER_BEAT]);
+      const at = normalizeFraction([localStep * 2 + 1, LEGACY_SLOTS_PER_BEAT]);
       if (isTimeReplacedByFractionalGrid(measure, at)) continue;
       for (let string = 0; string < STRINGS; string++) {
         const cell = makeDiv('small-cell');
@@ -376,30 +321,11 @@ function createTabSystem(rowIndex, rowCount, { rowValues = null, logicalSystem =
 }
 
 function rhythmOnsetsFromRow(row, beats = beatsPerMeasure()) {
-  const measureSlots = beats * SLOTS_PER_BEAT;
-  const positions = Math.max(...(row || []).map(values => values?.length || 0), measureSlots);
-  const onsets = [];
-
-  for (let position = 0; position < positions; position++) {
-    let lowestString = -1;
-    for (let string = 0; string < STRINGS; string++) {
-      if (String(row?.[string]?.[position] ?? '').trim() !== '') lowestString = string;
-    }
-    if (lowestString >= 0) onsets.push({ position, duration: 1, lowestString });
-  }
-
-  onsets.forEach((onset, index) => {
-    const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
-    const next = onsets[index + 1];
-    onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
-  });
-  return onsets;
+  return rhythmOnsetsFromLegacyRow(row, beats);
 }
 
 function rhythmRowFromRow(row, beats = beatsPerMeasure()) {
-  const rhythm = {};
-  rhythmOnsetsFromRow(row, beats).forEach(onset => { rhythm[onset.position] = onset.duration; });
-  return rhythm;
+  return rhythmRowFromLegacyRow(row, beats);
 }
 
 function filledPositions(rowIndex, maxPosition) {
@@ -421,7 +347,7 @@ function renderRhythmNotation(rowIndex) {
 
   const song = currentSongSafe();
   const beats = beatsPerMeasure(song);
-  const measureSlots = beats * SLOTS_PER_BEAT;
+  const measureSlots = beats * LEGACY_SLOTS_PER_BEAT;
   const explicit = song?.rhythmRows?.[rowIndex] || {};
 
   layers.forEach(layer => {
@@ -479,7 +405,7 @@ function renderRhythmNotation(rowIndex) {
       if ([3, 6, 12].includes(onset.duration)) appendMark('rhythm-dot', left);
     });
 
-    const groupSlots = beats === 3 ? 6 : SLOTS_PER_BEAT;
+    const groupSlots = beats === 3 ? 6 : LEGACY_SLOTS_PER_BEAT;
     const firstMeasure = Math.floor(startPosition / measureSlots);
     const lastMeasure = Math.ceil(endPosition / measureSlots);
     for (let measure = firstMeasure; measure < lastMeasure; measure++) {
@@ -526,89 +452,6 @@ function renderRhythmNotation(rowIndex) {
       }
     }
   });
-}
-
-function getInput(row, string, position) {
-  return document.querySelector(`.note-input[data-row="${row}"][data-string="${string}"][data-position="${position}"]`);
-}
-
-function focusInput(input) {
-  if (!input) return false;
-  input.focus();
-  input.select();
-  return true;
-}
-
-function chronologicalInputsForString(string) {
-  const systems = logicalSystems() || [];
-  const measureOrder = new Map();
-  systems.forEach((system, rowIndex) => {
-    system.forEach((measure, measureIndex) => {
-      measureOrder.set(String(measure.id), { rowIndex, measureIndex });
-    });
-  });
-
-  return [...document.querySelectorAll(`.note-input[data-string="${Number(string)}"][data-measure-id][data-at]`)]
-    .sort((left, right) => {
-      const leftLocation = measureOrder.get(String(left.dataset.measureId)) || { rowIndex: Number(left.dataset.row), measureIndex: 0 };
-      const rightLocation = measureOrder.get(String(right.dataset.measureId)) || { rowIndex: Number(right.dataset.row), measureIndex: 0 };
-      return leftLocation.rowIndex - rightLocation.rowIndex
-        || leftLocation.measureIndex - rightLocation.measureIndex
-        || fractionToNumber(String(left.dataset.at).split('/').map(Number))
-          - fractionToNumber(String(right.dataset.at).split('/').map(Number));
-    });
-}
-
-function focusRelative(current, stringDelta, positionDelta) {
-  const string = Number(current.dataset.string);
-  if (!Number.isInteger(string)) return;
-
-  if (stringDelta !== 0) {
-    const targetString = string + stringDelta;
-    if (targetString < 0 || targetString >= STRINGS) return;
-    const row = String(current.dataset.row || '');
-    const measureId = String(current.dataset.measureId || '');
-    const at = String(current.dataset.at || '');
-    const target = [...document.querySelectorAll(`.note-input[data-string="${targetString}"]`)]
-      .find(input => String(input.dataset.row || '') === row
-        && String(input.dataset.measureId || '') === measureId
-        && String(input.dataset.at || '') === at);
-    focusInput(target);
-    return;
-  }
-
-  if (positionDelta !== 0) {
-    const inputs = chronologicalInputsForString(string);
-    const index = inputs.indexOf(current);
-    if (index < 0) return;
-    const nextIndex = Math.max(0, Math.min(inputs.length - 1, index + Math.sign(positionDelta)));
-    focusInput(inputs[nextIndex]);
-  }
-}
-
-function handleKeydown(event) {
-  const input = event.target;
-  const controlKeys = ['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
-  if (event.ctrlKey || event.metaKey) return;
-  if (event.key === 'ArrowRight') { event.preventDefault(); focusRelative(input, 0, 1); return; }
-  if (event.key === 'ArrowLeft') { event.preventDefault(); focusRelative(input, 0, -1); return; }
-  if (event.key === 'ArrowDown') { event.preventDefault(); focusRelative(input, 1, 0); return; }
-  if (event.key === 'ArrowUp') { event.preventDefault(); focusRelative(input, -1, 0); return; }
-  if (event.key === 'Enter') { event.preventDefault(); focusRelative(input, 1, 0); return; }
-  if (!controlKeys.includes(event.key) && !/^[\dxX]$/.test(event.key)) event.preventDefault();
-}
-
-function hydrateRow(row, rowIndex) {
-  row.forEach((values, string) => {
-    values.forEach((value, position) => {
-      const input = getInput(rowIndex, string, position);
-      if (!input) return;
-      const text = String(value ?? '');
-      input.value = text;
-      input.classList.toggle('has-value', text.length > 0);
-    });
-  });
-  renderRhythmNotation(rowIndex);
 }
 
 function updateRemoveRowButton() {
@@ -690,9 +533,6 @@ export function installGridRenderer() {
     rhythmOnsetsFromRow,
     rhythmRowFromRow,
     renderRhythmNotation,
-    getInput,
-    focusRelative,
-    handleKeydown,
     updateRemoveRowButton,
     renderRows,
     positionPercentForGrid,
@@ -717,9 +557,6 @@ export function installGridRenderer() {
 export {
   createTabSystem,
   ensureRowMeasureCounts,
-  focusRelative,
-  getInput,
-  handleKeydown,
   measureBoundaryPercentForGrid,
   positionPercentForGrid,
   renderRhythmNotation,

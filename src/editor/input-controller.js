@@ -1,8 +1,10 @@
+import { focusRelativeInput, handleGridNavigationKeydown } from './grid-navigation.js';
+import { renderRhythmNotation, scheduleLayoutRender } from './grid-renderer.js';
+import { ensureCompatibilityRow, legacyBeatsPerMeasure, rhythmRowFromLegacyRow } from './legacy-grid-compat.js';
 import { legacyGridLocationToV3 } from './migrate-v2.js';
 import { normalizeFraction } from './model.js';
+import { scheduleGridFit, syncInputBackground } from './presentation.js';
 import { isPreviewActive, isScoreViewActive } from './view-state.js';
-
-const STRING_COUNT = 6;
 
 let installed = false;
 const dirtyRows = new Set();
@@ -12,21 +14,6 @@ let editorFrame = 0;
 
 function currentSongSafe() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
-}
-
-function ensureCompatibilityRow(song, rowIndex) {
-  if (!Array.isArray(song.rows)) song.rows = [];
-  while (song.rows.length <= rowIndex) {
-    song.rows.push(typeof window.blankRow === 'function'
-      ? window.blankRow(song.beatsPerMeasure)
-      : Array.from({ length: STRING_COUNT }, () => []));
-  }
-  if (!Array.isArray(song.rows[rowIndex]) || song.rows[rowIndex].length !== STRING_COUNT) {
-    song.rows[rowIndex] = typeof window.blankRow === 'function'
-      ? window.blankRow(song.beatsPerMeasure)
-      : Array.from({ length: STRING_COUNT }, () => []);
-  }
-  return song.rows[rowIndex];
 }
 
 function flushDirtyUi() {
@@ -46,18 +33,18 @@ function flushDirtyUi() {
   dirtyRows.clear();
   dirtyGrids.clear();
 
-  inputs.forEach(input => window.syncNoteInputBackground?.(input));
+  inputs.forEach(input => syncInputBackground(input));
 
   if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
   rows.forEach(rowIndex => {
     while (song.rhythmRows.length <= rowIndex) song.rhythmRows.push({});
     const row = song.rows?.[rowIndex];
-    if (!row || typeof window.rhythmRowFromRow !== 'function') return;
-    song.rhythmRows[rowIndex] = window.rhythmRowFromRow(row, song.beatsPerMeasure);
-    window.renderRhythmNotation?.(rowIndex);
+    if (!row) return;
+    song.rhythmRows[rowIndex] = rhythmRowFromLegacyRow(row, legacyBeatsPerMeasure(song));
+    renderRhythmNotation(rowIndex);
   });
 
-  grids.forEach(grid => window.fitDensityGrid?.(grid, false));
+  grids.forEach(grid => scheduleGridFit(grid, false));
   window.editorPlayback?.invalidate?.();
 }
 
@@ -135,13 +122,15 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   window.jumpToInput?.(input, false);
   markDirty(input, rowIndex, { compatibility: !v3Only });
   if (previousDensity !== nextDensity) input.dataset.layoutDirty = 'true';
-  if (normalized.length === 2) window.focusRelative?.(input, 0, 1);
+  if (normalized.length === 2) {
+    focusRelativeInput(input, { documentModel: store.getDocument(), timeDelta: 1 });
+  }
 }
 
-function handleKeydown(event) {
+function handleKeydown(event, { getStore }) {
   const input = event.target.closest?.('.note-input');
   if (!input || isPreviewActive() || isScoreViewActive()) return;
-  window.handleKeydown?.(event);
+  handleGridNavigationKeydown(event, { documentModel: getStore()?.getDocument?.() });
 }
 
 function handleFocus(event) {
@@ -155,7 +144,7 @@ function handleFocusOut(event) {
   const input = event.target.closest?.('.note-input');
   if (!input || input.dataset.layoutDirty !== 'true') return;
   delete input.dataset.layoutDirty;
-  window.scheduleEditorLayout?.();
+  scheduleLayoutRender();
 }
 
 function handleClick(event) {
@@ -172,7 +161,7 @@ export function installEditorInputController({ getStore, markStoreCurrent }) {
   if (!tabArea) return;
 
   tabArea.addEventListener('input', event => handleInput(event, { getStore, markStoreCurrent }));
-  tabArea.addEventListener('keydown', handleKeydown);
+  tabArea.addEventListener('keydown', event => handleKeydown(event, { getStore }));
   tabArea.addEventListener('focusin', handleFocus);
   tabArea.addEventListener('focusout', handleFocusOut);
   tabArea.addEventListener('click', handleClick);
