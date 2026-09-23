@@ -9,7 +9,6 @@ export class EditorStateSync {
     this.registry = registry;
     this.currentSong = currentSong;
     this.syncState = new WeakMap();
-    this.adaptersInstalled = false;
   }
 
   ensureStore({ reconcile = true } = {}) {
@@ -32,6 +31,17 @@ export class EditorStateSync {
     const song = store?.getSong();
     if (!store || !song) return;
     this.syncState.set(store, { sourceUpdatedAt: Number(song.updatedAt) || 0 });
+  }
+
+  prepareForPersistence(store = this.ensureStore({ reconcile: false })) {
+    const song = store?.getSong();
+    if (!store || !song) return null;
+    store.prepareForPersistence({
+      tempo: typeof window.getTempo === 'function' ? window.getTempo() : song.tempo,
+      capo: typeof window.getCapo === 'function' ? window.getCapo() : song.capo
+    });
+    this.markCurrent(store);
+    return song;
   }
 
   hydrateProjectedRow(rowIndex, { measureIndex = null } = {}) {
@@ -97,60 +107,5 @@ export class EditorStateSync {
     const result = store.reconcileLegacySong(store.getSong(), { silent: true });
     this.markCurrent(store);
     return result;
-  }
-
-  installPersistenceAdapters() {
-    if (this.adaptersInstalled || typeof window === 'undefined') return;
-    this.adaptersInstalled = true;
-
-    const baseReadRows = window.readRowsFromDom;
-    const baseSaveRows = window.saveRowsToCurrentSong;
-    const basePersistSong = window.persistSongToCloud;
-
-    window.readRowsFromDom = () => {
-      const song = this.currentSong();
-      if (song && Array.isArray(song.rows)) return song.rows;
-      return typeof baseReadRows === 'function' ? baseReadRows() : [];
-    };
-
-    window.saveRowsToCurrentSong = rows => {
-      const song = this.currentSong();
-      if (!song) return;
-      const store = this.ensureStore({ reconcile: false });
-      if (!store) {
-        baseSaveRows?.(rows);
-        return;
-      }
-
-      if (Array.isArray(rows) && rows !== song.rows) {
-        song.rows = typeof window.normalizeRows === 'function'
-          ? window.normalizeRows(rows, song.beatsPerMeasure)
-          : rows;
-        if (typeof window.rhythmRowFromRow === 'function') {
-          song.rhythmRows = song.rows.map(row => window.rhythmRowFromRow(row, song.beatsPerMeasure));
-        }
-        song.updatedAt = Date.now();
-        store.reconcileLegacySong(song, { silent: true });
-      }
-
-      store.prepareForPersistence({
-        tempo: typeof window.getTempo === 'function' ? window.getTempo() : song.tempo,
-        capo: typeof window.getCapo === 'function' ? window.getCapo() : song.capo
-      });
-      this.markCurrent(store);
-    };
-
-    if (typeof basePersistSong === 'function') {
-      window.persistSongToCloud = async song => {
-        const current = this.currentSong();
-        const store = song === current ? this.ensureStore() : this.registry.forSong(song);
-        store?.prepareForPersistence({
-          tempo: song === current && typeof window.getTempo === 'function' ? window.getTempo() : song?.tempo,
-          capo: song === current && typeof window.getCapo === 'function' ? window.getCapo() : song?.capo
-        });
-        if (store) this.markCurrent(store);
-        return basePersistSong(song);
-      };
-    }
   }
 }
