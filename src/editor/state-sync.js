@@ -59,7 +59,8 @@ export class EditorStateSync {
     const song = store?.getSong();
     if (!song) return false;
     const projection = documentToLegacyProjection(store.getDocument());
-    if (projection.lossy) return false;
+    const structurallyLossy = projection.structuralLossy ?? projection.lossy;
+    if (structurallyLossy) return false;
 
     song.rows = projection.rows;
     song.rhythmRows = projection.rhythmRows;

@@ -2,26 +2,44 @@ import { EditorClipboard } from './clipboard.js';
 import { createChangeSet } from './commands.js';
 import { installEditorInputController } from './input-controller.js';
 import { buildSystems } from './layout.js';
+import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
 import { EditorStateSync } from './state-sync.js';
 import { StoreRegistry } from './store.js';
-import { readToolDragData, ToolRegistry, writeToolDragData } from './tools.js';
+import { eventRangeFromEvent, readToolDragData, ToolRegistry, writeToolDragData } from './tools.js';
 import { installViewState, isPreviewActive, isScoreViewActive } from './view-state.js';
 
 const registry = new StoreRegistry();
 const stateSync = new EditorStateSync(registry);
 const clipboardState = new EditorClipboard();
 const toolRegistry = new ToolRegistry();
+const boundStores = new WeakSet();
 
 let installed = false;
 let pendingLinkTool = null;
+let activeToolId = null;
+let notationRenderer = null;
+let toolPalette = null;
 
 function toast(message) {
   window.showToast?.(message);
 }
 
+function escapeSelector(value) {
+  const text = String(value ?? '');
+  return globalThis.CSS?.escape ? CSS.escape(text) : text.replace(/["\\]/g, '\\$&');
+}
+
+function bindStore(store) {
+  if (!store || boundStores.has(store)) return store;
+  boundStores.add(store);
+  store.subscribe((documentModel, changeSet) => notationRenderer?.schedule(documentModel, changeSet));
+  notationRenderer?.schedule(store.getDocument(), { document: true });
+  return store;
+}
+
 function ensureStore(options) {
-  return stateSync.ensureStore(options);
+  return bindStore(stateSync.ensureStore(options));
 }
 
 function editingBlocked() {
@@ -105,34 +123,50 @@ function pasteModule(target) {
   return false;
 }
 
-function toolTargetFromNode(definition, node) {
+function toolTargetFromNode(definition, node, documentModel) {
   if (!definition || !node) return null;
-  if (definition.target === 'note') {
-    return { noteId: node.closest('[data-note-id]')?.dataset.noteId };
+  const noteNode = node.closest?.('[data-note-id]');
+  const eventNode = node.closest?.('[data-event-id]');
+
+  if (definition.target === 'note' || definition.target === 'notePair') {
+    const noteId = noteNode?.dataset.noteId;
+    return noteId ? { noteId } : null;
   }
   if (definition.target === 'event') {
-    return { eventId: node.closest('[data-event-id]')?.dataset.eventId };
+    const eventId = eventNode?.dataset.eventId;
+    return eventId ? { eventId } : null;
   }
   if (definition.target === 'eventRange') {
-    const range = node.closest('[data-event-ids]');
-    return {
-      measureId: range?.dataset.measureId,
-      eventIds: String(range?.dataset.eventIds || '').split(',').filter(Boolean)
-    };
+    const eventId = eventNode?.dataset.eventId;
+    return eventId ? eventRangeFromEvent(documentModel, eventId, 3) : null;
   }
   return null;
 }
 
+function clearLinkSource() {
+  document.querySelectorAll('.note-input.tool-link-source').forEach(node => node.classList.remove('tool-link-source'));
+}
+
+function markLinkSource(noteId) {
+  clearLinkSource();
+  document.querySelectorAll(`[data-note-id="${escapeSelector(noteId)}"]`).forEach(node => node.classList.add('tool-link-source'));
+}
+
 function dispatchTool(toolId, target, options = {}) {
   const definition = toolRegistry.get(toolId);
-  if (!definition) return false;
+  if (!definition || editingBlocked()) return false;
 
   if (definition.target === 'notePair') {
     const noteId = target?.noteId;
     if (!noteId) return false;
     if (!pendingLinkTool || pendingLinkTool.toolId !== toolId) {
       pendingLinkTool = { toolId, fromNoteId: noteId, options };
+      markLinkSource(noteId);
       toast('已選擇第一個音符，請選擇第二個音符');
+      return true;
+    }
+    if (pendingLinkTool.fromNoteId === noteId) {
+      toast('第二個音符需與第一個不同');
       return true;
     }
 
@@ -141,6 +175,7 @@ function dispatchTool(toolId, target, options = {}) {
       toNoteId: noteId
     }, pendingLinkTool.options);
     pendingLinkTool = null;
+    clearLinkSource();
     dispatchCommand(command);
     return true;
   }
@@ -149,7 +184,70 @@ function dispatchTool(toolId, target, options = {}) {
   return true;
 }
 
-function installToolDragDrop() {
+function setActiveTool(toolId) {
+  activeToolId = toolRegistry.get(toolId) ? String(toolId) : null;
+  pendingLinkTool = null;
+  clearLinkSource();
+  toolPalette?.querySelectorAll('[data-editor-tool]').forEach(button => {
+    const active = button.dataset.editorTool === activeToolId;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  return activeToolId;
+}
+
+function ensureToolPalette() {
+  if (toolPalette?.isConnected) return toolPalette;
+  const tabArea = document.getElementById('tabArea');
+  if (!tabArea) return null;
+
+  const palette = document.createElement('div');
+  palette.className = 'editor-toolbox';
+  palette.id = 'editorToolbox';
+  palette.setAttribute('aria-label', '吉他技巧工具');
+
+  const label = document.createElement('span');
+  label.className = 'editor-toolbox-label';
+  label.textContent = '技巧';
+  palette.appendChild(label);
+
+  toolRegistry.list().forEach(definition => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'editor-tool-button';
+    button.dataset.editorTool = definition.id;
+    button.draggable = true;
+    button.title = definition.hint || definition.label || definition.id;
+    button.setAttribute('aria-pressed', 'false');
+
+    const glyph = document.createElement('span');
+    glyph.className = 'editor-tool-glyph';
+    glyph.textContent = definition.glyph || definition.label || definition.id;
+    glyph.setAttribute('aria-hidden', 'true');
+
+    const name = document.createElement('span');
+    name.className = 'editor-tool-name';
+    name.textContent = definition.label || definition.id;
+    button.append(glyph, name);
+    palette.appendChild(button);
+  });
+
+  tabArea.before(palette);
+  toolPalette = palette;
+  syncToolPalette();
+  return palette;
+}
+
+function syncToolPalette() {
+  const palette = ensureToolPalette();
+  if (!palette) return;
+  const editorView = document.getElementById('editorView');
+  const hidden = Boolean(editorView?.hidden || editingBlocked());
+  palette.hidden = hidden;
+  if (hidden && (activeToolId || pendingLinkTool)) setActiveTool(null);
+}
+
+function installToolInteractions() {
   document.addEventListener('dragstart', event => {
     const source = event.target?.closest?.('[data-editor-tool]');
     if (!source) return;
@@ -161,28 +259,70 @@ function installToolDragDrop() {
   });
 
   document.addEventListener('dragover', event => {
+    if (editingBlocked()) return;
     const payload = readToolDragData(event.dataTransfer);
     if (!payload) return;
     const definition = toolRegistry.get(payload.toolId);
-    if (!definition) return;
-    const accepted = definition.target === 'notePair'
-      ? event.target.closest?.('[data-note-id]')
-      : toolTargetFromNode(definition, event.target);
-    if (accepted) event.preventDefault();
+    const store = ensureStore({ reconcile: false });
+    if (!definition || !store) return;
+    if (toolTargetFromNode(definition, event.target, store.getDocument())) event.preventDefault();
   });
 
   document.addEventListener('drop', event => {
+    if (editingBlocked()) return;
     const payload = readToolDragData(event.dataTransfer);
     if (!payload) return;
     const definition = toolRegistry.get(payload.toolId);
-    if (!definition) return;
-    const target = definition.target === 'notePair'
-      ? { noteId: event.target.closest?.('[data-note-id]')?.dataset.noteId }
-      : toolTargetFromNode(definition, event.target);
-    if (!target || Object.values(target).every(value => value == null || value === '')) return;
+    const store = ensureStore({ reconcile: false });
+    if (!definition || !store) return;
+    const target = toolTargetFromNode(definition, event.target, store.getDocument());
+    if (!target) return;
     event.preventDefault();
     dispatchTool(payload.toolId, target, payload.options || {});
   });
+
+  document.addEventListener('click', event => {
+    const toolButton = event.target?.closest?.('[data-editor-tool]');
+    if (toolButton) {
+      event.preventDefault();
+      setActiveTool(activeToolId === toolButton.dataset.editorTool ? null : toolButton.dataset.editorTool);
+      return;
+    }
+
+    if (!activeToolId || editingBlocked()) return;
+    const definition = toolRegistry.get(activeToolId);
+    const store = ensureStore({ reconcile: false });
+    if (!definition || !store) return;
+    const target = toolTargetFromNode(definition, event.target, store.getDocument());
+    if (target) dispatchTool(activeToolId, target);
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && (activeToolId || pendingLinkTool)) setActiveTool(null);
+  });
+}
+
+function installNotationSync() {
+  const tabArea = document.getElementById('tabArea');
+  if (!tabArea) return;
+  notationRenderer = new NotationRenderer(tabArea);
+
+  const gridObserver = new MutationObserver(mutations => {
+    const hasGridMutation = mutations.some(mutation => {
+      const target = mutation.target;
+      return !(target instanceof Element && target.closest('.notation-overlay'));
+    });
+    if (!hasGridMutation) return;
+    const store = ensureStore({ reconcile: false });
+    if (store) notationRenderer.schedule(store.getDocument(), { document: true });
+  });
+  gridObserver.observe(tabArea, { childList: true, subtree: true });
+
+  const editorView = document.getElementById('editorView');
+  const previewBadge = document.getElementById('previewBadge');
+  const modeObserver = new MutationObserver(() => syncToolPalette());
+  if (editorView) modeObserver.observe(editorView, { attributes: true, attributeFilter: ['class', 'hidden'] });
+  if (previewBadge) modeObserver.observe(previewBadge, { attributes: true, attributeFilter: ['hidden'] });
 }
 
 export function installEditorV3() {
@@ -191,7 +331,9 @@ export function installEditorV3() {
   installed = true;
 
   installViewState();
-  installToolDragDrop();
+  ensureToolPalette();
+  installNotationSync();
+  installToolInteractions();
 
   const api = {
     version: 3,
@@ -212,6 +354,11 @@ export function installEditorV3() {
     },
     dispatch: dispatchCommand,
     dispatchTool,
+    setActiveTool,
+    refreshNotation(changeSet = { document: true }) {
+      const store = ensureStore({ reconcile: false });
+      if (store) notationRenderer?.schedule(store.getDocument(), changeSet);
+    },
     createSparseRenderer(root, options = {}) {
       const renderer = new SparseScoreRenderer(root, {
         ...options,
@@ -232,6 +379,9 @@ export function installEditorV3() {
     markStoreCurrent: store => stateSync.markCurrent(store)
   });
 
-  window.addEventListener('hashchange', () => queueMicrotask(() => ensureStore()));
+  window.addEventListener('hashchange', () => queueMicrotask(() => {
+    ensureStore();
+    syncToolPalette();
+  }));
   return api;
 }
