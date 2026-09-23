@@ -88,6 +88,6 @@ export class EditorStateSync {
   reconcileCurrentSong() {
     const store = this.ensureStore();
     if (!store) return null;
-    return store.reconcileLegacySong(store.getSong(), { silent: true });
+    return { document: store.getDocument(), changeSet: null };
   }
 }
