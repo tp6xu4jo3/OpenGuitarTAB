@@ -8,6 +8,7 @@ const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const gridRenderer = read('src/editor/grid-renderer.js');
 const layout = read('src/editor/layout.js');
+const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
 const stateSync = read('src/editor/state-sync.js');
 const structureController = read('src/editor/structure-controller.js');
