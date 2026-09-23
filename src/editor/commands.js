@@ -257,7 +257,6 @@ function deleteTechnique(document, techniqueId) {
   const location = indexDocument(document).techniqueById.get(String(techniqueId || ''));
   if (!location) return { document, changeSet: createChangeSet() };
   return updateNote(document, location.noteId, note => {
-    const removed = (note.techniques || []).find(item => item.id === techniqueId);
     const techniques = (note.techniques || []).filter(item => item.id !== techniqueId);
     return { ...note, techniques };
   }, { playback: true });
@@ -265,7 +264,6 @@ function deleteTechnique(document, techniqueId) {
 
 function deleteTechniqueByType(document, noteId, techniqueType) {
   return updateNote(document, String(noteId || ''), note => {
-    const removed = (note.techniques || []).filter(item => item.type === techniqueType);
     const techniques = (note.techniques || []).filter(item => item.type !== techniqueType);
     return { ...note, techniques };
   }, { playback: true });
