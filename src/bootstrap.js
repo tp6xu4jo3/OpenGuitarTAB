@@ -7,8 +7,9 @@ import {
   canUnlistSong,
   canDeleteSong
 } from './core/song-permissions.js';
-import { cloudApi } from './services/cloud-api.js';
 import { APP_CONFIG } from './config/app-config.js';
+import { installEditorV3 } from './editor/controller.js';
+import { cloudApi } from './services/cloud-api.js';
 
 Object.assign(window, {
   compactSong,
@@ -35,7 +36,6 @@ const EDITOR_SCRIPTS = [
   './src/app-measure-lines.js',
   './src/app-editor-stability.js',
   './src/app-editor-modules.js',
-  './src/app-measure-clipboard.js',
   './src/app-editor-insert-zones.js',
   './src/app-editor-row-controls.js',
   './src/app-editor-drag-grip.js',
@@ -47,8 +47,7 @@ const EDITOR_SCRIPTS = [
   './src/app-density-fit-v2.js',
   './src/app-playback.js',
   './src/app-editor-drop-guard.js',
-  './src/app-editor-hotpath.js',
-  './src/app-row-clipboard.js'
+  './src/app-editor-hotpath.js'
 ];
 
 const APP_SCRIPTS = [
@@ -75,6 +74,7 @@ function loadClassicScriptsInOrder(sources) {
 // cloudApi.catalog() deduplicates the later catalog request made by app-catalog.js.
 void cloudApi.catalog().catch(() => null);
 
-// Dynamically-created classic scripts are async by default. Setting async=false keeps
-// execution order while allowing the browser to fetch all files in parallel.
+// Classic compatibility scripts still load in their historical order while Editor V3 owns
+// the score document, commands, clipboard and future tool/renderer pipeline.
 await loadClassicScriptsInOrder(APP_SCRIPTS);
+installEditorV3();
