@@ -147,7 +147,8 @@ export function applyThirtySecondRangeToMeasure(measure, { startAt, endAt }, idF
         ...existing,
         at: [...slot],
         duration: [...THIRTY_SECOND],
-        rhythmOnly: Boolean(existing.rhythmOnly && !(existing.notes || []).length)
+        rhythmAnchor: true,
+        rhythmOnly: !(existing.notes || []).length
       });
     } else {
       byAt.set(key, {
@@ -156,6 +157,7 @@ export function applyThirtySecondRangeToMeasure(measure, { startAt, endAt }, idF
         duration: [...THIRTY_SECOND],
         notes: [],
         marks: [],
+        rhythmAnchor: true,
         rhythmOnly: true
       });
     }
@@ -184,7 +186,7 @@ export function fractionalGridTimes(measure) {
 
   for (const event of measure?.events || []) {
     const [numerator, denominator] = normalizeFraction(event.at);
-    if ((numerator * 4) % denominator !== 0 || event.rhythmOnly) add(event.at, 'event', event.duration);
+    if ((numerator * 4) % denominator !== 0 || event.rhythmAnchor || event.rhythmOnly) add(event.at, 'event', event.duration);
   }
   for (const group of measure?.groups || []) {
     if (group?.type !== 'tuplet') continue;
