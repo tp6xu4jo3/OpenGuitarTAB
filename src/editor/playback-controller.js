@@ -96,6 +96,32 @@ function gridForEntry(entry) {
   }) || grids[0] || null;
 }
 
+function measureWidthsForGrid(grid) {
+  const count = Math.max(1, Number(grid?.dataset.measureCount) || 1);
+  const raw = String(grid?.dataset.measureWidths || '')
+    .split(',')
+    .map(Number)
+    .filter(Number.isFinite);
+  if (raw.length !== count || raw.some(value => value <= 0)) return Array(count).fill(100 / count);
+  const total = raw.reduce((sum, value) => sum + value, 0) || 100;
+  return raw.map(value => value / total * 100);
+}
+
+function playheadGeometry(entry, grid) {
+  const startMeasure = Number(grid.dataset.measureStart) || 0;
+  const widths = measureWidthsForGrid(grid);
+  const localMeasure = Math.max(0, Math.min(widths.length - 1, entry.measureIndexInSystem - startMeasure));
+  const withinMeasure = entry.measureDurationBeats > 0
+    ? clamp(entry.atBeats / entry.measureDurationBeats, 0, 1)
+    : 0;
+  const measureLeft = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
+  const measureWidth = widths[localMeasure] || 100 / widths.length;
+  return {
+    left: measureLeft + measureWidth * withinMeasure,
+    width: Math.max(0.8, measureWidth / Math.max(16, entry.measureDurationBeats * SLOTS_PER_BEAT))
+  };
+}
+
 function followPlaybackLine(node, key) {
   if (!node || key === state.lastCenteredKey) return;
   const sheet = node.closest('.sheet');
@@ -134,14 +160,11 @@ function highlightEntry(entry) {
   followPlaybackLine(grid, `row:${entry.rowIndex}:measure:${entry.measureIndexInSystem}`);
   if (!state.playing || !scoreViewActive()) return;
 
-  const startMeasure = Number(grid.dataset.measureStart) || 0;
-  const measureCount = Math.max(1, Number(grid.dataset.measureCount) || 1);
-  const localMeasure = entry.measureIndexInSystem - startMeasure;
-  const withinMeasure = entry.measureDurationBeats > 0 ? entry.atBeats / entry.measureDurationBeats : 0;
+  const geometry = playheadGeometry(entry, grid);
   const line = document.createElement('div');
   line.className = 'playhead-column';
-  line.style.left = `${((localMeasure + withinMeasure) / measureCount) * 100}%`;
-  line.style.width = `${Math.max(0.8, 100 / (measureCount * Math.max(16, entry.measureDurationBeats * 4)))}%`;
+  line.style.left = `${geometry.left}%`;
+  line.style.width = `${geometry.width}%`;
   line.setAttribute('aria-hidden', 'true');
   grid.appendChild(line);
   state.currentLine = line;
@@ -304,15 +327,14 @@ function invalidatePlaybackIndex() {
   rowInputCache.clear();
 }
 
-function installPlayButtonCapture() {
+function installPlayButton() {
   const button = document.getElementById('playButton');
   if (!button) return;
   button.addEventListener('click', event => {
     event.preventDefault();
-    event.stopImmediatePropagation();
     if (state.playing) stopPlayback();
     else void startPlayback();
-  }, true);
+  });
 }
 
 export function installPlaybackController() {
@@ -348,7 +370,7 @@ export function installPlaybackController() {
   };
   window.editorPlayback = api;
 
-  installPlayButtonCapture();
+  installPlayButton();
   const tabArea = document.getElementById('tabArea');
   tabArea?.addEventListener('input', invalidatePlaybackIndex, true);
   if (tabArea && typeof MutationObserver === 'function') {
