@@ -42,10 +42,18 @@ function cloneMeasureWithFreshIds(sourceMeasure, idFactory, { measureId = null }
     const event = cloneValue(sourceEvent);
     event.id = idFactory('e');
     eventIdMap.set(String(sourceEvent.id), event.id);
+    event.marks = (sourceEvent.marks || []).map(sourceMark => ({
+      ...cloneValue(sourceMark),
+      id: idFactory('mk')
+    }));
     event.notes = (sourceEvent.notes || []).map(sourceNote => {
       const note = cloneValue(sourceNote);
       note.id = idFactory('n');
       noteIdMap.set(String(sourceNote.id), note.id);
+      note.techniques = (sourceNote.techniques || []).map(sourceTechnique => ({
+        ...cloneValue(sourceTechnique),
+        id: idFactory('t')
+      }));
       return note;
     });
     return event;

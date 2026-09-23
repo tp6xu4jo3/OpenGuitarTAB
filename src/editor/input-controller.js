@@ -1,8 +1,7 @@
-import { buildSystems } from './layout.js';
+import { legacyGridLocationToV3 } from './migrate-v2.js';
 import { isPreviewActive, isScoreViewActive } from './view-state.js';
 
 const STRING_COUNT = 6;
-const SLOTS_PER_BEAT = 4;
 
 let installed = false;
 const dirtyRows = new Set();
@@ -69,24 +68,6 @@ function markDirty(input, rowIndex) {
   if (!editorFrame) editorFrame = requestAnimationFrame(flushDirtyUi);
 }
 
-function inputLocation(store, rowIndex, position) {
-  const systems = buildSystems(store.getDocument());
-  const measures = systems[rowIndex] || [];
-  if (!measures.length) return null;
-
-  let remaining = Math.max(0, position);
-  for (const measure of measures) {
-    const signature = measure.timeSignature || { numerator: 4, denominator: 4 };
-    const beats = Number(signature.numerator || 4) * (4 / Number(signature.denominator || 4));
-    const slots = Math.max(1, Math.round(beats * SLOTS_PER_BEAT));
-    if (remaining < slots) {
-      return { measure, at: [remaining, SLOTS_PER_BEAT] };
-    }
-    remaining -= slots;
-  }
-  return null;
-}
-
 function handleInput(event, { getStore, markStoreCurrent }) {
   const input = event.target.closest?.('.note-input');
   if (!input || isPreviewActive() || isScoreViewActive()) return;
@@ -105,12 +86,12 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   const store = getStore();
   const song = currentSongSafe();
   if (!store || !song) return;
-  const location = inputLocation(store, rowIndex, position);
+  const location = legacyGridLocationToV3(store.getDocument(), rowIndex, position);
   if (!location) return;
 
   store.dispatch({
     type: 'note/set',
-    measureId: location.measure.id,
+    measureId: location.measureId,
     at: location.at,
     duration: [1, 4],
     string: stringIndex,

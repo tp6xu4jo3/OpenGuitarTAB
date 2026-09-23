@@ -1,10 +1,6 @@
 import { applyCommand, createChangeSet } from './commands.js';
 import { cloneValue, isDocumentV3, normalizeDocumentV3 } from './model.js';
-import {
-  ensureSongDocumentV3,
-  reconcileLegacyMeasure,
-  reconcileLegacySongToDocument
-} from './migrate-v2.js';
+import { ensureSongDocumentV3 } from './migrate-v2.js';
 
 export class ScoreStore {
   constructor(song = null) {
@@ -58,30 +54,6 @@ export class ScoreStore {
     if (!this.document) return { document: null, changeSet: createChangeSet() };
     const result = applyCommand(this.document, command, options);
     return this.commit(result.document, result.changeSet, { touch: options.touch !== false });
-  }
-
-  reconcileLegacySong(song = this.song, { silent = false } = {}) {
-    if (!song) return { document: this.document, changeSet: createChangeSet() };
-    if (song !== this.song) this.song = song;
-    const next = reconcileLegacySongToDocument(song, this.document || song.document);
-    const changeSet = createChangeSet({
-      document: true,
-      measures: next.measures.map(measure => measure.id),
-      playback: next.measures.map(measure => measure.id)
-    });
-    return this.commit(next, changeSet, { touch: false, silent });
-  }
-
-  reconcileLegacyMeasure(rowIndex, measureIndex, { silent = false } = {}) {
-    if (!this.song || !this.document) return { document: this.document, changeSet: createChangeSet() };
-    const before = this.document;
-    const next = reconcileLegacyMeasure(this.song, before, rowIndex, measureIndex);
-    const changed = next.measures.find((measure, index) => measure !== before.measures[index]) || null;
-    const changeSet = createChangeSet({
-      measures: changed ? [changed.id] : [],
-      playback: changed ? [changed.id] : []
-    });
-    return this.commit(next, changeSet, { touch: false, silent });
   }
 
   prepareForPersistence({ tempo, capo } = {}) {

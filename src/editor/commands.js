@@ -1,12 +1,15 @@
 import {
+  ARTIFICIAL_HARMONIC_OFFSET,
   cloneValue,
   compareFractions,
   createId,
   fractionKey,
+  harmonicTechnique,
   indexDocument,
   isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
+  noteBaseFret,
   relationNoteIds
 } from './model.js';
 
@@ -80,6 +83,28 @@ function pruneRelationsForMissingNotes(document, noteIds) {
   return { relations, removedRelationIds };
 }
 
+function setExistingNoteFret(note, fret) {
+  const harmonic = harmonicTechnique(note);
+  if (!harmonic) return { ...note, fret };
+
+  const numericFret = Number(fret);
+  if (!Number.isFinite(numericFret)) {
+    return {
+      ...note,
+      fret,
+      techniques: (note.techniques || []).filter(technique => technique.id !== harmonic.id)
+    };
+  }
+
+  return {
+    ...note,
+    fret: '',
+    techniques: (note.techniques || []).map(technique => technique.id === harmonic.id
+      ? { ...technique, touchFret: Math.trunc(numericFret) + ARTIFICIAL_HARMONIC_OFFSET }
+      : technique)
+  };
+}
+
 function noteSet(document, command, idFactory) {
   const measureIndex = findMeasureIndex(document, command.measureId);
   if (measureIndex < 0) return { document, changeSet: createChangeSet() };
@@ -111,7 +136,7 @@ function noteSet(document, command, idFactory) {
         event.notes.splice(noteIndex, 1);
       }
     } else if (noteIndex >= 0) {
-      event.notes[noteIndex] = { ...event.notes[noteIndex], fret };
+      event.notes[noteIndex] = setExistingNoteFret(event.notes[noteIndex], fret);
     } else {
       event.notes.push({ id: idFactory('n'), string, fret, techniques: [] });
       event.notes.sort((left, right) => Number(left.string) - Number(right.string));
@@ -184,6 +209,110 @@ function deleteNote(document, noteId) {
   return { document, changeSet: createChangeSet() };
 }
 
+function sameEntityPayload(left, right) {
+  const clean = value => {
+    const copy = cloneValue(value || {});
+    delete copy.id;
+    return copy;
+  };
+  return JSON.stringify(clean(left)) === JSON.stringify(clean(right));
+}
+
+function addTechnique(document, command, idFactory) {
+  return updateNote(document, String(command.noteId || ''), note => {
+    const raw = cloneValue(command.technique || {});
+    const techniques = Array.isArray(note.techniques) ? cloneValue(note.techniques) : [];
+
+    if (raw.type === 'harmonic') {
+      const baseFret = Number(noteBaseFret(note));
+      const requestedTouch = Number(raw.touchFret);
+      const touchFret = Number.isFinite(requestedTouch)
+        ? Math.trunc(requestedTouch)
+        : Number.isFinite(baseFret)
+          ? Math.trunc(baseFret) + ARTIFICIAL_HARMONIC_OFFSET
+          : NaN;
+      if (!Number.isFinite(touchFret) || touchFret < ARTIFICIAL_HARMONIC_OFFSET) return note;
+      const technique = {
+        id: String(raw.id || idFactory('t')),
+        type: 'harmonic',
+        touchFret
+      };
+      return {
+        ...note,
+        fret: '',
+        techniques: [...techniques.filter(item => item.type !== 'harmonic'), technique]
+      };
+    }
+
+    const technique = { ...raw, id: String(raw.id || idFactory('t')) };
+    if (techniques.some(item => sameEntityPayload(item, technique))) return note;
+    return { ...note, techniques: [...techniques, technique] };
+  }, { playback: true });
+}
+
+function deleteTechnique(document, techniqueId) {
+  const location = indexDocument(document).techniqueById.get(String(techniqueId || ''));
+  if (!location) return { document, changeSet: createChangeSet() };
+  return updateNote(document, location.noteId, note => {
+    const removed = (note.techniques || []).find(item => item.id === techniqueId);
+    const techniques = (note.techniques || []).filter(item => item.id !== techniqueId);
+    if (removed?.type === 'harmonic') return { ...note, fret: noteBaseFret(note), techniques };
+    return { ...note, techniques };
+  }, { playback: true });
+}
+
+function deleteTechniqueByType(document, noteId, techniqueType) {
+  return updateNote(document, String(noteId || ''), note => {
+    const removed = (note.techniques || []).filter(item => item.type === techniqueType);
+    const techniques = (note.techniques || []).filter(item => item.type !== techniqueType);
+    if (removed.some(item => item.type === 'harmonic')) return { ...note, fret: noteBaseFret(note), techniques };
+    return { ...note, techniques };
+  }, { playback: true });
+}
+
+function addMark(document, command, idFactory) {
+  return updateEvent(document, String(command.eventId || ''), event => {
+    const raw = cloneValue(command.mark || {});
+    const marks = Array.isArray(event.marks) ? cloneValue(event.marks) : [];
+    const mark = { ...raw, id: String(raw.id || idFactory('mk')) };
+    if (marks.some(item => sameEntityPayload(item, mark))) return event;
+    return { ...event, marks: [...marks, mark] };
+  }, { playback: false });
+}
+
+function deleteMark(document, markId) {
+  const location = indexDocument(document).markById.get(String(markId || ''));
+  if (!location) return { document, changeSet: createChangeSet() };
+  return updateEvent(document, location.eventId, event => ({
+    ...event,
+    marks: (event.marks || []).filter(mark => mark.id !== markId)
+  }), { playback: false });
+}
+
+function addGroup(document, command, idFactory) {
+  const measureIndex = findMeasureIndex(document, command.measureId);
+  if (measureIndex < 0) return { document, changeSet: createChangeSet() };
+  const measure = cloneValue(document.measures[measureIndex]);
+  const raw = cloneValue(command.group || {});
+  const group = { ...raw, id: String(raw.id || idFactory('g')) };
+  if (measure.groups.some(item => sameEntityPayload(item, group))) {
+    return { document, changeSet: createChangeSet() };
+  }
+  measure.groups.push(group);
+  return { document: withMeasure(document, measureIndex, measure), changeSet: changedMeasure(measure.id) };
+}
+
+function deleteGroup(document, groupId) {
+  const location = indexDocument(document).groupById.get(String(groupId || ''));
+  if (!location) return { document, changeSet: createChangeSet() };
+  const measure = cloneValue(document.measures[location.measureIndex]);
+  measure.groups = (measure.groups || []).filter(group => group.id !== groupId);
+  return {
+    document: withMeasure(document, location.measureIndex, measure),
+    changeSet: changedMeasure(measure.id)
+  };
+}
+
 function replaceMeasureContent(document, command) {
   const measureIndex = findMeasureIndex(document, command.measureId);
   if (measureIndex < 0) return { document, changeSet: createChangeSet() };
@@ -211,6 +340,7 @@ function addRelation(document, command, idFactory) {
   relation.id = String(relation.id || idFactory('r'));
   const noteIds = relationNoteIds(relation);
   if (!noteIds.length || noteIds.some(id => !index.noteById.has(id))) return { document, changeSet: createChangeSet() };
+  if ((document.relations || []).some(item => sameEntityPayload(item, relation))) return { document, changeSet: createChangeSet() };
   const measures = [...new Set(noteIds.map(id => index.noteLocation.get(id)?.measureId).filter(Boolean))];
   return {
     document: { ...document, relations: [...(document.relations || []), relation] },
@@ -298,35 +428,26 @@ export function applyCommand(inputDocument, command, { idFactory = createId } = 
     case 'note/delete':
       return deleteNote(document, String(command.noteId || ''));
     case 'note/technique/add':
-      return updateNote(document, String(command.noteId || ''), note => {
-        const technique = cloneValue(command.technique || {});
-        const techniques = Array.isArray(note.techniques) ? cloneValue(note.techniques) : [];
-        const duplicate = techniques.some(item => JSON.stringify(item) === JSON.stringify(technique));
-        return { ...note, techniques: duplicate ? techniques : [...techniques, technique] };
-      });
+      return addTechnique(document, command, idFactory);
+    case 'technique/delete':
+      return deleteTechnique(document, String(command.techniqueId || ''));
     case 'note/technique/remove':
-      return updateNote(document, String(command.noteId || ''), note => ({
-        ...note,
-        techniques: (note.techniques || []).filter(item => item.type !== command.techniqueType)
-      }));
+      return command.techniqueId
+        ? deleteTechnique(document, String(command.techniqueId))
+        : deleteTechniqueByType(document, String(command.noteId || ''), String(command.techniqueType || ''));
     case 'event/duration/set':
       return updateEvent(document, String(command.eventId || ''), event => ({
         ...event,
         duration: normalizeFraction(command.duration, event.duration)
       }));
     case 'event/mark/add':
-      return updateEvent(document, String(command.eventId || ''), event => {
-        const mark = cloneValue(command.mark || {});
-        const marks = Array.isArray(event.marks) ? cloneValue(event.marks) : [];
-        return { ...event, marks: [...marks, mark] };
-      }, { playback: false });
-    case 'group/add': {
-      const measureIndex = findMeasureIndex(document, command.measureId);
-      if (measureIndex < 0) return { document, changeSet: createChangeSet() };
-      const measure = cloneValue(document.measures[measureIndex]);
-      measure.groups.push({ id: idFactory('g'), ...cloneValue(command.group || {}) });
-      return { document: withMeasure(document, measureIndex, measure), changeSet: changedMeasure(measure.id) };
-    }
+      return addMark(document, command, idFactory);
+    case 'mark/delete':
+      return deleteMark(document, String(command.markId || ''));
+    case 'group/add':
+      return addGroup(document, command, idFactory);
+    case 'group/delete':
+      return deleteGroup(document, String(command.groupId || ''));
     case 'relation/add':
       return addRelation(document, command, idFactory);
     case 'relation/delete':
@@ -341,7 +462,14 @@ export function applyCommand(inputDocument, command, { idFactory = createId } = 
       return replaceMeasureContent(document, command);
     case 'document/replace': {
       const next = normalizeDocumentV3(command.document);
-      return { document: next, changeSet: createChangeSet({ document: true, measures: next.measures.map(measure => measure.id), playback: next.measures.map(measure => measure.id) }) };
+      return {
+        document: next,
+        changeSet: createChangeSet({
+          document: true,
+          measures: next.measures.map(measure => measure.id),
+          playback: next.measures.map(measure => measure.id)
+        })
+      };
     }
     default:
       return { document, changeSet: createChangeSet() };
