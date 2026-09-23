@@ -18,7 +18,8 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 
 - `controller.js` — composition root for Store, Clipboard, Tools, and renderer factory. Keep this file orchestration-only.
 - `tool-session.js` — click-only tool state machine. It owns `idle -> selected -> selecting target -> commit -> idle` state and the Note/Column/NotePair/Range target shapes.
-- `technique-rules.js` — pure guitar-domain validation for harmonics, chord sweeps, merged arcs, and slides before Commands are dispatched.
+- `technique-rules.js` — pure guitar-domain validation for harmonics, chord sweeps, merged arcs, slides, and rhythm-range constraints before Commands are dispatched.
+- `rhythm-grid.js` — pure fractional-time transforms for regional triplet (3:2) and 32nd subdivisions; empty 32nd positions persist as rhythm anchors while triplet slots remain sparse group data.
 - `input-controller.js` — note input and keyboard interaction. Arrow keys remain score navigation; tool selection must not intercept them.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
 - `view-state.js` — edit/score/preview mode state.
@@ -71,3 +72,5 @@ Disallowed direction after Store creation:
 `DOM or generic legacy rows -> silently overwrite V3 Store`
 
 When the sparse renderer fully replaces the current grid, the compatibility projection can be removed without changing the music model, commands, playback, or persistence architecture.
+
+Fractional rhythm editing is authoritative in V3: triplet and 32nd positions are stored as reduced fractions, rendered as dynamic inputs, and scheduled directly by Playback. The legacy 1/16 projection remains compatibility-only and is not used to quantize fractional rhythm.

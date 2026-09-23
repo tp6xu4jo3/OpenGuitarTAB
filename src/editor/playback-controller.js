@@ -149,6 +149,12 @@ function highlightEntry(entry) {
     return;
   }
 
+  const fractionalInputs = [...document.querySelectorAll(`.note-input[data-event-id="${CSS.escape(String(entry.eventId))}"]`)];
+  if (fractionalInputs.length) {
+    state.currentNodes = fractionalInputs;
+    state.currentNodes.forEach(node => node.classList.add('is-playing'));
+  }
+
   const legacyPosition = legacyPositionForEntry(entry, SLOTS_PER_BEAT);
   if (Number.isInteger(legacyPosition)) {
     state.currentNodes = getInputsAt(entry.rowIndex, legacyPosition);
@@ -232,6 +238,19 @@ function updateProgressRange() {
 
 function jumpToInput(input, highlight = true) {
   if (!input) return;
+  const measureId = String(input.dataset.measureId || '');
+  const at = String(input.dataset.at || '');
+  if (measureId && at) {
+    const playback = ensureIndex();
+    const exact = playback.entries.find(entry =>
+      String(entry.measureId) === measureId
+      && `${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}` === at
+    );
+    if (exact) {
+      setProgressIndex(exact.index, true, highlight);
+      return;
+    }
+  }
   setProgressIndex(slotToIndex(Number(input.dataset.row), Number(input.dataset.position)), true, highlight);
 }
 

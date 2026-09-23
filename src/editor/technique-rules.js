@@ -1,4 +1,5 @@
 import { compareFractions, indexDocument, noteBaseFret } from './model.js';
+import { eventsInTimeRange, thirtySecondRange, tripletRange } from './rhythm-grid.js';
 
 function noteContext(index, noteId) {
   const id = String(noteId || '');
@@ -73,6 +74,25 @@ export function resolveTechniqueTarget(toolId, target, documentModel) {
         relationType: sameString && sameFret ? 'tie' : 'slur'
       }
     };
+  }
+
+  if (id === 'triplet') {
+    const measure = index.measureById.get(String(target?.measureId || ''))?.measure;
+    if (!measure || !Array.isArray(target?.startAt) || !Array.isArray(target?.endAt)) {
+      return invalid('請在同一小節選擇三連音範圍');
+    }
+    const range = tripletRange(target.startAt, target.endAt);
+    const events = eventsInTimeRange(measure, range.startAt, range.endExclusive)
+      .filter(event => (event.notes || []).length || (event.marks || []).length);
+    if (events.length > 3) return invalid('三連音範圍最多只能包含3個既有時間事件');
+    return { ok: true, target: { ...target, eventIds: events.map(event => event.id) } };
+  }
+
+  if (id === 'duration32') {
+    if (!thirtySecondRange(target?.startAt, target?.endAt)) {
+      return invalid('32分音只能選擇兩個相鄰的16分位置');
+    }
+    return { ok: true, target };
   }
 
   return { ok: true, target };

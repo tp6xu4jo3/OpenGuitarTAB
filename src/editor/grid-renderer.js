@@ -1,5 +1,6 @@
 import { buildAdaptiveLayout, buildSystems, DEFAULT_LAYOUT_WIDTH } from './layout.js';
-import { fractionKey, normalizeFraction } from './model.js';
+import { addFractions, fractionKey, fractionToNumber, normalizeFraction, noteBaseFret } from './model.js';
+import { fractionalGridTimes, isTimeReplacedByFractionalGrid } from './rhythm-grid.js';
 import { isScoreViewActive } from './view-state.js';
 
 const STRINGS = 6;
@@ -117,7 +118,17 @@ function positionStepPercentForGrid(grid, absolutePosition) {
   return widths[localMeasure] / measureSlots;
 }
 
-function createInput({ rowIndex, string, position, measureId = '', at = [0, 1], originalStep = null, isSmall = false }) {
+function createInput({
+  rowIndex,
+  string,
+  position,
+  measureId = '',
+  at = [0, 1],
+  duration = [1, 4],
+  originalStep = null,
+  isSmall = false,
+  v3Only = false
+}) {
   const input = document.createElement('input');
   input.className = 'note-input';
 
@@ -127,6 +138,7 @@ function createInput({ rowIndex, string, position, measureId = '', at = [0, 1], 
     if (localStep % shadeInterval === 0) input.classList.add('odd-step');
   }
   if (isSmall) input.classList.add('small-step');
+  if (v3Only) input.classList.add('fractional-step');
 
   input.type = 'text';
   input.inputMode = 'numeric';
@@ -138,12 +150,16 @@ function createInput({ rowIndex, string, position, measureId = '', at = [0, 1], 
   input.dataset.position = String(position);
   input.dataset.size = isSmall ? 'small' : 'normal';
   input.dataset.at = fractionKey(normalizeFraction(at));
+  input.dataset.duration = fractionKey(normalizeFraction(duration));
   if (measureId) input.dataset.measureId = String(measureId);
   if (originalStep != null) input.dataset.step = String(originalStep);
+  if (v3Only) input.dataset.v3Only = 'true';
 
-  input.ariaLabel = isSmall
-    ? `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，中間小輸入點 ${position + 1}`
-    : `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，第 ${(originalStep ?? 0) + 1} 個輸入點`;
+  input.ariaLabel = v3Only
+    ? `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，細分時間位置 ${input.dataset.at}`
+    : isSmall
+      ? `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，中間小輸入點 ${Number(position) + 1}`
+      : `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，第 ${(originalStep ?? 0) + 1} 個輸入點`;
 
   if (isScoreViewActive()) {
     input.readOnly = true;
@@ -152,6 +168,23 @@ function createInput({ rowIndex, string, position, measureId = '', at = [0, 1], 
   }
 
   return input;
+}
+
+function fractionalPercentForGrid(grid, absoluteMeasure, at, duration, measure) {
+  const startMeasure = Number(grid?.dataset.measureStart) || 0;
+  const widths = parseMeasureWidths(grid);
+  const localMeasure = Number(absoluteMeasure) - startMeasure;
+  if (localMeasure < 0 || localMeasure >= widths.length) return 0;
+  const left = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
+  const beats = Number(measure?.timeSignature?.numerator || 4) * (4 / Number(measure?.timeSignature?.denominator || 4));
+  const visualTime = addFractions(at, duration || [1, 4]);
+  const ratio = Math.max(0, Math.min(1, fractionToNumber(visualTime) / Math.max(0.000001, beats)));
+  return left + widths[localMeasure] * ratio;
+}
+
+function eventAtFraction(measure, at) {
+  const key = fractionKey(at);
+  return (measure?.events || []).find(event => fractionKey(event.at) === key) || null;
 }
 
 function gridTemplateColumns(measureWidths, measureSteps) {
@@ -216,18 +249,53 @@ function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
     const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
     for (let localStep = 0; localStep < measureSteps; localStep++, localGridStep++) {
       const position = absoluteMeasure * measureSlots + localStep * 2;
-      const at = [localStep * 2, SLOTS_PER_BEAT];
+      const at = normalizeFraction([localStep * 2, SLOTS_PER_BEAT]);
+      const replaced = isTimeReplacedByFractionalGrid(measure, at);
       for (let string = 0; string < STRINGS; string++) {
         const cell = makeDiv('cell');
         cell.style.gridColumn = String(localGridStep + 1);
         cell.style.gridRow = String(string + 1);
+        if (!replaced) {
+          const input = createInput({
+            rowIndex,
+            string,
+            position,
+            measureId: measure?.id,
+            at,
+            duration: [1, 4],
+            originalStep: absoluteMeasure * measureSteps + localStep
+          });
+          const value = String(rowValues?.[string]?.[position] ?? '');
+          input.value = value;
+          input.classList.toggle('has-value', value.length > 0);
+          cell.appendChild(input);
+        } else {
+          cell.classList.add('fractional-replaced-cell');
+        }
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
+    const absoluteMeasure = startMeasure + localMeasure;
+    const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
+    for (let localStep = 0; localStep < measureSteps; localStep++) {
+      const position = absoluteMeasure * measureSlots + localStep * 2 + 1;
+      const at = normalizeFraction([localStep * 2 + 1, SLOTS_PER_BEAT]);
+      if (isTimeReplacedByFractionalGrid(measure, at)) continue;
+      for (let string = 0; string < STRINGS; string++) {
+        const cell = makeDiv('small-cell');
+        cell.style.left = `${positionPercentForGrid(grid, position)}%`;
+        cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
         const input = createInput({
           rowIndex,
           string,
           position,
           measureId: measure?.id,
           at,
-          originalStep: absoluteMeasure * measureSteps + localStep
+          duration: [1, 4],
+          isSmall: true
         });
         const value = String(rowValues?.[string]?.[position] ?? '');
         input.value = value;
@@ -241,17 +309,30 @@ function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
   for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
     const absoluteMeasure = startMeasure + localMeasure;
     const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
-    for (let localStep = 0; localStep < measureSteps; localStep++) {
-      const position = absoluteMeasure * measureSlots + localStep * 2 + 1;
-      const at = [localStep * 2 + 1, SLOTS_PER_BEAT];
+    for (const time of fractionalGridTimes(measure)) {
+      const duration = time.duration || [1, 4];
+      const event = eventAtFraction(measure, time.at);
+      const left = fractionalPercentForGrid(grid, absoluteMeasure, time.at, duration, measure);
       for (let string = 0; string < STRINGS; string++) {
-        const cell = makeDiv('small-cell');
-        cell.style.left = `${positionPercentForGrid(grid, position)}%`;
+        const cell = makeDiv('small-cell fractional-cell');
+        cell.style.left = `${left}%`;
         cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
-        const input = createInput({ rowIndex, string, position, measureId: measure?.id, at, isSmall: true });
-        const value = String(rowValues?.[string]?.[position] ?? '');
+        const input = createInput({
+          rowIndex,
+          string,
+          position: -1,
+          measureId: measure?.id,
+          at: time.at,
+          duration,
+          isSmall: true,
+          v3Only: true
+        });
+        const note = (event?.notes || []).find(item => Number(item.string) === string);
+        const value = note ? noteBaseFret(note) : '';
         input.value = value;
         input.classList.toggle('has-value', value.length > 0);
+        if (event?.id) input.dataset.eventId = String(event.id);
+        if (note?.id) input.dataset.noteId = String(note.id);
         cell.appendChild(input);
         grid.appendChild(cell);
       }
@@ -451,23 +532,58 @@ function getInput(row, string, position) {
   return document.querySelector(`.note-input[data-row="${row}"][data-string="${string}"][data-position="${position}"]`);
 }
 
-function focusRelative(current, stringDelta, positionDelta) {
-  let row = Number(current.dataset.row);
-  let string = Number(current.dataset.string) + stringDelta;
-  let position = Number(current.dataset.position) + positionDelta;
+function focusInput(input) {
+  if (!input) return false;
+  input.focus();
+  input.select();
+  return true;
+}
 
-  if (positionDelta !== 0) {
-    const positions = rowPositionCount(row);
-    if (position >= positions) { row += 1; position = 0; }
-    else if (position < 0) { row -= 1; position = row >= 0 ? rowPositionCount(row) - 1 : 0; }
+function chronologicalInputsForString(string) {
+  const systems = logicalSystems() || [];
+  const measureOrder = new Map();
+  systems.forEach((system, rowIndex) => {
+    system.forEach((measure, measureIndex) => {
+      measureOrder.set(String(measure.id), { rowIndex, measureIndex });
+    });
+  });
+
+  return [...document.querySelectorAll(`.note-input[data-string="${Number(string)}"][data-measure-id][data-at]`)]
+    .sort((left, right) => {
+      const leftLocation = measureOrder.get(String(left.dataset.measureId)) || { rowIndex: Number(left.dataset.row), measureIndex: 0 };
+      const rightLocation = measureOrder.get(String(right.dataset.measureId)) || { rowIndex: Number(right.dataset.row), measureIndex: 0 };
+      return leftLocation.rowIndex - rightLocation.rowIndex
+        || leftLocation.measureIndex - rightLocation.measureIndex
+        || fractionToNumber(String(left.dataset.at).split('/').map(Number))
+          - fractionToNumber(String(right.dataset.at).split('/').map(Number));
+    });
+}
+
+function focusRelative(current, stringDelta, positionDelta) {
+  const string = Number(current.dataset.string);
+  if (!Number.isInteger(string)) return;
+
+  if (stringDelta !== 0) {
+    const targetString = string + stringDelta;
+    if (targetString < 0 || targetString >= STRINGS) return;
+    const row = String(current.dataset.row || '');
+    const measureId = String(current.dataset.measureId || '');
+    const at = String(current.dataset.at || '');
+    const target = [...document.querySelectorAll(`.note-input[data-string="${targetString}"]`)]
+      .find(input => String(input.dataset.row || '') === row
+        && String(input.dataset.measureId || '') === measureId
+        && String(input.dataset.at || '') === at);
+    focusInput(target);
+    return;
   }
 
-  if (string >= STRINGS) { string = 0; row += 1; }
-  else if (string < 0) { string = STRINGS - 1; row -= 1; }
-  if (row < 0) return;
-  position = Math.max(0, Math.min(rowPositionCount(row) - 1, position));
-  const next = getInput(row, string, position);
-  if (next) { next.focus(); next.select(); }
+  if (positionDelta !== 0) {
+    const inputs = chronologicalInputsForString(string);
+    const index = inputs.indexOf(current);
+    if (index < 0) return;
+    const nextIndex = Math.max(0, Math.min(inputs.length - 1, index + Math.sign(positionDelta)));
+    focusInput(inputs[nextIndex]);
+  }
 }
 
 function handleKeydown(event) {

@@ -159,7 +159,14 @@ let slideId;
 {
   const tools = new ToolRegistry();
   assert.equal(tools.get('harmonic').target, 'note');
-  assert.deepEqual(tools.createCommand('duration32', { eventId: firstEvent.id }).duration, [1, 8]);
+  const duration32 = tools.createCommand('duration32', {
+    measureId: firstMeasure.id,
+    startAt: [0, 1],
+    endAt: [1, 4]
+  });
+  assert.equal(duration32.type, 'rhythm/32nd/apply');
+  assert.deepEqual(duration32.startAt, [0, 1]);
+  assert.deepEqual(duration32.endAt, [1, 4]);
   assert.equal(tools.createCommand('slide', { fromNoteId: 'a', toNoteId: 'b' }).relation.type, 'slide');
 }
 

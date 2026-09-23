@@ -12,6 +12,7 @@ import {
   noteBaseFret,
   relationNoteIds
 } from './model.js';
+import { applyThirtySecondRangeToMeasure, applyTripletRangeToMeasure } from './rhythm-grid.js';
 
 export function createChangeSet({ measures = [], playback = [], relations = [], layoutFrom = null, document = false } = {}) {
   return {
@@ -142,7 +143,10 @@ function noteSet(document, command, idFactory) {
       event.notes.sort((left, right) => Number(left.string) - Number(right.string));
     }
 
-    if (!event.notes.length && !(event.marks || []).length) measure.events.splice(eventIndex, 1);
+    if (event.notes.length) event.rhythmOnly = false;
+    else if (event.rhythmAnchor) event.rhythmOnly = true;
+
+    if (!event.notes.length && !(event.marks || []).length && !event.rhythmAnchor) measure.events.splice(eventIndex, 1);
     else measure.events[eventIndex] = event;
   }
 
@@ -292,6 +296,21 @@ function deleteMark(document, markId) {
     ...event,
     marks: (event.marks || []).filter(mark => mark.id !== markId)
   }), { playback: false });
+}
+
+function applyRhythmRange(document, command, idFactory, transformer) {
+  const measureIndex = findMeasureIndex(document, command.measureId);
+  if (measureIndex < 0) return { document, changeSet: createChangeSet() };
+  const sourceMeasure = document.measures[measureIndex];
+  const transformed = transformer(sourceMeasure, {
+    startAt: normalizeFraction(command.startAt, [0, 1]),
+    endAt: normalizeFraction(command.endAt, [0, 1])
+  }, idFactory);
+  if (!transformed.ok) return { document, changeSet: createChangeSet() };
+  return {
+    document: withMeasure(document, measureIndex, transformed.measure),
+    changeSet: changedMeasure(sourceMeasure.id, { playback: true })
+  };
 }
 
 function addGroup(document, command, idFactory) {
@@ -445,6 +464,10 @@ export function applyCommand(inputDocument, command, { idFactory = createId } = 
         ...event,
         duration: normalizeFraction(command.duration, event.duration)
       }));
+    case 'rhythm/triplet/apply':
+      return applyRhythmRange(document, command, idFactory, applyTripletRangeToMeasure);
+    case 'rhythm/32nd/apply':
+      return applyRhythmRange(document, command, idFactory, applyThirtySecondRangeToMeasure);
     case 'event/mark/add':
       return addMark(document, command, idFactory);
     case 'mark/delete':

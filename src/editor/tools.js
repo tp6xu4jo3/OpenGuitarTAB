@@ -88,12 +88,13 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '三連音',
     glyph: '3',
     target: 'eventRange',
-    hint: '選取後依序點選同小節的範圍起點與終點',
+    hint: '依序點選同小節的範圍起點與終點，將範圍切成3個真正的3:2時間位置',
     command(target) {
       return {
-        type: 'group/add',
+        type: 'rhythm/triplet/apply',
         measureId: target.measureId,
-        group: { type: 'tuplet', ratio: [3, 2], eventIds: [...(target.eventIds || [])] }
+        startAt: [...target.startAt],
+        endAt: [...target.endAt]
       };
     }
   },
@@ -101,10 +102,15 @@ export const TOOL_DEFINITIONS = Object.freeze({
     id: 'duration32',
     label: '32分音',
     glyph: '32',
-    target: 'event',
-    hint: '選取後點選要改成32分音的時間位置',
+    target: 'eventRange',
+    hint: '依序點選兩個相鄰16分位置，將區間切成2個32分位置',
     command(target) {
-      return { type: 'event/duration/set', eventId: target.eventId, duration: [1, 8] };
+      return {
+        type: 'rhythm/32nd/apply',
+        measureId: target.measureId,
+        startAt: [...target.startAt],
+        endAt: [...target.endAt]
+      };
     }
   }
 });
