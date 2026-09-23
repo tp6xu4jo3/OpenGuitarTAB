@@ -143,7 +143,10 @@ function noteSet(document, command, idFactory) {
       event.notes.sort((left, right) => Number(left.string) - Number(right.string));
     }
 
-    if (!event.notes.length && !(event.marks || []).length) measure.events.splice(eventIndex, 1);
+    if (event.notes.length) event.rhythmOnly = false;
+    else if (event.rhythmAnchor) event.rhythmOnly = true;
+
+    if (!event.notes.length && !(event.marks || []).length && !event.rhythmAnchor) measure.events.splice(eventIndex, 1);
     else measure.events[eventIndex] = event;
   }
 
