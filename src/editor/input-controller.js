@@ -82,15 +82,25 @@ function inputLocation(input, store, rowIndex, position) {
   return legacyGridLocationToV3(store.getDocument(), rowIndex, position);
 }
 
+function noteDensityClass(input) {
+  if (!input.classList.contains('has-value')) return 0;
+  const length = Number(input.dataset.noteLength);
+  if (Number.isInteger(length) && length > 0) return length >= 2 ? 2 : 1;
+  return String(input.value || '').length >= 2 ? 2 : 1;
+}
+
 function handleInput(event, { getStore, markStoreCurrent }) {
   const input = event.target.closest?.('.note-input');
   if (!input || isPreviewActive() || isScoreViewActive()) return;
 
+  const previousDensity = noteDensityClass(input);
   const normalized = typeof window.normalizeTabValue === 'function'
     ? window.normalizeTabValue(input.value)
     : String(input.value ?? '').trim();
   input.value = normalized;
   input.classList.toggle('has-value', normalized.length > 0);
+  input.dataset.noteLength = normalized.length ? String(Math.min(2, normalized.length)) : '0';
+  const nextDensity = normalized.length >= 2 ? 2 : normalized.length ? 1 : 0;
 
   const rowIndex = Number(input.dataset.row);
   const stringIndex = Number(input.dataset.string);
@@ -119,6 +129,7 @@ function handleInput(event, { getStore, markStoreCurrent }) {
 
   window.jumpToInput?.(input, false);
   markDirty(input, rowIndex);
+  if (previousDensity !== nextDensity) window.scheduleEditorLayout?.();
   if (normalized.length === 2) window.focusRelative?.(input, 0, 1);
 }
 
