@@ -1,5 +1,5 @@
 import { buildSystems, measureDurationInBeats } from './layout.js';
-import { cloneValue, fractionToNumber, normalizeDocumentV3 } from './model.js';
+import { cloneValue, fractionToNumber, normalizeDocumentV3, noteSoundingFret } from './model.js';
 
 function eventTime(event) {
   return Math.max(0, fractionToNumber(event?.at || [0, 1]));
@@ -17,6 +17,13 @@ function locationMap(documentModel) {
     });
   });
   return locations;
+}
+
+function playbackNotes(notes) {
+  return (notes || []).map(note => ({
+    ...cloneValue(note),
+    fret: noteSoundingFret(note)
+  }));
 }
 
 export function buildPlaybackIndex(documentModel) {
@@ -45,7 +52,7 @@ export function buildPlaybackIndex(documentModel) {
         durationBeats: eventDuration(event),
         measureDurationBeats,
         absoluteBeat: measureStartBeat + atBeats,
-        notes: cloneValue(event.notes || []),
+        notes: playbackNotes(event.notes),
         marks: cloneValue(event.marks || [])
       });
     });
