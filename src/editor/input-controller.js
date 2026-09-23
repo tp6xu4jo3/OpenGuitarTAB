@@ -1,4 +1,5 @@
 import { legacyGridLocationToV3 } from './migrate-v2.js';
+import { normalizeFraction } from './model.js';
 import { isPreviewActive, isScoreViewActive } from './view-state.js';
 
 const STRING_COUNT = 6;
@@ -68,15 +69,38 @@ function markDirty(input, rowIndex) {
   if (!editorFrame) editorFrame = requestAnimationFrame(flushDirtyUi);
 }
 
+function fractionFromDataset(value) {
+  const match = String(value || '').match(/^(-?\d+)\/(\d+)$/);
+  if (!match) return null;
+  return normalizeFraction([Number(match[1]), Number(match[2])]);
+}
+
+function inputLocation(input, store, rowIndex, position) {
+  const measureId = String(input.dataset.measureId || '');
+  const at = fractionFromDataset(input.dataset.at);
+  if (measureId && at) return { measureId, at };
+  return legacyGridLocationToV3(store.getDocument(), rowIndex, position);
+}
+
+function noteDensityClass(input) {
+  if (!input.classList.contains('has-value')) return 0;
+  const length = Number(input.dataset.noteLength);
+  if (Number.isInteger(length) && length > 0) return length >= 2 ? 2 : 1;
+  return String(input.value || '').length >= 2 ? 2 : 1;
+}
+
 function handleInput(event, { getStore, markStoreCurrent }) {
   const input = event.target.closest?.('.note-input');
   if (!input || isPreviewActive() || isScoreViewActive()) return;
 
+  const previousDensity = noteDensityClass(input);
   const normalized = typeof window.normalizeTabValue === 'function'
     ? window.normalizeTabValue(input.value)
     : String(input.value ?? '').trim();
   input.value = normalized;
   input.classList.toggle('has-value', normalized.length > 0);
+  input.dataset.noteLength = normalized.length ? String(Math.min(2, normalized.length)) : '0';
+  const nextDensity = normalized.length >= 2 ? 2 : normalized.length ? 1 : 0;
 
   const rowIndex = Number(input.dataset.row);
   const stringIndex = Number(input.dataset.string);
@@ -86,7 +110,7 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   const store = getStore();
   const song = currentSongSafe();
   if (!store || !song) return;
-  const location = legacyGridLocationToV3(store.getDocument(), rowIndex, position);
+  const location = inputLocation(input, store, rowIndex, position);
   if (!location) return;
 
   store.dispatch({
@@ -105,6 +129,7 @@ function handleInput(event, { getStore, markStoreCurrent }) {
 
   window.jumpToInput?.(input, false);
   markDirty(input, rowIndex);
+  if (previousDensity !== nextDensity) input.dataset.layoutDirty = 'true';
   if (normalized.length === 2) window.focusRelative?.(input, 0, 1);
 }
 
@@ -119,6 +144,13 @@ function handleFocus(event) {
   if (!input || isPreviewActive() || isScoreViewActive()) return;
   input.select();
   window.jumpToInput?.(input, false);
+}
+
+function handleFocusOut(event) {
+  const input = event.target.closest?.('.note-input');
+  if (!input || input.dataset.layoutDirty !== 'true') return;
+  delete input.dataset.layoutDirty;
+  window.scheduleEditorLayout?.();
 }
 
 function handleClick(event) {
@@ -137,5 +169,6 @@ export function installEditorInputController({ getStore, markStoreCurrent }) {
   tabArea.addEventListener('input', event => handleInput(event, { getStore, markStoreCurrent }));
   tabArea.addEventListener('keydown', handleKeydown);
   tabArea.addEventListener('focusin', handleFocus);
+  tabArea.addEventListener('focusout', handleFocusOut);
   tabArea.addEventListener('click', handleClick);
 }

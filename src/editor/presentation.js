@@ -64,6 +64,13 @@ function positionCountForGrid(grid) {
   return 1;
 }
 
+function positionPercent(grid, position) {
+  if (typeof window.positionPercentForGrid === 'function') return window.positionPercentForGrid(grid, position);
+  const startPosition = Number(grid.dataset.positionStart) || 0;
+  const count = positionCountForGrid(grid);
+  return ((Number(position) - startPosition + 1) / count) * 100;
+}
+
 function syncInputBackground(input, knownLayer = null, knownMap = null) {
   if (!(input instanceof HTMLInputElement) || !input.classList.contains('note-input')) return;
   const grid = input.closest('.tab-grid');
@@ -102,7 +109,7 @@ function syncInputBackground(input, knownLayer = null, knownMap = null) {
     map.set(key, background);
   }
 
-  background.style.setProperty('--note-x', `${((localPosition + 1) / positionCount) * 100}%`);
+  background.style.setProperty('--note-x', `${positionPercent(grid, position)}%`);
   background.style.setProperty('--string-index', String(string));
 }
 
@@ -179,7 +186,6 @@ function fitGrid(grid, force = false) {
 
   if (filled.length) {
     const measureText = makeTextMeasurer(filled[0], baseSize);
-    const startPosition = Number(grid.dataset.positionStart) || 0;
     const byString = new Map();
     filled.forEach(input => {
       resetTwoDigitFit(input);
@@ -192,7 +198,7 @@ function fitGrid(grid, force = false) {
       const notes = inputs.map(input => ({
         input,
         value: String(input.value || ''),
-        center: rect.left + (((Number(input.dataset.position) - startPosition) + 1) / positionCount) * rect.width
+        center: rect.left + positionPercent(grid, Number(input.dataset.position)) / 100 * rect.width
       })).sort((a, b) => a.center - b.center);
 
       notes.forEach((note, index) => {

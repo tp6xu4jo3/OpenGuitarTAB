@@ -51,6 +51,7 @@ function dispatchCommand(command) {
   if (!store) return { document: null, changeSet: createChangeSet() };
   const result = store.dispatch(command);
   stateSync.markCurrent(store);
+  window.scheduleEditorLayout?.();
   return result;
 }
 

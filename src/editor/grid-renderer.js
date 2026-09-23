@@ -1,13 +1,22 @@
+import { buildAdaptiveLayout, buildSystems, DEFAULT_LAYOUT_WIDTH } from './layout.js';
+import { fractionKey, normalizeFraction } from './model.js';
 import { isScoreViewActive } from './view-state.js';
 
 const STRINGS = 6;
 const MAX_MEASURES_PER_SYSTEM = 4;
 const SLOTS_PER_BEAT = 4;
+const EDITOR_RAIL_WIDTH = 102;
 
 let installed = false;
+let layoutFrame = 0;
+let observedLayoutWidth = -1;
 
 function currentSongSafe() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
+}
+
+function currentDocumentSafe(song = currentSongSafe()) {
+  return window.editorV3?.getStore?.({ reconcile: false })?.getDocument?.() || song?.document || null;
 }
 
 function beatsPerMeasure(song = currentSongSafe()) {
@@ -27,33 +36,88 @@ function normalizeMeasureCount(value) {
     : MAX_MEASURES_PER_SYSTEM;
 }
 
+function logicalSystems(song = currentSongSafe()) {
+  const documentModel = currentDocumentSafe(song);
+  return documentModel ? buildSystems(documentModel) : null;
+}
+
 function normalizeMeasureCounts(rawCounts, rowCount) {
   return Array.from({ length: rowCount }, (_, index) => normalizeMeasureCount(rawCounts?.[index]));
 }
 
 function ensureRowMeasureCounts(song = currentSongSafe()) {
   if (!song) return [];
+  const systems = logicalSystems(song);
+  if (systems?.length) {
+    song.rowMeasureCounts = systems.map(system => normalizeMeasureCount(system.length));
+    return song.rowMeasureCounts;
+  }
   const rowCount = song.rows?.length || 1;
   song.rowMeasureCounts = normalizeMeasureCounts(song.rowMeasureCounts, rowCount);
   return song.rowMeasureCounts;
 }
 
 function rowMeasureCount(rowIndex, song = currentSongSafe()) {
-  if (!song) return MAX_MEASURES_PER_SYSTEM;
+  const systems = logicalSystems(song);
+  if (systems?.[rowIndex]?.length) return normalizeMeasureCount(systems[rowIndex].length);
   const counts = ensureRowMeasureCounts(song);
   return normalizeMeasureCount(counts[rowIndex]);
 }
 
 function rowPositionCount(rowIndex, song = currentSongSafe()) {
-  const beats = beatsPerMeasure(song);
-  return rowMeasureCount(rowIndex, song) * beats * SLOTS_PER_BEAT;
+  return rowMeasureCount(rowIndex, song) * beatsPerMeasure(song) * SLOTS_PER_BEAT;
 }
 
 function rowStepCount(rowIndex, song = currentSongSafe()) {
   return rowMeasureCount(rowIndex, song) * beatsPerMeasure(song) * 2;
 }
 
-function createInput({ rowIndex, string, position, originalStep = null, isSmall = false }) {
+function parseMeasureWidths(grid) {
+  const count = Math.max(1, Number(grid?.dataset.measureCount) || 1);
+  const raw = String(grid?.dataset.measureWidths || '')
+    .split(',')
+    .map(Number)
+    .filter(Number.isFinite);
+  if (raw.length !== count || raw.some(value => value <= 0)) return Array(count).fill(100 / count);
+  const total = raw.reduce((sum, value) => sum + value, 0) || 100;
+  return raw.map(value => value / total * 100);
+}
+
+function measureBoundaryPercentForGrid(grid, localBoundary) {
+  const widths = parseMeasureWidths(grid);
+  const boundary = Math.max(0, Math.min(widths.length, Number(localBoundary) || 0));
+  return widths.slice(0, boundary).reduce((sum, value) => sum + value, 0);
+}
+
+function positionPercentForGrid(grid, absolutePosition) {
+  const beats = beatsPerMeasure();
+  const measureSlots = beats * SLOTS_PER_BEAT;
+  const startMeasure = Number(grid?.dataset.measureStart) || 0;
+  const widths = parseMeasureWidths(grid);
+  const position = Number(absolutePosition);
+  if (!Number.isFinite(position)) return 0;
+  const absoluteMeasure = Math.floor(Math.max(0, position) / measureSlots);
+  const localMeasure = absoluteMeasure - startMeasure;
+  if (localMeasure < 0) return 0;
+  if (localMeasure >= widths.length) return 100;
+  const slot = Math.max(0, Math.min(measureSlots - 1, position - absoluteMeasure * measureSlots));
+  const left = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
+  return left + widths[localMeasure] * ((slot + 1) / measureSlots);
+}
+
+function positionStepPercentForGrid(grid, absolutePosition) {
+  const beats = beatsPerMeasure();
+  const measureSlots = beats * SLOTS_PER_BEAT;
+  const startMeasure = Number(grid?.dataset.measureStart) || 0;
+  const widths = parseMeasureWidths(grid);
+  const position = Number(absolutePosition);
+  const absoluteMeasure = Math.floor(Math.max(0, position) / measureSlots);
+  const localMeasure = absoluteMeasure - startMeasure;
+  if (localMeasure < 0 || localMeasure >= widths.length) return 100 / Math.max(1, Number(grid?.dataset.positionCount) || measureSlots);
+  return widths[localMeasure] / measureSlots;
+}
+
+function createInput({ rowIndex, string, position, measureId = '', at = [0, 1], originalStep = null, isSmall = false }) {
   const input = document.createElement('input');
   input.className = 'note-input';
 
@@ -73,6 +137,8 @@ function createInput({ rowIndex, string, position, originalStep = null, isSmall 
   input.dataset.string = String(string);
   input.dataset.position = String(position);
   input.dataset.size = isSmall ? 'small' : 'normal';
+  input.dataset.at = fractionKey(normalizeFraction(at));
+  if (measureId) input.dataset.measureId = String(measureId);
   if (originalStep != null) input.dataset.step = String(originalStep);
 
   input.ariaLabel = isSmall
@@ -88,26 +154,36 @@ function createInput({ rowIndex, string, position, originalStep = null, isSmall 
   return input;
 }
 
-function createTabSystem(rowIndex, rowCount) {
+function gridTemplateColumns(measureWidths, measureSteps) {
+  return measureWidths.flatMap(width => Array.from({ length: measureSteps }, () => width / measureSteps))
+    .map(width => `${width.toFixed(6)}%`)
+    .join(' ');
+}
+
+function createTabGrid(rowIndex, rowValues, logicalSystem, segment) {
   const song = currentSongSafe();
-  const measureCount = rowMeasureCount(rowIndex, song);
   const beats = beatsPerMeasure(song);
   const measureSteps = beats * 2;
   const measureSlots = beats * SLOTS_PER_BEAT;
+  const measureCount = Math.max(1, segment.measures.length);
+  const startMeasure = Math.max(0, Number(segment.startMeasure) || 0);
   const visibleSteps = measureCount * measureSteps;
   const visiblePositions = measureCount * measureSlots;
+  const widths = segment.measureWidths?.length === measureCount
+    ? segment.measureWidths
+    : Array(measureCount).fill(100 / measureCount);
 
-  const system = makeDiv('tab-system');
-  system.dataset.row = String(rowIndex);
-
-  const grid = makeDiv('tab-grid');
+  const grid = makeDiv('tab-grid adaptive-tab-grid');
   grid.dataset.row = String(rowIndex);
-  grid.dataset.measureStart = '0';
+  grid.dataset.measureStart = String(startMeasure);
   grid.dataset.measureCount = String(measureCount);
-  grid.dataset.positionStart = '0';
+  grid.dataset.positionStart = String(startMeasure * measureSlots);
   grid.dataset.positionCount = String(visiblePositions);
+  grid.dataset.measureIds = segment.measureIds.join(',');
+  grid.dataset.measureWidths = widths.map(value => Number(value).toFixed(6)).join(',');
   grid.style.setProperty('--steps', String(visibleSteps));
-  grid.style.width = `${measureCount * 25}%`;
+  grid.style.gridTemplateColumns = gridTemplateColumns(widths, measureSteps);
+  grid.style.width = '100%';
 
   for (let string = 0; string < STRINGS; string++) {
     const line = makeDiv('string-line');
@@ -115,49 +191,68 @@ function createTabSystem(rowIndex, rowCount) {
     grid.appendChild(line);
   }
 
-  for (let measure = 0; measure <= measureCount; measure++) {
+  for (let boundary = 0; boundary <= measureCount; boundary++) {
     const line = makeDiv('measure-line');
-    line.style.setProperty('--measure-index', String(measure));
-    line.style.left = `${(measure / measureCount) * 100}%`;
-    if (measure === 0) line.classList.add('first');
-    if (measure === measureCount) line.classList.add('last');
+    line.style.setProperty('--measure-index', String(startMeasure + boundary));
+    line.style.left = `${measureBoundaryPercentForGrid(grid, boundary)}%`;
+    if (boundary === 0) line.classList.add('first');
+    if (boundary === measureCount) line.classList.add('last');
     grid.appendChild(line);
   }
 
-  const totalBeats = measureCount * beats;
-  for (let guide = 1; guide < totalBeats; guide++) {
-    if (guide % beats === 0) continue;
-    const line = makeDiv('beat-guide');
-    line.style.setProperty('--guide-percent', `${(guide / totalBeats) * 100}%`);
-    grid.appendChild(line);
-  }
-
-  for (let string = 0; string < STRINGS; string++) {
-    for (let step = 0; step < visibleSteps; step++) {
-      const measure = Math.floor(step / measureSteps);
-      const localStep = step % measureSteps;
-      const position = measure * measureSlots + localStep * 2;
-      const cell = makeDiv('cell');
-      cell.style.gridColumn = String(step + 1);
-      cell.style.gridRow = String(string + 1);
-      cell.appendChild(createInput({ rowIndex, string, position, originalStep: step }));
-      grid.appendChild(cell);
+  for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
+    const measureLeft = measureBoundaryPercentForGrid(grid, localMeasure);
+    const width = widths[localMeasure];
+    for (let beat = 1; beat < beats; beat++) {
+      const line = makeDiv('beat-guide');
+      line.style.setProperty('--guide-percent', `${measureLeft + width * (beat / beats)}%`);
+      grid.appendChild(line);
     }
   }
 
-  for (let string = 0; string < STRINGS; string++) {
-    for (let measure = 0; measure < measureCount; measure++) {
-      for (let localStep = 0; localStep < measureSteps; localStep++) {
-        const absoluteStep = measure * measureSteps + localStep;
-        const cell = makeDiv('small-cell');
-        cell.style.left = `${((absoluteStep + 1) / visibleSteps) * 100}%`;
-        cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
-        cell.appendChild(createInput({
+  let localGridStep = 0;
+  for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
+    const absoluteMeasure = startMeasure + localMeasure;
+    const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
+    for (let localStep = 0; localStep < measureSteps; localStep++, localGridStep++) {
+      const position = absoluteMeasure * measureSlots + localStep * 2;
+      const at = [localStep * 2, SLOTS_PER_BEAT];
+      for (let string = 0; string < STRINGS; string++) {
+        const cell = makeDiv('cell');
+        cell.style.gridColumn = String(localGridStep + 1);
+        cell.style.gridRow = String(string + 1);
+        const input = createInput({
           rowIndex,
           string,
-          position: measure * measureSlots + localStep * 2 + 1,
-          isSmall: true
-        }));
+          position,
+          measureId: measure?.id,
+          at,
+          originalStep: absoluteMeasure * measureSteps + localStep
+        });
+        const value = String(rowValues?.[string]?.[position] ?? '');
+        input.value = value;
+        input.classList.toggle('has-value', value.length > 0);
+        cell.appendChild(input);
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
+    const absoluteMeasure = startMeasure + localMeasure;
+    const measure = logicalSystem[absoluteMeasure] || segment.measures[localMeasure];
+    for (let localStep = 0; localStep < measureSteps; localStep++) {
+      const position = absoluteMeasure * measureSlots + localStep * 2 + 1;
+      const at = [localStep * 2 + 1, SLOTS_PER_BEAT];
+      for (let string = 0; string < STRINGS; string++) {
+        const cell = makeDiv('small-cell');
+        cell.style.left = `${positionPercentForGrid(grid, position)}%`;
+        cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
+        const input = createInput({ rowIndex, string, position, measureId: measure?.id, at, isSmall: true });
+        const value = String(rowValues?.[string]?.[position] ?? '');
+        input.value = value;
+        input.classList.toggle('has-value', value.length > 0);
+        cell.appendChild(input);
         grid.appendChild(cell);
       }
     }
@@ -167,7 +262,35 @@ function createTabSystem(rowIndex, rowCount) {
   rhythmLayer.dataset.row = String(rowIndex);
   rhythmLayer.setAttribute('aria-hidden', 'true');
   grid.appendChild(rhythmLayer);
-  system.appendChild(grid);
+  return grid;
+}
+
+function createTabSystem(rowIndex, rowCount, { rowValues = null, logicalSystem = null, segments = null } = {}) {
+  const song = currentSongSafe();
+  const system = makeDiv('tab-system adaptive-tab-system');
+  system.dataset.row = String(rowIndex);
+  system.dataset.centerKey = `row-${rowIndex}`;
+
+  const placeholder = makeDiv('system-label layout-rail-placeholder');
+  placeholder.setAttribute('aria-hidden', 'true');
+  system.appendChild(placeholder);
+
+  const stack = makeDiv('adaptive-layout-stack');
+  const logical = logicalSystem || logicalSystems(song)?.[rowIndex] || [];
+  const fallbackMeasureCount = rowMeasureCount(rowIndex, song);
+  const activeSegments = segments?.length ? segments : [{
+    startMeasure: 0,
+    measures: logical.length ? logical : Array.from({ length: fallbackMeasureCount }, (_, index) => ({ id: `legacy-${rowIndex}-${index}` })),
+    measureIds: logical.map(measure => measure.id),
+    measureWidths: Array(fallbackMeasureCount).fill(100 / fallbackMeasureCount)
+  }];
+
+  activeSegments.forEach((segment, lineIndex) => {
+    const grid = createTabGrid(rowIndex, rowValues, logical, segment);
+    grid.dataset.layoutLine = String(lineIndex);
+    stack.appendChild(grid);
+  });
+  system.appendChild(stack);
   return system;
 }
 
@@ -187,26 +310,20 @@ function rhythmOnsetsFromRow(row, beats = beatsPerMeasure()) {
   onsets.forEach((onset, index) => {
     const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
     const next = onsets[index + 1];
-    onset.duration = Math.max(
-      1,
-      Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots)
-    );
+    onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
   });
   return onsets;
 }
 
 function rhythmRowFromRow(row, beats = beatsPerMeasure()) {
   const rhythm = {};
-  rhythmOnsetsFromRow(row, beats).forEach(onset => {
-    rhythm[onset.position] = onset.duration;
-  });
+  rhythmOnsetsFromRow(row, beats).forEach(onset => { rhythm[onset.position] = onset.duration; });
   return rhythm;
 }
 
 function filledPositions(rowIndex, maxPosition) {
   const result = new Map();
-  const song = currentSongSafe();
-  const row = song?.rows?.[rowIndex];
+  const row = currentSongSafe()?.rows?.[rowIndex];
   for (let position = 0; position < maxPosition; position++) {
     let lowestString = -1;
     for (let string = 0; string < STRINGS; string++) {
@@ -246,11 +363,7 @@ function renderRhythmNotation(rowIndex) {
       for (const [rawPosition, rawDuration] of Object.entries(explicit)) {
         const position = Number(rawPosition);
         if (position < startPosition || position >= endPosition) continue;
-        onsets.push({
-          position,
-          duration: Number(rawDuration),
-          lowestString: values.get(position) ?? STRINGS - 1
-        });
+        onsets.push({ position, duration: Number(rawDuration), lowestString: values.get(position) ?? STRINGS - 1 });
       }
       onsets.sort((a, b) => a.position - b.position);
     } else {
@@ -261,14 +374,11 @@ function renderRhythmNotation(rowIndex) {
       onsets.forEach((onset, index) => {
         const measureEnd = (Math.floor(onset.position / measureSlots) + 1) * measureSlots;
         const next = onsets[index + 1];
-        onset.duration = Math.max(
-          1,
-          Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots)
-        );
+        onset.duration = Math.max(1, Math.min(next && next.position < measureEnd ? next.position - onset.position : measureEnd - onset.position, measureSlots));
       });
     }
 
-    const percent = position => ((position - startPosition + 1) / positionCount) * 100;
+    const percent = position => positionPercentForGrid(grid, position);
     const appendMark = (className, left, width = null) => {
       const mark = makeDiv(className);
       mark.style.left = `${left}%`;
@@ -300,9 +410,7 @@ function renderRhythmNotation(rowIndex) {
           const first = percent(primary[0].position);
           const last = percent(primary[primary.length - 1].position);
           appendMark('rhythm-beam primary', first, last - first);
-        } else if (primary.length === 1) {
-          appendMark('rhythm-flag primary', percent(primary[0].position));
-        }
+        } else if (primary.length === 1) appendMark('rhythm-flag primary', percent(primary[0].position));
 
         const sixteenths = primary.filter(onset => onset.duration === 1);
         let run = [];
@@ -314,15 +422,14 @@ function renderRhythmNotation(rowIndex) {
           } else if (run.length === 1) {
             const onset = run[0];
             const onsetIndex = primary.indexOf(onset);
-            if (primary.length === 1) {
-              appendMark('rhythm-flag secondary', percent(onset.position));
-            } else {
+            if (primary.length === 1) appendMark('rhythm-flag secondary', percent(onset.position));
+            else {
               const previous = primary[onsetIndex - 1];
               const next = primary[onsetIndex + 1];
               let direction = 'right';
               if (!next) direction = 'left';
               else if (previous && onset.position - previous.position < next.position - onset.position) direction = 'left';
-              const width = (0.65 / positionCount) * 100;
+              const width = positionStepPercentForGrid(grid, onset.position) * 0.65;
               const left = percent(onset.position);
               appendMark('rhythm-beam secondary partial', direction === 'left' ? left - width : left, width);
             }
@@ -341,9 +448,7 @@ function renderRhythmNotation(rowIndex) {
 }
 
 function getInput(row, string, position) {
-  return document.querySelector(
-    `.note-input[data-row="${row}"][data-string="${string}"][data-position="${position}"]`
-  );
+  return document.querySelector(`.note-input[data-row="${row}"][data-string="${string}"][data-position="${position}"]`);
 }
 
 function focusRelative(current, stringDelta, positionDelta) {
@@ -353,30 +458,16 @@ function focusRelative(current, stringDelta, positionDelta) {
 
   if (positionDelta !== 0) {
     const positions = rowPositionCount(row);
-    if (position >= positions) {
-      row += 1;
-      position = 0;
-    } else if (position < 0) {
-      row -= 1;
-      position = row >= 0 ? rowPositionCount(row) - 1 : 0;
-    }
+    if (position >= positions) { row += 1; position = 0; }
+    else if (position < 0) { row -= 1; position = row >= 0 ? rowPositionCount(row) - 1 : 0; }
   }
 
-  if (string >= STRINGS) {
-    string = 0;
-    row += 1;
-  } else if (string < 0) {
-    string = STRINGS - 1;
-    row -= 1;
-  }
-
+  if (string >= STRINGS) { string = 0; row += 1; }
+  else if (string < 0) { string = STRINGS - 1; row -= 1; }
   if (row < 0) return;
   position = Math.max(0, Math.min(rowPositionCount(row) - 1, position));
   const next = getInput(row, string, position);
-  if (next) {
-    next.focus();
-    next.select();
-  }
+  if (next) { next.focus(); next.select(); }
 }
 
 function handleKeydown(event) {
@@ -407,46 +498,67 @@ function hydrateRow(row, rowIndex) {
 function updateRemoveRowButton() {
   const button = document.getElementById('removeRow');
   const song = currentSongSafe();
-  if (button) button.disabled = (song?.rows?.length || 0) <= 1;
+  if (button) button.disabled = (logicalSystems(song)?.length || song?.rows?.length || 0) <= 1;
+}
+
+function layoutAvailableWidth(tabArea) {
+  const measured = Number(tabArea?.clientWidth) || Number(tabArea?.getBoundingClientRect?.().width) || 0;
+  return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + EDITOR_RAIL_WIDTH) - EDITOR_RAIL_WIDTH);
+}
+
+function fallbackSegments(rowIndex, count) {
+  return [{
+    sourceSystemIndex: rowIndex,
+    startMeasure: 0,
+    measures: Array.from({ length: count }, (_, index) => ({ id: `legacy-${rowIndex}-${index}` })),
+    measureIds: [],
+    measureWidths: Array(count).fill(100 / count)
+  }];
 }
 
 function renderRows(rows) {
   window.editorPlayback?.stop?.(false, true);
   const song = currentSongSafe();
   const beats = beatsPerMeasure(song);
-  const normalized = typeof window.normalizeRows === 'function'
-    ? window.normalizeRows(rows, beats)
-    : rows;
+  const normalized = typeof window.normalizeRows === 'function' ? window.normalizeRows(rows, beats) : rows;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
 
   ensureRowMeasureCounts(song);
+  const documentModel = currentDocumentSafe(song);
+  const systems = documentModel ? buildSystems(documentModel) : null;
+  const adaptive = documentModel ? buildAdaptiveLayout(documentModel, { availableWidth: layoutAvailableWidth(tabArea) }) : null;
+  const rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
   tabArea.replaceChildren();
 
-  if (isScoreViewActive()) {
-    for (let rowIndex = 0; rowIndex < normalized.length; rowIndex += 2) {
-      const scoreSystem = makeDiv('tab-system score-system');
-      scoreSystem.dataset.centerKey = `pair-${Math.floor(rowIndex / 2)}`;
-      const pair = makeDiv('score-grid-pair');
-      for (const logicalRow of [rowIndex, rowIndex + 1]) {
-        if (logicalRow >= normalized.length) continue;
-        pair.appendChild(createTabSystem(logicalRow, normalized.length).querySelector('.tab-grid'));
-      }
-      scoreSystem.appendChild(pair);
-      tabArea.appendChild(scoreSystem);
-    }
-  } else {
-    normalized.forEach((_, rowIndex) => {
-      const system = createTabSystem(rowIndex, normalized.length);
-      system.dataset.centerKey = `row-${rowIndex}`;
-      tabArea.appendChild(system);
-    });
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+    const logical = systems?.[rowIndex] || [];
+    const measureCount = logical.length || rowMeasureCount(rowIndex, song);
+    const segments = adaptive?.systems.filter(system => system.sourceSystemIndex === rowIndex) || fallbackSegments(rowIndex, measureCount);
+    tabArea.appendChild(createTabSystem(rowIndex, rowCount, {
+      rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
+      logicalSystem: logical,
+      segments
+    }));
   }
 
-  normalized.forEach((row, rowIndex) => hydrateRow(row, rowIndex));
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) renderRhythmNotation(rowIndex);
   updateRemoveRowButton();
   window.editorPlayback?.invalidate?.();
   window.updateProgressRange?.();
+  window.editorLayoutPlan = adaptive;
+  window.dispatchEvent(new CustomEvent('opentab:editor-rendered', { detail: { layout: adaptive } }));
+}
+
+function scheduleLayoutRender() {
+  if (layoutFrame) return;
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = 0;
+    const editorView = document.getElementById('editorView');
+    const song = currentSongSafe();
+    if (editorView?.hidden || !song?.rows) return;
+    renderRows(song.rows);
+  });
 }
 
 export function installGridRenderer() {
@@ -466,8 +578,24 @@ export function installGridRenderer() {
     focusRelative,
     handleKeydown,
     updateRemoveRowButton,
-    renderRows
+    renderRows,
+    positionPercentForGrid,
+    measureBoundaryPercentForGrid,
+    scheduleEditorLayout: scheduleLayoutRender
   });
+
+  const sheet = document.querySelector('.sheet');
+  if (sheet && typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect?.width;
+      if (!Number.isFinite(width) || width <= 0 || Math.abs(width - observedLayoutWidth) < 2) return;
+      observedLayoutWidth = width;
+      scheduleLayoutRender();
+    });
+    observer.observe(sheet);
+  } else {
+    window.addEventListener('resize', scheduleLayoutRender, { passive: true });
+  }
 }
 
 export {
@@ -476,11 +604,14 @@ export {
   focusRelative,
   getInput,
   handleKeydown,
+  measureBoundaryPercentForGrid,
+  positionPercentForGrid,
   renderRhythmNotation,
   renderRows,
   rhythmOnsetsFromRow,
   rhythmRowFromRow,
   rowMeasureCount,
   rowPositionCount,
-  rowStepCount
+  rowStepCount,
+  scheduleLayoutRender
 };
