@@ -6,15 +6,6 @@
     const STORAGE_KEY = 'guitar-tab-maker:songs:v2';
     const CURRENT_ID_KEY = 'guitar-tab-maker:current-song-id:v2';
 
-    const STRING_TUNING = [
-      { name: 'E4', frequency: 329.6275569128699 },
-      { name: 'B3', frequency: 246.94165062806206 },
-      { name: 'G3', frequency: 195.99771799008746 },
-      { name: 'D3', frequency: 146.8323839587038 },
-      { name: 'A2', frequency: 110.0 },
-      { name: 'E2', frequency: 82.4068892282175 }
-    ];
-
     const tabArea = document.getElementById('tabArea');
     const addRowButton = document.getElementById('addRow');
     const removeRowButton = document.getElementById('removeRow');
@@ -66,27 +57,18 @@
 
     let songs = [];
     let currentSongId = null;
-    let rowClipboard = null;
-    let scoreViewEnabled = true;
-    let audioContext = null;
-    let masterGain = null;
-    let compressor = null;
-    const activeStringVoices = Array(STRINGS).fill(null);
-    let playbackTimer = null;
-    let isPlaying = false;
-    let currentPlayhead = null;
-    let lastCenteredPlaybackRow = -1;
-    let playIndex = 0;
+    var scoreViewEnabled = true;
+    var isPlaying = false;
+    var playIndex = 0;
+    var activeBeatsPerMeasure = 4;
     let toastTimer = null;
     let menuOpenFor = null;
     let menuPosition = null;
     let renameTargetId = null;
     let deleteTargetId = null;
-    let activeBeatsPerMeasure = 4;
     let catalogSongs = [];
     let previewSong = null;
     let previousNonEditorRoute = '#/catalog';
-    let publishInProgress = false;
 
     function normalizeBeatsPerMeasure(value) {
       return Number(value) === 3 ? 3 : 4;
@@ -149,8 +131,7 @@
           const source = Array.isArray(row?.[string]) ? row[string] : [];
           const values = Array(positions).fill('');
           for (let position = 0; position < Math.min(positions, source.length); position++) {
-            const value = normalizeTabValue(source[position]);
-            values[position] = value;
+            values[position] = normalizeTabValue(source[position]);
           }
           normalizedRow.push(values);
         }
@@ -175,8 +156,27 @@
       });
     }
 
+    function normalizeMeasureCount(value) {
+      const count = Number(value);
+      return Number.isInteger(count) ? Math.max(1, Math.min(MEASURES, count)) : MEASURES;
+    }
+
+    function normalizeRowMeasureCounts(rawCounts, rowCount) {
+      return Array.from({ length: rowCount }, (_, index) => normalizeMeasureCount(rawCounts?.[index]));
+    }
+
     function seedSongs() {
-      return [{ id: 'seed-blank-song-v1', name: '空白曲譜', tempo: 120, capo: 0, beatsPerMeasure: 4, rows: blankRows(INITIAL_ROWS, 4), createdAt: Date.now(), updatedAt: Date.now() }];
+      return [{
+        id: 'seed-blank-song-v1',
+        name: '空白曲譜',
+        tempo: 120,
+        capo: 0,
+        beatsPerMeasure: 4,
+        rows: blankRows(INITIAL_ROWS, 4),
+        rowMeasureCounts: Array(INITIAL_ROWS).fill(MEASURES),
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }];
     }
 
     function loadStorage() {
@@ -197,15 +197,17 @@
     }
 
     function normalizeSongRecord(song) {
-      const beatsPerMeasure = normalizeBeatsPerMeasure(song.beatsPerMeasure);
+      const beatsPerMeasure = normalizeBeatsPerMeasure(song?.beatsPerMeasure);
+      const rows = normalizeRows(song?.rows, beatsPerMeasure);
       const normalized = {
         ...song,
-        tempo: clamp(Number(song.tempo) || 120, 30, 300),
-        capo: clamp(Math.round(Number(song.capo) || 0), 0, 12),
+        tempo: clamp(Number(song?.tempo) || 120, 30, 300),
+        capo: clamp(Math.round(Number(song?.capo) || 0), 0, 12),
         beatsPerMeasure,
-        rows: normalizeRows(song.rows, beatsPerMeasure)
+        rows,
+        rowMeasureCounts: normalizeRowMeasureCounts(song?.rowMeasureCounts, rows.length)
       };
-      const rhythmRows = normalizeRhythmRows(song.rhythmRows, beatsPerMeasure);
+      const rhythmRows = normalizeRhythmRows(song?.rhythmRows, beatsPerMeasure);
       if (rhythmRows) normalized.rhythmRows = rhythmRows;
       return normalized;
     }
@@ -215,84 +217,18 @@
       return songs.find(song => song.id === currentSongId) || songs[0];
     }
 
+    function getSongRecords() {
+      return songs;
+    }
+
+    function setCurrentSongId(id) {
+      currentSongId = id == null ? null : String(id);
+      return currentSongId;
+    }
+
     function positionForOriginalStep(step) {
       const measureSteps = stepsPerMeasure();
       const measure = Math.floor(step / measureSteps);
       const localStep = step % measureSteps;
       return measure * slotsPerMeasure() + localStep * 2;
-    }
-
-    function createInput({ rowIndex, string, position, originalStep = null, isSmall = false }) {
-      const input = document.createElement('input');
-      input.className = 'note-input';
-      if (!isSmall) {
-        const localStep = originalStep % stepsPerMeasure();
-        const shadeInterval = activeBeatsPerMeasure === 3 ? 3 : 2;
-        if (localStep % shadeInterval === 0) input.classList.add('odd-step');
-      }
-      if (isSmall) input.classList.add('small-step');
-      input.type = 'text';
-      input.inputMode = 'numeric';
-      input.pattern = '[0-9xX]*';
-      input.maxLength = 2;
-      input.autocomplete = 'off';
-      input.ariaLabel = isSmall ? `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，中間小輸入點 ${position + 1}` : `第 ${rowIndex + 1} 列，第 ${string + 1} 弦，第 ${originalStep + 1} 個原本輸入點`;
-      input.dataset.row = rowIndex;
-      input.dataset.string = string;
-      input.dataset.position = position;
-      if (originalStep !== null) input.dataset.step = originalStep;
-      input.dataset.size = isSmall ? 'small' : 'normal';
-      input.readOnly = scoreViewEnabled;
-      if (scoreViewEnabled) {
-        input.tabIndex = -1;
-        input.setAttribute('aria-readonly', 'true');
-      } else {
-        input.addEventListener('input', handleInput);
-        input.addEventListener('keydown', handleKeydown);
-        input.addEventListener('focus', event => { event.target.select(); jumpToInput(event.target, false); });
-        input.addEventListener('click', event => jumpToInput(event.target, true));
-      }
-      return input;
-    }
-
-    function createTabSystem(rowIndex, rowCount) {
-      const system = makeDiv('tab-system');
-      system.dataset.row = rowIndex;
-      const label = makeDiv('system-label');
-      const labelText = document.createElement('div');
-      labelText.textContent = `第 ${rowIndex + 1} 列`;
-      label.appendChild(labelText);
-      const tools = makeDiv('row-tool-group');
-      const copyButton = document.createElement('button');
-      copyButton.type = 'button'; copyButton.className = 'row-tool'; copyButton.textContent = '複製'; copyButton.addEventListener('click', () => copyRow(rowIndex));
-      const pasteButton = document.createElement('button');
-      pasteButton.type = 'button'; pasteButton.className = 'row-tool'; pasteButton.textContent = '貼上'; pasteButton.addEventListener('click', () => pasteRow(rowIndex));
-      const moveUpButton = document.createElement('button');
-      moveUpButton.type = 'button'; moveUpButton.className = 'row-tool'; moveUpButton.textContent = '↑'; moveUpButton.title = '與上一列交換'; moveUpButton.setAttribute('aria-label', `第 ${rowIndex + 1} 列與上一列交換`); moveUpButton.disabled = rowIndex === 0; moveUpButton.addEventListener('click', () => swapRow(rowIndex, rowIndex - 1));
-      const moveDownButton = document.createElement('button');
-      moveDownButton.type = 'button'; moveDownButton.className = 'row-tool'; moveDownButton.textContent = '↓'; moveDownButton.title = '與下一列交換'; moveDownButton.setAttribute('aria-label', `第 ${rowIndex + 1} 列與下一列交換`); moveDownButton.disabled = rowIndex === rowCount - 1; moveDownButton.addEventListener('click', () => swapRow(rowIndex, rowIndex + 1));
-      tools.append(copyButton, pasteButton, moveUpButton, moveDownButton); label.appendChild(tools); system.appendChild(label);
-      const grid = makeDiv('tab-grid'); grid.dataset.row = rowIndex;
-      const steps = stepsPerRow(); const measureSteps = stepsPerMeasure(); const measureSlots = slotsPerMeasure(); grid.style.setProperty('--steps', steps);
-      for (let string = 0; string < STRINGS; string++) { const line = makeDiv('string-line'); line.style.setProperty('--string-index', string); grid.appendChild(line); }
-      for (let measure = 0; measure <= MEASURES; measure++) { const line = makeDiv('measure-line'); line.style.setProperty('--measure-index', measure); if (measure === 0) line.classList.add('first'); if (measure === MEASURES) line.classList.add('last'); grid.appendChild(line); }
-      for (let guide = 1; guide < MEASURES * activeBeatsPerMeasure; guide++) { if (guide % activeBeatsPerMeasure === 0) continue; const line = makeDiv('beat-guide'); line.style.setProperty('--guide-percent', `${(guide / (MEASURES * activeBeatsPerMeasure)) * 100}%`); grid.appendChild(line); }
-      for (let string = 0; string < STRINGS; string++) {
-        for (let step = 0; step < steps; step++) {
-          const cell = makeDiv('cell'); cell.style.gridColumn = step + 1; cell.style.gridRow = string + 1;
-          cell.appendChild(createInput({ rowIndex, string, position: positionForOriginalStep(step), originalStep: step, isSmall: false })); grid.appendChild(cell);
-        }
-      }
-      for (let string = 0; string < STRINGS; string++) {
-        for (let measure = 0; measure < MEASURES; measure++) {
-          for (let localStep = 0; localStep < measureSteps; localStep++) {
-            const absoluteOriginalStep = measure * measureSteps + localStep;
-            const cell = makeDiv('small-cell'); cell.style.left = `${((absoluteOriginalStep + 1) / steps) * 100}%`; cell.style.top = `calc(${string} * var(--row-height) + (var(--row-height) / 2))`;
-            cell.appendChild(createInput({ rowIndex, string, position: measure * measureSlots + localStep * 2 + 1, isSmall: true })); grid.appendChild(cell);
-          }
-        }
-      }
-      const rhythmLayer = makeDiv('rhythm-layer'); rhythmLayer.dataset.row = rowIndex; rhythmLayer.setAttribute('aria-hidden', 'true'); grid.appendChild(rhythmLayer);
-      system.appendChild(grid);
-      return system;
     }
