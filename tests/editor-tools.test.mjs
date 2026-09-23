@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { applyCommand } from '../src/editor/commands.js';
-import { createDocumentV3 } from '../src/editor/model.js';
+import { createDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
 import { documentToLegacyProjection, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
+import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 import { eventRangeFromEvent, ToolRegistry } from '../src/editor/tools.js';
 
 function idFactory() {
@@ -48,6 +49,7 @@ for (const [toolId, target] of Object.entries(expectedTargets)) {
   const tripletCommand = definitions.createCommand('triplet', eventRangeFromEvent(documentModel, 'e-1', 3));
   const grouped = applyCommand(documentModel, tripletCommand, { idFactory: idFactory() }).document;
   assert.equal(grouped.measures[0].groups[0].type, 'tuplet');
+  assert.ok(grouped.measures[0].groups[0].id, 'groups must own stable IDs');
   assert.deepEqual(grouped.measures[0].groups[0].eventIds, ['e-1', 'e-2', 'e-3']);
 }
 
@@ -74,7 +76,45 @@ for (const [toolId, target] of Object.entries(expectedTargets)) {
 }
 
 {
-  assert.deepEqual(definitions.createCommand('harmonic', { noteId: 'n' }).technique, { type: 'harmonic', kind: 'natural' });
+  const documentModel = createDocumentV3({
+    measures: [{
+      id: 'm-harmonic',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [{
+        id: 'e-harmonic',
+        at: [0, 1],
+        duration: [1, 1],
+        notes: [{ id: 'n-harmonic', string: 0, fret: '1' }]
+      }],
+      groups: []
+    }]
+  });
+  const added = applyCommand(
+    documentModel,
+    definitions.createCommand('harmonic', { noteId: 'n-harmonic' }),
+    { idFactory: idFactory() }
+  );
+  const note = added.document.measures[0].events[0].notes[0];
+  const technique = note.techniques[0];
+
+  assert.equal(note.fret, '', 'canonical harmonic notes must not duplicate the base fret');
+  assert.equal(technique.type, 'harmonic');
+  assert.equal(technique.touchFret, 13, '1st fret artificial harmonic must store only touch fret 13');
+  assert.ok(technique.id, 'techniques must own stable IDs');
+  assert.equal('baseFret' in technique, false);
+  assert.equal(noteBaseFret(note), '1');
+  assert.equal(noteDisplayValue(note), '1<13>');
+  assert.equal(documentToLegacyProjection(added.document).rows[0][0][0], '1');
+  assert.equal(buildPlaybackIndex(added.document).entries[0].notes[0].fret, '13', 'playback must use harmonic sounding fret');
+
+  const removed = applyCommand(added.document, { type: 'technique/delete', techniqueId: technique.id });
+  const restored = removed.document.measures[0].events[0].notes[0];
+  assert.equal(restored.fret, '1', 'deleting a harmonic restores the derived base fret');
+  assert.deepEqual(restored.techniques, []);
+}
+
+{
+  assert.deepEqual(definitions.createCommand('harmonic', { noteId: 'n' }).technique, { type: 'harmonic' });
   assert.equal(definitions.createCommand('strumUp', { eventId: 'e' }).mark.direction, 'up');
   assert.equal(definitions.createCommand('strumDown', { eventId: 'e' }).mark.direction, 'down');
   assert.deepEqual(definitions.createCommand('duration32', { eventId: 'e' }).duration, [1, 8]);
