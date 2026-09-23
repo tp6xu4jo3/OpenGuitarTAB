@@ -10,6 +10,7 @@ const gridRenderer = read('src/editor/grid-renderer.js');
 const layout = read('src/editor/layout.js');
 const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
+const rhythmGrid = read('src/editor/rhythm-grid.js');
 const stateSync = read('src/editor/state-sync.js');
 const techniqueRules = read('src/editor/technique-rules.js');
 const structureController = read('src/editor/structure-controller.js');
@@ -39,6 +40,7 @@ for (const moduleName of [
   'src/editor/grid-renderer.js',
   'src/editor/layout.js',
   'src/editor/notation-renderer.js',
+  'src/editor/rhythm-grid.js',
   'src/editor/song-actions.js',
   'src/editor/tool-session.js',
   'src/editor/README.md',
@@ -110,6 +112,12 @@ assert.equal(editorTools.includes('.notation-relation-preview'), true, 'pair pre
 assert.equal(editorTools.includes('pointer-events: none'), true, 'notation relations must not block score inputs');
 assert.equal(techniqueRules.includes("same string"), false, 'music-rule messages stay localized rather than leaking implementation comments');
 assert.equal(notationRenderer.includes('delete input.dataset.measureId'), false, 'notation sync must preserve measure/time metadata for empty column and range targets');
+assert.equal(tools.includes("'rhythm/triplet/apply'"), true, 'triplet tool must dispatch a regional rhythm transform');
+assert.equal(tools.includes("'rhythm/32nd/apply'"), true, '32nd tool must dispatch a regional rhythm transform');
+assert.equal(gridRenderer.includes('fractionalGridTimes'), true, 'grid renderer must render fractional rhythm positions from V3 data');
+assert.equal(gridRenderer.includes('data-v3-only'), false, 'grid renderer should set V3-only state through dataset APIs, not HTML patches');
+assert.equal(rhythmGrid.includes('ratio: [3, 2]'), true, 'triplet transform must retain explicit 3:2 semantics');
+assert.equal(rhythmGrid.includes('rhythmAnchor: true'), true, 'empty 32nd positions must persist as rhythm anchors');
 
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
