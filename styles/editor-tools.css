@@ -1,0 +1,130 @@
+.editor-toolbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.editor-toolbox[hidden] {
+  display: none;
+}
+
+.editor-toolbox-label {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.editor-tool-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: #161616;
+  cursor: grab;
+  user-select: none;
+}
+
+.editor-tool-button:hover,
+.editor-tool-button:focus-visible {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.editor-tool-button.is-active {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 18%, transparent);
+}
+
+.editor-tool-button:active {
+  cursor: grabbing;
+}
+
+.editor-tool-glyph {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  font-weight: 800;
+}
+
+.editor-tool-name {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.note-input[data-note-id],
+.note-input[data-event-id] {
+  position: relative;
+  z-index: 2;
+}
+
+.note-input.tool-link-source {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.notation-overlay {
+  z-index: 4;
+}
+
+.notation-symbol,
+.notation-relation {
+  color: #151515;
+  stroke: currentColor;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+.notation-harmonic {
+  stroke-width: 1.25;
+  fill: none;
+}
+
+.notation-strum {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.notation-duration-32 {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.notation-tuplet-bracket {
+  stroke-width: 1.2;
+  fill: none;
+}
+
+.notation-tuplet-number {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .editor-toolbox {
+    margin-bottom: 12px;
+    padding: 8px;
+  }
+
+  .editor-toolbox-label {
+    display: none;
+  }
+
+  .editor-tool-button {
+    min-height: 34px;
+    padding: 5px 8px;
+  }
+}

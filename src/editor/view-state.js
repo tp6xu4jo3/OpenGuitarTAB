@@ -43,13 +43,12 @@ function installModeToggle() {
   if (!toggle) return;
   toggle.addEventListener('click', event => {
     event.preventDefault();
-    event.stopImmediatePropagation();
     const active = setScoreViewEnabled(!isScoreViewActive());
     const song = typeof window.currentSong === 'function' ? window.currentSong() : null;
     if (song?.rows && typeof window.renderRows === 'function') window.renderRows(song.rows);
     window.scheduleDensityFitAll?.(true);
     return active;
-  }, true);
+  });
 }
 
 export function installViewState() {

@@ -266,6 +266,7 @@ export function documentToLegacyProjection(document) {
   const measureSlots = beatsPerMeasure * LEGACY_SLOTS_PER_BEAT;
   const positionsPerRow = LEGACY_MEASURES_PER_ROW * measureSlots;
   let lossy = false;
+  let structuralLossy = false;
 
   const rows = systems.map(() => Array.from({ length: LEGACY_STRINGS }, () => Array(positionsPerRow).fill('')));
   const rhythmRows = systems.map(() => ({}));
@@ -273,19 +274,26 @@ export function documentToLegacyProjection(document) {
 
   systems.forEach((system, rowIndex) => {
     system.slice(0, LEGACY_MEASURES_PER_ROW).forEach((measure, measureIndex) => {
-      if (measure.timeSignature?.numerator !== beatsPerMeasure || Number(measure.timeSignature?.denominator) !== 4) lossy = true;
+      if (measure.timeSignature?.numerator !== beatsPerMeasure || Number(measure.timeSignature?.denominator) !== 4) {
+        lossy = true;
+        structuralLossy = true;
+      }
       for (const event of measure.events || []) {
         const localPosition = fractionToLegacySlots(event.at);
-        const durationSlots = fractionToLegacySlots(event.duration);
-        if (localPosition == null || durationSlots == null || localPosition < 0 || localPosition >= measureSlots) {
+        const exactDurationSlots = fractionToLegacySlots(event.duration);
+        if (localPosition == null || localPosition < 0 || localPosition >= measureSlots) {
           lossy = true;
+          structuralLossy = true;
           continue;
         }
+        const durationSlots = exactDurationSlots == null ? 1 : exactDurationSlots;
+        if (exactDurationSlots == null) lossy = true;
         const absolutePosition = measureIndex * measureSlots + localPosition;
         for (const note of event.notes || []) {
           const string = Number(note.string);
           if (!Number.isInteger(string) || string < 0 || string >= LEGACY_STRINGS) {
             lossy = true;
+            structuralLossy = true;
             continue;
           }
           rows[rowIndex][string][absolutePosition] = String(note.fret ?? '');
@@ -301,7 +309,8 @@ export function documentToLegacyProjection(document) {
     rowMeasureCounts,
     beatsPerMeasure,
     meter: `${beatsPerMeasure}/4`,
-    lossy
+    lossy,
+    structuralLossy
   };
 }
 

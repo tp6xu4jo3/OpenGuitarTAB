@@ -7,6 +7,7 @@ const exists = path => fs.existsSync(new URL(`../${path}`, import.meta.url));
 const bootstrap = read('src/bootstrap.js');
 const controller = read('src/editor/controller.js');
 const stateSync = read('src/editor/state-sync.js');
+const viewState = read('src/editor/view-state.js');
 
 for (const removed of [
   'legacy-ui-bridge',
@@ -18,12 +19,13 @@ for (const removed of [
   assert.equal(bootstrap.includes(removed), false, `bootstrap must not restore ${removed}`);
 }
 
-for (const moduleName of ['input-controller.js', 'state-sync.js', 'view-state.js']) {
+for (const moduleName of ['input-controller.js', 'state-sync.js', 'view-state.js', 'notation-renderer.js']) {
   assert.equal(controller.includes(`./${moduleName}`), true, `controller must compose ${moduleName}`);
 }
 
 for (const moduleName of [
   'src/editor/grid-renderer.js',
+  'src/editor/notation-renderer.js',
   'src/editor/song-actions.js',
   'src/editor/README.md',
   'src/library/song-import.js'
@@ -47,6 +49,8 @@ for (const forbiddenOverride of [
   assert.equal(stateSync.includes(forbiddenOverride), false, `state-sync must not restore ${forbiddenOverride}`);
 }
 
+assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
+assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');
