@@ -24,7 +24,7 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 - `grid-navigation.js` — arrow-only score navigation over real fractional time positions. Enter is consumed but never moves the cursor.
 - `legacy-grid-compat.js` — the only production-grid compatibility boundary for legacy rows, rhythm rows, row counts, and explicit V3 -> V2 projection.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
-- `view-state.js` — edit/score/preview mode state.
+- `view-state.js` — edit/score/preview mode state plus presentation-only score density (normal/compact). Density changes never modify the song document.
 - `playback-controller.js` — playback UI state and event scheduling.
 - `song-actions.js` — editor Save and Publish actions.
 
@@ -36,7 +36,7 @@ Technique tools are click-only. Clicking a tool activates it, a successful targe
 - `grid-geometry.js` — shared measure-width and time-position geometry used by grid rendering, playback, structure UI, and presentation.
 - `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
 - `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations. Relations are Note-ID based; adaptive line/system breaks render continuation segments at grid edges instead of storing or connecting stale screen coordinates.
-- `layout.js` — the shared adaptive V3 layout engine for edit and score views.
+- `layout.js` — the shared adaptive V3 layout engine for edit and score views. Normal score mode follows the standard adaptive systems; compact score mode greedily packs source-system segments by available width and notation complexity, so the visual measure count is not a fixed 4/8 preset.
 - `presentation.js` — note backgrounds and density fitting.
 
 Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.

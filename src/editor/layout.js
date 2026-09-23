@@ -3,6 +3,8 @@ import { fractionToNumber, indexDocument, isDocumentV3, normalizeDocumentV3, nor
 export const MAX_MEASURES_PER_SYSTEM = 4;
 export const DEFAULT_LAYOUT_WIDTH = 1120;
 export const MIN_MEASURE_WIDTH = 205;
+export const COMPACT_SCORE_MIN_MEASURE_WIDTH = 112;
+export const COMPACT_SCORE_SEGMENT_GAP = 12;
 
 function sourceDocument(document) {
   return isDocumentV3(document) ? document : normalizeDocumentV3(document);
@@ -155,6 +157,83 @@ export function buildAdaptiveLayout(documentModel, {
   });
 
   return { availableWidth: width, systems, logicalSystems };
+}
+
+function finalizeCompactRow(row, availableWidth, gap, metrics) {
+  if (!row?.segments?.length) return null;
+  const measures = row.segments.flatMap(segment => segment.measures);
+  const usableWidth = Math.max(1, availableWidth - gap * Math.max(0, row.segments.length - 1));
+  const allocation = allocateWidths(measures, usableWidth, metrics);
+  let cursor = 0;
+
+  const segments = row.segments.map(segment => {
+    const count = segment.measures.length;
+    const pixels = allocation.pixels.slice(cursor, cursor + count);
+    cursor += count;
+    const pixelTotal = pixels.reduce((sum, value) => sum + value, 0) || 1;
+    return {
+      ...segment,
+      measureIds: segment.measures.map(measure => measure.id),
+      measureWidthsPx: pixels,
+      measureWidths: pixels.map(value => value / pixelTotal * 100),
+      widthWeight: pixelTotal
+    };
+  });
+
+  return {
+    segments,
+    measureCount: measures.length,
+    minimumWidth: row.minimumWidth
+  };
+}
+
+export function buildCompactScoreLayout(documentModel, {
+  availableWidth = DEFAULT_LAYOUT_WIDTH,
+  minMeasureWidth = COMPACT_SCORE_MIN_MEASURE_WIDTH,
+  segmentGap = COMPACT_SCORE_SEGMENT_GAP
+} = {}) {
+  const document = sourceDocument(documentModel);
+  const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
+  const gap = Math.max(0, Number(segmentGap) || 0);
+  const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
+  const metrics = buildMetrics(document, minMeasureWidth);
+  const rows = [];
+  let row = null;
+
+  const flush = () => {
+    const finalized = finalizeCompactRow(row, width, gap, metrics);
+    if (finalized) rows.push(finalized);
+    row = null;
+  };
+
+  logicalSystems.forEach((measures, sourceSystemIndex) => {
+    measures.forEach((measure, measureIndex) => {
+      const minimumWidth = metrics.get(measure.id)?.minimumWidth || minMeasureWidth;
+      const lastSegment = row?.segments?.[row.segments.length - 1] || null;
+      const startsSegment = !lastSegment || lastSegment.sourceSystemIndex !== sourceSystemIndex;
+      const extraGap = row?.segments?.length && startsSegment ? gap : 0;
+      if (row?.measureCount && row.minimumWidth + extraGap + minimumWidth > width) flush();
+
+      if (!row) row = { segments: [], measureCount: 0, minimumWidth: 0 };
+      let segment = row.segments[row.segments.length - 1];
+      if (!segment || segment.sourceSystemIndex !== sourceSystemIndex) {
+        if (row.segments.length) row.minimumWidth += gap;
+        segment = {
+          sourceSystemIndex,
+          startMeasure: measureIndex,
+          measures: []
+        };
+        row.segments.push(segment);
+      }
+
+      segment.measures.push(measure);
+      row.measureCount += 1;
+      row.minimumWidth += minimumWidth;
+    });
+  });
+  flush();
+
+  return { availableWidth: width, rows, logicalSystems };
 }
 
 export function systemIndexForMeasure(document, measureId, options) {

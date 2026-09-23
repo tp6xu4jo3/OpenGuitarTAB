@@ -1,4 +1,4 @@
-import { buildAdaptiveLayout, buildSystems, DEFAULT_LAYOUT_WIDTH } from './layout.js';
+import { buildAdaptiveLayout, buildCompactScoreLayout, buildSystems, DEFAULT_LAYOUT_WIDTH } from './layout.js';
 import {
   fractionalPercentForGrid,
   legacyPositionPercentForGrid,
@@ -18,7 +18,7 @@ import {
 } from './legacy-grid-compat.js';
 import { fractionKey, normalizeFraction, noteBaseFret } from './model.js';
 import { fractionalGridTimes, isTimeReplacedByFractionalGrid } from './rhythm-grid.js';
-import { isScoreViewActive } from './view-state.js';
+import { isScoreViewActive, scoreDensityMode } from './view-state.js';
 
 const STRINGS = LEGACY_STRING_COUNT;
 const EDITOR_RAIL_WIDTH = 102;
@@ -475,6 +475,33 @@ function fallbackSegments(rowIndex, count) {
   }];
 }
 
+function renderCompactScoreRows(tabArea, normalized, systems, compactLayout) {
+  const rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
+
+  compactLayout.rows.forEach((visualRow, visualIndex) => {
+    const line = makeDiv('score-density-line');
+    line.dataset.scoreLine = String(visualIndex);
+    line.dataset.measureCount = String(visualRow.measureCount);
+
+    visualRow.segments.forEach(segment => {
+      const rowIndex = segment.sourceSystemIndex;
+      const logical = systems?.[rowIndex] || [];
+      const system = createTabSystem(rowIndex, rowCount, {
+        rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
+        logicalSystem: logical,
+        segments: [segment]
+      });
+      system.classList.add('score-density-segment');
+      system.style.setProperty('--score-density-weight', String(Math.max(1, segment.widthWeight || segment.minimumWidth || 1)));
+      line.appendChild(system);
+    });
+
+    tabArea.appendChild(line);
+  });
+
+  return rowCount;
+}
+
 function renderRows(rows) {
   window.editorPlayback?.stop?.(false, true);
   const song = currentSongSafe();
@@ -486,27 +513,39 @@ function renderRows(rows) {
   ensureRowMeasureCounts(song);
   const documentModel = currentDocumentSafe(song);
   const systems = documentModel ? buildSystems(documentModel) : null;
-  const adaptive = documentModel ? buildAdaptiveLayout(documentModel, { availableWidth: layoutAvailableWidth(tabArea) }) : null;
-  const rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
+  const availableWidth = layoutAvailableWidth(tabArea);
+  const compactScore = Boolean(documentModel && isScoreViewActive() && scoreDensityMode() === 'compact');
+  const adaptive = documentModel && !compactScore
+    ? buildAdaptiveLayout(documentModel, { availableWidth })
+    : null;
+  const compactLayout = compactScore
+    ? buildCompactScoreLayout(documentModel, { availableWidth })
+    : null;
+  let rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
   tabArea.replaceChildren();
 
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const logical = systems?.[rowIndex] || [];
-    const measureCount = logical.length || rowMeasureCount(rowIndex, song);
-    const segments = adaptive?.systems.filter(system => system.sourceSystemIndex === rowIndex) || fallbackSegments(rowIndex, measureCount);
-    tabArea.appendChild(createTabSystem(rowIndex, rowCount, {
-      rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
-      logicalSystem: logical,
-      segments
-    }));
+  if (compactLayout) {
+    rowCount = renderCompactScoreRows(tabArea, normalized, systems, compactLayout);
+  } else {
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      const logical = systems?.[rowIndex] || [];
+      const measureCount = logical.length || rowMeasureCount(rowIndex, song);
+      const segments = adaptive?.systems.filter(system => system.sourceSystemIndex === rowIndex) || fallbackSegments(rowIndex, measureCount);
+      tabArea.appendChild(createTabSystem(rowIndex, rowCount, {
+        rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
+        logicalSystem: logical,
+        segments
+      }));
+    }
   }
 
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) renderRhythmNotation(rowIndex);
   updateRemoveRowButton();
   window.editorPlayback?.invalidate?.();
   window.updateProgressRange?.();
-  window.editorLayoutPlan = adaptive;
-  window.dispatchEvent(new CustomEvent('opentab:editor-rendered', { detail: { layout: adaptive } }));
+  const layoutPlan = compactLayout || adaptive;
+  window.editorLayoutPlan = layoutPlan;
+  window.dispatchEvent(new CustomEvent('opentab:editor-rendered', { detail: { layout: layoutPlan } }));
 }
 
 function scheduleLayoutRender() {
@@ -539,6 +578,8 @@ export function installGridRenderer() {
     measureBoundaryPercentForGrid,
     scheduleEditorLayout: scheduleLayoutRender
   });
+
+  window.addEventListener('opentab:score-layout-change', scheduleLayoutRender);
 
   const sheet = document.querySelector('.sheet');
   if (sheet && typeof ResizeObserver === 'function') {

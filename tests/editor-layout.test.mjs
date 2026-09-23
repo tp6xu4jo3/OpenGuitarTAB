@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createDocumentV3 } from '../src/editor/model.js';
-import { buildAdaptiveLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
+import { buildAdaptiveLayout, buildCompactScoreLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
 
 function measure(id, { dense = false } = {}) {
   const events = dense
@@ -49,6 +49,37 @@ function measure(id, { dense = false } = {}) {
   assert.deepEqual(buildSystems(documentModel).map(system => system.map(item => item.id)), [['m1', 'm2'], ['m3', 'm4']]);
   const layout = buildAdaptiveLayout(documentModel, { availableWidth: 1200 });
   assert.deepEqual(layout.systems.map(system => system.measureIds), [['m1', 'm2'], ['m3', 'm4']], 'manual system boundaries must remain hard layout boundaries');
+}
+
+{
+  const documentModel = createDocumentV3({
+    measures: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8'].map(id => measure(id)),
+    layout: { systemBreakAfter: ['m4'] }
+  });
+  const wide = buildCompactScoreLayout(documentModel, { availableWidth: 1000, minMeasureWidth: 100 });
+  assert.equal(wide.rows.length, 1, 'compact score layout should visually combine logical systems when width allows');
+  assert.equal(wide.rows[0].measureCount, 8);
+  assert.deepEqual(wide.rows[0].segments.map(segment => segment.sourceSystemIndex), [0, 1], 'combined score rows must retain source-system identity');
+
+  const narrow = buildCompactScoreLayout(documentModel, { availableWidth: 460, minMeasureWidth: 100 });
+  assert.ok(narrow.rows.length >= 2, 'compact score density must reflow instead of forcing a fixed 8-measure count');
+  assert.ok(narrow.rows.every(row => row.measureCount <= 4), 'narrow compact rows must adapt to available width');
+}
+
+{
+  const documentModel = createDocumentV3({
+    measures: [
+      measure('simple-1'),
+      measure('simple-2'),
+      measure('dense', { dense: true }),
+      measure('simple-3'),
+      measure('simple-4')
+    ],
+    layout: { systemBreakAfter: [] }
+  });
+  const layout = buildCompactScoreLayout(documentModel, { availableWidth: 560, minMeasureWidth: 90 });
+  assert.ok(layout.rows.length >= 2, 'notation complexity must reduce compact row density before glyphs collide');
+  assert.ok(layout.rows.some(row => row.measureCount < 5), 'compact mode must be complexity-aware rather than a fixed measure preset');
 }
 
 console.log('editor layout tests passed');
