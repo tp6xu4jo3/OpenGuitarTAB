@@ -96,7 +96,7 @@ assert.equal(controller.includes('ArrowLeft'), false, 'tool controller must leav
 assert.equal(controller.includes('ArrowRight'), false, 'tool controller must leave arrow navigation to input-controller');
 assert.equal(editorTools.includes('position: sticky'), true, 'tool palette must stay visible while the score scrolls');
 assert.equal(editorTools.includes('.editor-toolbox.is-collapsed'), true, 'tool palette must support collapse mode');
-assert.equal(editorTools.includes('cursor: grab'), false, 'tool palette must not advertise drag interaction');
+assert.equal(editorTools.includes('cursor: grab'), false, 'tool palette must not advertise drag interaction');\nassert.equal(notationRenderer.includes('delete input.dataset.measureId'), false, 'notation sync must preserve measure/time metadata for empty column and range targets');
 
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
