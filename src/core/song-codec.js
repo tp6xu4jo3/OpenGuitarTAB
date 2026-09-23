@@ -17,6 +17,10 @@ export function isSparseSong(song) {
   return Array.isArray(song?.rows) && song.rows.some(row => row && !Array.isArray(row));
 }
 
+export function hasDocumentV3(song) {
+  return Boolean(song?.document?.version === 3 && Array.isArray(song.document.measures));
+}
+
 export function expandSong(song) {
   if (!song || typeof song !== 'object' || Array.isArray(song)) {
     throw new Error('曲譜 JSON 必須是物件');
@@ -85,8 +89,8 @@ export function validateSongObject(song) {
   if (!song || typeof song !== 'object' || Array.isArray(song)) {
     throw new Error('JSON 內容不是有效的單曲物件');
   }
-  if (!Array.isArray(song.rows) && !Array.isArray(song.notes)) {
-    throw new Error('找不到曲譜 rows/notes 資料');
+  if (!Array.isArray(song.rows) && !Array.isArray(song.notes) && !hasDocumentV3(song)) {
+    throw new Error('找不到曲譜 rows/notes/document 資料');
   }
   if (song.name != null && typeof song.name !== 'string') {
     throw new Error('name 欄位必須是文字');
