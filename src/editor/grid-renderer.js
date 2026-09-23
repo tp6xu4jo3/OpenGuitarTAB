@@ -6,7 +6,7 @@ import {
   measureBoundaryPercentForGrid
 } from './grid-geometry.js';
 import {
-  LEGACY_LEGACY_SLOTS_PER_BEAT,
+  LEGACY_SLOTS_PER_BEAT,
   LEGACY_STRING_COUNT,
   legacyBeatsPerMeasure,
   legacyRowMeasureCount,
@@ -65,14 +65,14 @@ function rowStepCount(rowIndex, song = currentSongSafe()) {
 function positionPercentForGrid(grid, absolutePosition) {
   return legacyPositionPercentForGrid(grid, absolutePosition, {
     beatsPerMeasure: beatsPerMeasure(),
-    slotsPerBeat: LEGACY_LEGACY_SLOTS_PER_BEAT
+    slotsPerBeat: LEGACY_SLOTS_PER_BEAT
   });
 }
 
 function positionStepPercentForGrid(grid, absolutePosition) {
   return legacyPositionStepPercentForGrid(grid, absolutePosition, {
     beatsPerMeasure: beatsPerMeasure(),
-    slotsPerBeat: LEGACY_LEGACY_SLOTS_PER_BEAT
+    slotsPerBeat: LEGACY_SLOTS_PER_BEAT
   });
 }
 
@@ -534,9 +534,6 @@ export function installGridRenderer() {
     rhythmOnsetsFromRow,
     rhythmRowFromRow,
     renderRhythmNotation,
-    getInput,
-    focusRelative,
-    handleKeydown,
     updateRemoveRowButton,
     renderRows,
     positionPercentForGrid,
