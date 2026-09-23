@@ -1,4 +1,4 @@
-import { buildSystems, percentageForTime } from './layout.js';
+import { buildSystems, percentageForTime, timeFromPointerX } from './layout.js';
 import { cloneValue, fractionKey, normalizeDocumentV3 } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 
@@ -14,13 +14,39 @@ function noteLabel(note) {
 }
 
 export class SparseScoreRenderer {
-  constructor(root, { stringCount = 6, relationRenderer = new RelationRenderer(), onCommitNote = null } = {}) {
+  constructor(root, { stringCount = 6, relationRenderer = new RelationRenderer(), onCommitNote = null, snap = [1, 4] } = {}) {
     this.root = root;
     this.stringCount = stringCount;
     this.relationRenderer = relationRenderer;
     this.onCommitNote = onCommitNote;
+    this.snap = snap;
     this.document = null;
     this.cursor = null;
+    this.handlePointerDown = this.handlePointerDown.bind(this);
+    this.root?.addEventListener('pointerdown', this.handlePointerDown);
+  }
+
+  destroy() {
+    this.root?.removeEventListener('pointerdown', this.handlePointerDown);
+    this.hideCursor();
+  }
+
+  setSnap(snap) {
+    this.snap = cloneValue(snap);
+  }
+
+  handlePointerDown(event) {
+    if (event.target.closest?.('.v3-note,.v3-note-editor,.notation-overlay')) return;
+    const staff = event.target.closest?.('.v3-staff');
+    const measureNode = staff?.closest?.('.v3-measure');
+    const measureId = measureNode?.dataset.measureId;
+    const measure = this.document?.measures?.find(item => item.id === measureId);
+    if (!staff || !measure) return;
+    const rect = staff.getBoundingClientRect();
+    const relativeY = Math.max(0, Math.min(rect.height - 0.001, event.clientY - rect.top));
+    const string = Math.max(0, Math.min(this.stringCount - 1, Math.floor(relativeY / Math.max(1, rect.height) * this.stringCount)));
+    const at = timeFromPointerX(event.clientX, rect, measure, this.snap);
+    this.showCursor({ measureId, string, at });
   }
 
   render(documentModel, changeSet = null) {
@@ -43,6 +69,7 @@ export class SparseScoreRenderer {
       const system = div('v3-system');
       system.dataset.systemIndex = String(systemIndex);
       system.dataset.measureIds = measures.map(measure => measure.id).join(',');
+      system.style.setProperty('--v3-measure-count', String(Math.max(1, measures.length)));
       measures.forEach(measure => system.appendChild(this.createMeasure(measure)));
       fragment.appendChild(system);
     });
