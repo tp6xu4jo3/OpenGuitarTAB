@@ -18,6 +18,7 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 
 - `controller.js` — composition root for Store, Clipboard, Tools, and renderer factory. Keep this file orchestration-only.
 - `tool-session.js` — click-only tool state machine. It owns `idle -> selected -> selecting target -> commit -> idle` state and the Note/Column/NotePair/Range target shapes.
+- `technique-rules.js` — pure guitar-domain validation for harmonics, chord sweeps, merged arcs, and slides before Commands are dispatched.
 - `input-controller.js` — note input and keyboard interaction. Arrow keys remain score navigation; tool selection must not intercept them.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
 - `view-state.js` — edit/score/preview mode state.
@@ -53,7 +54,7 @@ Playback must read V3 Events, never legacy slots or `.note-input` values.
 - grouped rhythm belongs in `measure.groups`.
 - note-to-note notation such as slide/tie/slur belongs in `document.relations`.
 
-New notation should be implemented through Commands + Renderer/Relation Renderer, not through a new patch script.
+New notation should be implemented through Commands + Renderer/Relation Renderer, not through a new patch script. Technique graphics stay display-only and noninteractive; stable markers below the sixth string are the selection/deletion surface for note techniques, event marks, groups, and relations.
 
 ## Compatibility boundary
 
