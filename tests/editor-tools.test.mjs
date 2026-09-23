@@ -122,7 +122,12 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
   });
   assert.equal(eventRangeFromEvent(documentModel, 'e-2', 3), null, 'triplet range must not cross a measure boundary');
 
-  const tripletCommand = definitions.createCommand('triplet', eventRangeFromEvent(documentModel, 'e-1', 3));
+  const tripletCommand = definitions.createCommand('triplet', {
+    measureId: 'm-tools',
+    startAt: [0, 1],
+    endAt: [2, 1]
+  });
+  assert.equal(tripletCommand.type, 'rhythm/triplet/apply');
   const grouped = applyCommand(documentModel, tripletCommand, { idFactory: idFactory() }).document;
   assert.equal(grouped.measures[0].groups[0].type, 'tuplet');
   assert.ok(grouped.measures[0].groups[0].id, 'groups must own stable IDs');
