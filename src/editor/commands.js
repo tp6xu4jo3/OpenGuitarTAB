@@ -99,7 +99,7 @@ function setExistingNoteFret(note, fret) {
 
   return {
     ...note,
-    fret: '',
+    fret,
     techniques: (note.techniques || []).map(technique => technique.id === harmonic.id
       ? { ...technique, touchFret: Math.trunc(numericFret) + ARTIFICIAL_HARMONIC_OFFSET }
       : technique)
@@ -243,7 +243,6 @@ function addTechnique(document, command, idFactory) {
       };
       return {
         ...note,
-        fret: '',
         techniques: [...techniques.filter(item => item.type !== 'harmonic'), technique]
       };
     }
@@ -260,7 +259,6 @@ function deleteTechnique(document, techniqueId) {
   return updateNote(document, location.noteId, note => {
     const removed = (note.techniques || []).find(item => item.id === techniqueId);
     const techniques = (note.techniques || []).filter(item => item.id !== techniqueId);
-    if (removed?.type === 'harmonic') return { ...note, fret: noteBaseFret(note), techniques };
     return { ...note, techniques };
   }, { playback: true });
 }
@@ -269,7 +267,6 @@ function deleteTechniqueByType(document, noteId, techniqueType) {
   return updateNote(document, String(noteId || ''), note => {
     const removed = (note.techniques || []).filter(item => item.type === techniqueType);
     const techniques = (note.techniques || []).filter(item => item.type !== techniqueType);
-    if (removed.some(item => item.type === 'harmonic')) return { ...note, fret: noteBaseFret(note), techniques };
     return { ...note, techniques };
   }, { playback: true });
 }
