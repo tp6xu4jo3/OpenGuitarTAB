@@ -20,7 +20,9 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 - `tool-session.js` — click-only tool state machine. It owns `idle -> selected -> selecting target -> commit -> idle` state and the Note/Column/NotePair/Range target shapes.
 - `technique-rules.js` — pure guitar-domain validation for harmonics, chord sweeps, merged arcs, slides, and rhythm-range constraints before Commands are dispatched.
 - `rhythm-grid.js` — pure fractional-time transforms for regional triplet (3:2) and 32nd subdivisions; empty 32nd positions persist as rhythm anchors while triplet slots remain sparse group data.
-- `input-controller.js` — note input and keyboard interaction. Arrow keys remain score navigation; tool selection must not intercept them.
+- `input-controller.js` — note input orchestration. It dispatches V3 note commands and delegates navigation/presentation work to dedicated modules.
+- `grid-navigation.js` — arrow-only score navigation over real fractional time positions. Enter is consumed but never moves the cursor.
+- `legacy-grid-compat.js` — the only production-grid compatibility boundary for legacy rows, rhythm rows, row counts, and explicit V3 -> V2 projection.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
 - `view-state.js` — edit/score/preview mode state.
 - `playback-controller.js` — playback UI state and event scheduling.
@@ -30,7 +32,8 @@ Technique tools are click-only. Clicking a tool activates it, a successful targe
 
 ## Rendering and layout
 
-- `grid-renderer.js` — current production TAB grid, rhythm notation, keyboard navigation, row metrics, and adaptive visual systems.
+- `grid-renderer.js` — current production TAB grid and adaptive visual-system composition. It does not own keyboard navigation or projection rules.
+- `grid-geometry.js` — shared measure-width and time-position geometry used by grid rendering, playback, structure UI, and presentation.
 - `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
 - `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations.
 - `layout.js` — the shared adaptive V3 layout engine for edit and score views.
@@ -74,3 +77,7 @@ Disallowed direction after Store creation:
 When the sparse renderer fully replaces the current grid, the compatibility projection can be removed without changing the music model, commands, playback, or persistence architecture.
 
 Fractional rhythm editing is authoritative in V3: triplet and 32nd positions are stored as reduced fractions, rendered as dynamic inputs, and scheduled directly by Playback. The legacy 1/16 projection remains compatibility-only and is not used to quantize fractional rhythm.
+
+## Structural rule
+
+Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.
