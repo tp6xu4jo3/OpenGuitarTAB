@@ -191,7 +191,6 @@ export function installEditorV3() {
   installed = true;
 
   installViewState();
-  stateSync.installPersistenceAdapters();
   installToolDragDrop();
 
   const api = {
@@ -202,6 +201,7 @@ export function installEditorV3() {
     reconcileCurrentSong: () => stateSync.reconcileCurrentSong(),
     sync: {
       markCurrent: store => stateSync.markCurrent(store),
+      prepareForPersistence: store => stateSync.prepareForPersistence(store),
       projectStoreToView: (store, target, previousCounts) => stateSync.projectStoreToView(store, target, previousCounts)
     },
     clipboard: {
