@@ -10,6 +10,8 @@ const registry = new StoreRegistry();
 const clipboardState = new EditorClipboard();
 const toolRegistry = new ToolRegistry();
 const syncState = new WeakMap();
+const pendingLegacyMeasures = new Map();
+let legacySyncFrame = 0;
 let installed = false;
 let pendingLinkTool = null;
 
@@ -50,6 +52,47 @@ function markLegacySynced(store) {
   const song = store?.getSong();
   if (!store || !song) return;
   syncState.set(store, { legacyUpdatedAt: Number(song.updatedAt) || 0 });
+}
+
+function refreshPendingRhythmRows(song, pending) {
+  if (!song || typeof window.rhythmRowFromRow !== 'function') return;
+  if (!Array.isArray(song.rhythmRows)) song.rhythmRows = [];
+  const rows = new Set(pending.map(item => item.rowIndex));
+  rows.forEach(rowIndex => {
+    while (song.rhythmRows.length <= rowIndex) song.rhythmRows.push({});
+    if (song.rows?.[rowIndex]) song.rhythmRows[rowIndex] = window.rhythmRowFromRow(song.rows[rowIndex], song.beatsPerMeasure);
+  });
+}
+
+function flushPendingLegacyMeasures({ refreshRhythm = false } = {}) {
+  if (legacySyncFrame) {
+    cancelAnimationFrame(legacySyncFrame);
+    legacySyncFrame = 0;
+  }
+  if (!pendingLegacyMeasures.size) return;
+  const song = currentSongSafe();
+  const store = ensureStore({ reconcile: false });
+  const pending = [...pendingLegacyMeasures.values()];
+  pendingLegacyMeasures.clear();
+  if (!song || !store) return;
+
+  if (refreshRhythm) refreshPendingRhythmRows(song, pending);
+  pending.forEach(({ rowIndex, measureIndex }) => {
+    store.reconcileLegacyMeasure(rowIndex, measureIndex, { silent: true });
+  });
+  markLegacySynced(store);
+}
+
+function scheduleLegacyMeasureSync(rowIndex, measureIndex) {
+  const key = `${rowIndex}:${measureIndex}`;
+  pendingLegacyMeasures.set(key, { rowIndex, measureIndex });
+  if (legacySyncFrame) return;
+  // app-editor-performance schedules its rhythm flush earlier in the same input event.
+  // Running on the next frame after that keeps V3 duration data current while coalescing typing.
+  legacySyncFrame = requestAnimationFrame(() => {
+    legacySyncFrame = 0;
+    flushPendingLegacyMeasures();
+  });
 }
 
 function hydrateLegacyRow(rowIndex, { measureIndex = null } = {}) {
@@ -113,6 +156,7 @@ function selectedSystemMeasures(store, rowIndex) {
 
 function copyModule(target) {
   if (!target || previewActive() || scoreViewActive()) return false;
+  flushPendingLegacyMeasures({ refreshRhythm: true });
   const store = ensureStore();
   if (!store) return false;
   if (target.type === 'measure') {
@@ -134,6 +178,7 @@ function copyModule(target) {
 
 function pasteModule(target) {
   if (!target || previewActive() || scoreViewActive()) return false;
+  flushPendingLegacyMeasures({ refreshRhythm: true });
   const store = ensureStore();
   if (!store) return false;
   const song = store.getSong();
@@ -175,19 +220,19 @@ function syncInputMeasure(event) {
   const input = event.target?.closest?.('.note-input');
   if (!input || previewActive() || scoreViewActive()) return;
   const song = currentSongSafe();
-  const store = ensureStore({ reconcile: false });
-  if (!song || !store) return;
+  if (!song) return;
   const rowIndex = Number(input.dataset.row);
   const position = Number(input.dataset.position);
   const beats = Number(song.beatsPerMeasure) === 3 ? 3 : 4;
   const measureIndex = Math.floor(position / (beats * 4));
-  store.reconcileLegacyMeasure(rowIndex, measureIndex, { silent: true });
-  markLegacySynced(store);
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(measureIndex)) return;
+  scheduleLegacyMeasureSync(rowIndex, measureIndex);
 }
 
 function installStateSourceBridge() {
   const legacyReadRows = window.readRowsFromDom;
   const legacySaveRows = window.saveRowsToCurrentSong;
+  const legacyPersistSong = window.persistSongToCloud;
 
   window.readRowsFromDom = function readRowsFromStore() {
     const song = currentSongSafe();
@@ -198,6 +243,7 @@ function installStateSourceBridge() {
   window.saveRowsToCurrentSong = function saveRowsToV3State(rows) {
     const song = currentSongSafe();
     if (!song) return;
+    flushPendingLegacyMeasures({ refreshRhythm: true });
     const store = ensureStore({ reconcile: false });
     if (!store) {
       if (typeof legacySaveRows === 'function') legacySaveRows(rows);
@@ -228,6 +274,19 @@ function installStateSourceBridge() {
     });
     markLegacySynced(store);
   };
+
+  if (typeof legacyPersistSong === 'function') {
+    window.persistSongToCloud = async function persistV3Song(song) {
+      const current = currentSongSafe();
+      if (song === current) flushPendingLegacyMeasures({ refreshRhythm: true });
+      const store = song === current ? ensureStore({ reconcile: true }) : registry.forSong(song);
+      store?.prepareForPersistence({
+        tempo: song === current && typeof window.getTempo === 'function' ? window.getTempo() : song?.tempo,
+        capo: song === current && typeof window.getCapo === 'function' ? window.getCapo() : song?.capo
+      });
+      return legacyPersistSong(song);
+    };
+  }
 
   document.getElementById('tabArea')?.addEventListener('input', syncInputMeasure);
 }
@@ -322,6 +381,7 @@ export function installEditorV3() {
     tools: toolRegistry,
     getStore: () => ensureStore(),
     reconcileCurrentSong: () => {
+      flushPendingLegacyMeasures({ refreshRhythm: true });
       const store = ensureStore({ reconcile: false });
       if (!store) return null;
       const result = store.reconcileLegacySong(store.getSong(), { silent: true });
