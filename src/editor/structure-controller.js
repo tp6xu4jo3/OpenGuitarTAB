@@ -1,6 +1,6 @@
 import { measureBoundaryPercentForGrid } from './grid-geometry.js';
+import { projectDocumentToLegacySong } from './legacy-grid-compat.js';
 import { buildSystems } from './layout.js';
-import { documentToLegacyProjection } from './migrate-v2.js';
 import {
   deleteMeasureAt,
   deleteSystem,
@@ -66,17 +66,11 @@ function ensureMenu() {
 function projectAndRender(store, message = '') {
   const song = store?.getSong();
   if (!store || !song) return false;
-  const projection = documentToLegacyProjection(store.getDocument());
-  if (projection.structuralLossy) {
+  const { ok } = projectDocumentToLegacySong(song, store.getDocument());
+  if (!ok) {
     toast('此曲譜包含無法投影到相容網格的節奏');
     return false;
   }
-  song.rows = projection.rows;
-  song.rhythmRows = projection.rhythmRows;
-  song.rowMeasureCounts = projection.rowMeasureCounts;
-  song.beatsPerMeasure = projection.beatsPerMeasure;
-  song.meter = projection.meter;
-  song.updatedAt = Date.now();
   window.renderRows?.(song.rows);
   window.invalidateRowPlaybackLayout?.();
   window.updateProgressRange?.();
