@@ -5,6 +5,7 @@ const dirtyInputs = new Set();
 const dirtyGrids = new Set();
 let editorFrame = 0;
 let installed = false;
+let measureDragActive = false;
 
 function currentSongSafe() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
@@ -145,10 +146,32 @@ function installScoreModeState() {
   };
 }
 
+function installMeasureDropSafety() {
+  window.addEventListener('dragstart', event => {
+    measureDragActive = Boolean(event.target.closest?.('.measure-drag-grip,.measure-module-hitbox'));
+  }, true);
+
+  window.addEventListener('drop', event => {
+    if (!measureDragActive) return;
+    const pointed = document.elementFromPoint(event.clientX, event.clientY);
+    if (pointed?.closest?.('.tab-grid[data-row]')) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    measureDragActive = false;
+  }, true);
+
+  window.addEventListener('dragend', () => {
+    measureDragActive = false;
+  }, true);
+}
+
 export function installLegacyUiBridge() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   installScoreModeState();
+  installMeasureDropSafety();
 
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
