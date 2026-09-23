@@ -10,11 +10,14 @@ import {
 import { APP_CONFIG } from './config/app-config.js';
 import { installAudioEngine } from './editor/audio-engine.js';
 import { installEditorV3 } from './editor/controller.js';
-import { installGridLayoutAdapter } from './editor/grid-layout-adapter.js';
+import { installGridRenderer } from './editor/grid-renderer.js';
 import { installPlaybackController } from './editor/playback-controller.js';
 import { installEditorPresentation } from './editor/presentation.js';
 import { installResponsiveScoreLayout } from './editor/responsive-score-layout.js';
+import { installEditorSongActions } from './editor/song-actions.js';
 import { installStructureController } from './editor/structure-controller.js';
+import { installViewState } from './editor/view-state.js';
+import { installSongImport } from './library/song-import.js';
 import { cloudApi } from './services/cloud-api.js';
 
 Object.assign(window, {
@@ -32,8 +35,7 @@ Object.assign(window, {
 
 const RUNTIME_SCRIPTS = [
   './src/app-runtime.js',
-  './src/app-auth.js',
-  './src/app-editor-core.js'
+  './src/app-auth.js'
 ];
 
 const APP_SCRIPTS = [
@@ -57,11 +59,14 @@ function loadClassicScriptsInOrder(sources) {
 void cloudApi.catalog().catch(() => null);
 
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
-installGridLayoutAdapter();
+installGridRenderer();
+installViewState();
 installAudioEngine();
 installPlaybackController();
 installResponsiveScoreLayout();
 installEditorPresentation();
+installEditorSongActions();
+installSongImport();
 installEditorV3();
 installStructureController();
 await loadClassicScriptsInOrder(APP_SCRIPTS);
