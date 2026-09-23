@@ -1,5 +1,3 @@
-import { cloneValue } from './model.js';
-
 export const TOOL_DEFINITIONS = Object.freeze({
   harmonic: {
     id: 'harmonic',
@@ -78,8 +76,6 @@ export const TOOL_DEFINITIONS = Object.freeze({
 
 export class ToolRegistry {
   constructor(definitions = TOOL_DEFINITIONS) {
-    this.definitions = new Map(Object.values(definitions).map(definition => [definition.id, cloneValue(definition)]));
-    // cloneValue cannot preserve functions, so restore built-in callable definitions directly.
     this.definitions = new Map(Object.values(definitions).map(definition => [definition.id, definition]));
   }
 
