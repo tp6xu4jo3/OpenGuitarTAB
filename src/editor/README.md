@@ -28,15 +28,17 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 - `playback-controller.js` — playback UI state and event scheduling.
 - `song-actions.js` — editor Save and Publish actions.
 
+Ordinary note entry is a local Store/DOM update and never triggers adaptive reflow on blur. Technique, mark, and relation changes explicitly invalidate layout once because their notation can change spacing; rhythm-grid and structural commands continue to invalidate layout because they change time/grid shape.
+
 Technique tools are click-only. Clicking a tool activates it, a successful target command returns the session to idle, invalid targets keep the tool active, and Escape or clicking the active tool again cancels it. Structure drag/drop remains a separate editor interaction.
 
 ## Rendering and layout
 
-- `grid-renderer.js` — current production TAB grid and adaptive visual-system composition. It does not own keyboard navigation or projection rules.
+- `grid-renderer.js` — current production TAB grid and adaptive visual-system composition. Each adaptive wrap is rendered as a first-class visual row; source-system identity remains attached to the row so responsive wrapping never mutates song structure. It does not own keyboard navigation or projection rules.
 - `grid-geometry.js` — shared measure-width and time-position geometry used by grid rendering, playback, structure UI, and presentation.
 - `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
 - `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations. Relations are Note-ID based; adaptive line/system breaks render continuation segments at grid edges instead of storing or connecting stale screen coordinates.
-- `layout.js` — the shared adaptive V3 layout engine for edit and score views. Normal score mode follows the standard adaptive systems; compact score mode greedily packs source-system segments by available width and notation complexity, so the visual measure count is not a fixed 4/8 preset.
+- `layout.js` — the shared adaptive V3 layout engine for edit and score views. Normal layout balances four-measure wraps so a 3+1 orphan becomes 2+2; compact score mode greedily packs source-system segments by available width and notation complexity, so the visual measure count is not a fixed 4/8 preset.
 - `presentation.js` — note backgrounds and density fitting.
 
 Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.

@@ -26,7 +26,7 @@ function measure(id, { dense = false } = {}) {
   assert.ok(Math.abs(wide.systems[0].measureWidths.reduce((sum, value) => sum + value, 0) - 100) < 0.001);
 
   const medium = buildAdaptiveLayout(documentModel, { availableWidth: 650 });
-  assert.deepEqual(medium.systems.map(system => system.measures.length), [3, 1], 'narrower score should split four measures into 3+1');
+  assert.deepEqual(medium.systems.map(system => system.measures.length), [2, 2], 'four measures must balance to 2+2 instead of leaving a singleton tail');
 
   const narrow = buildAdaptiveLayout(documentModel, { availableWidth: 400 });
   assert.deepEqual(narrow.systems.map(system => system.measures.length), [1, 1, 1, 1], 'very narrow score should fall back to one measure per line');
@@ -37,7 +37,7 @@ function measure(id, { dense = false } = {}) {
   assert.ok(measureComplexity(documentModel, documentModel.measures[0]) > measureComplexity(documentModel, documentModel.measures[1]));
 
   const layout = buildAdaptiveLayout(documentModel, { availableWidth: 900 });
-  assert.deepEqual(layout.systems.map(system => system.measures.length), [3, 1], 'dense notation should reserve enough width to reduce measures per line');
+  assert.deepEqual(layout.systems.map(system => system.measures.length), [2, 2], 'dense notation should rebalance a 3+1 split to 2+2');
   assert.ok(layout.systems[0].measureWidths[0] > layout.systems[0].measureWidths[1], 'denser measure should receive more width inside a line');
 }
 
