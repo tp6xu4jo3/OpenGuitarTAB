@@ -532,23 +532,58 @@ function getInput(row, string, position) {
   return document.querySelector(`.note-input[data-row="${row}"][data-string="${string}"][data-position="${position}"]`);
 }
 
-function focusRelative(current, stringDelta, positionDelta) {
-  let row = Number(current.dataset.row);
-  let string = Number(current.dataset.string) + stringDelta;
-  let position = Number(current.dataset.position) + positionDelta;
+function focusInput(input) {
+  if (!input) return false;
+  input.focus();
+  input.select();
+  return true;
+}
 
-  if (positionDelta !== 0) {
-    const positions = rowPositionCount(row);
-    if (position >= positions) { row += 1; position = 0; }
-    else if (position < 0) { row -= 1; position = row >= 0 ? rowPositionCount(row) - 1 : 0; }
+function chronologicalInputsForString(string) {
+  const systems = logicalSystems() || [];
+  const measureOrder = new Map();
+  systems.forEach((system, rowIndex) => {
+    system.forEach((measure, measureIndex) => {
+      measureOrder.set(String(measure.id), { rowIndex, measureIndex });
+    });
+  });
+
+  return [...document.querySelectorAll(`.note-input[data-string="${Number(string)}"][data-measure-id][data-at]`)]
+    .sort((left, right) => {
+      const leftLocation = measureOrder.get(String(left.dataset.measureId)) || { rowIndex: Number(left.dataset.row), measureIndex: 0 };
+      const rightLocation = measureOrder.get(String(right.dataset.measureId)) || { rowIndex: Number(right.dataset.row), measureIndex: 0 };
+      return leftLocation.rowIndex - rightLocation.rowIndex
+        || leftLocation.measureIndex - rightLocation.measureIndex
+        || fractionToNumber(String(left.dataset.at).split('/').map(Number))
+          - fractionToNumber(String(right.dataset.at).split('/').map(Number));
+    });
+}
+
+function focusRelative(current, stringDelta, positionDelta) {
+  const string = Number(current.dataset.string);
+  if (!Number.isInteger(string)) return;
+
+  if (stringDelta !== 0) {
+    const targetString = string + stringDelta;
+    if (targetString < 0 || targetString >= STRINGS) return;
+    const row = String(current.dataset.row || '');
+    const measureId = String(current.dataset.measureId || '');
+    const at = String(current.dataset.at || '');
+    const target = [...document.querySelectorAll(`.note-input[data-string="${targetString}"]`)]
+      .find(input => String(input.dataset.row || '') === row
+        && String(input.dataset.measureId || '') === measureId
+        && String(input.dataset.at || '') === at);
+    focusInput(target);
+    return;
   }
 
-  if (string >= STRINGS) { string = 0; row += 1; }
-  else if (string < 0) { string = STRINGS - 1; row -= 1; }
-  if (row < 0) return;
-  position = Math.max(0, Math.min(rowPositionCount(row) - 1, position));
-  const next = getInput(row, string, position);
-  if (next) { next.focus(); next.select(); }
+  if (positionDelta !== 0) {
+    const inputs = chronologicalInputsForString(string);
+    const index = inputs.indexOf(current);
+    if (index < 0) return;
+    const nextIndex = Math.max(0, Math.min(inputs.length - 1, index + Math.sign(positionDelta)));
+    focusInput(inputs[nextIndex]);
+  }
 }
 
 function handleKeydown(event) {
