@@ -86,12 +86,16 @@ const secondNote = firstEvent.notes[1];
   const result = applyCommand(documentModel, {
     type: 'note/technique/add',
     noteId: firstNote.id,
-    technique: { type: 'harmonic', kind: 'natural' }
-  });
+    technique: { type: 'harmonic' }
+  }, { idFactory: idFactory() });
   documentModel = result.document;
+  const harmonicNote = documentModel.measures[0].events[0].notes[0];
   assert.deepEqual(result.changeSet.measures, [firstMeasure.id]);
-  assert.deepEqual(result.changeSet.playback, []);
-  assert.equal(documentModel.measures[0].events[0].notes[0].techniques[0].type, 'harmonic');
+  assert.deepEqual(result.changeSet.playback, [firstMeasure.id]);
+  assert.equal(harmonicNote.fret, '');
+  assert.equal(harmonicNote.techniques[0].type, 'harmonic');
+  assert.equal(harmonicNote.techniques[0].touchFret, 17);
+  assert.ok(harmonicNote.techniques[0].id);
 }
 
 {
@@ -130,6 +134,7 @@ const secondNote = firstEvent.notes[1];
   documentModel = result.document;
   assert.equal(documentModel.measures[0].groups[0].type, 'tuplet');
   assert.deepEqual(documentModel.measures[0].groups[0].ratio, [3, 2]);
+  assert.ok(documentModel.measures[0].groups[0].id);
 }
 
 let slideId;
@@ -162,19 +167,33 @@ let slideId;
   const clipboardDocument = migrateSongToDocumentV3(legacySong);
   const noteA = clipboardDocument.measures[0].events[0].notes[0];
   const noteB = clipboardDocument.measures[0].events[0].notes[1];
-  const withRelation = applyCommand(clipboardDocument, {
+  let withDecorations = applyCommand(clipboardDocument, {
+    type: 'note/technique/add',
+    noteId: noteA.id,
+    technique: { type: 'harmonic' }
+  }, { idFactory: idFactory() }).document;
+  withDecorations = applyCommand(withDecorations, {
+    type: 'event/mark/add',
+    eventId: withDecorations.measures[0].events[0].id,
+    mark: { type: 'strum', direction: 'up' }
+  }, { idFactory: idFactory() }).document;
+  withDecorations = applyCommand(withDecorations, {
     type: 'relation/add',
     relation: { type: 'tie', fromNoteId: noteA.id, toNoteId: noteB.id }
   }, { idFactory: idFactory() }).document;
 
+  const sourceTechniqueId = withDecorations.measures[0].events[0].notes[0].techniques[0].id;
+  const sourceMarkId = withDecorations.measures[0].events[0].marks[0].id;
   const clipboard = new EditorClipboard();
-  clipboard.copyMeasure(withRelation, withRelation.measures[0].id);
-  const pasted = clipboard.pasteMeasure(withRelation, withRelation.measures[1].id, { idFactory: idFactory() });
+  clipboard.copyMeasure(withDecorations, withDecorations.measures[0].id);
+  const pasted = clipboard.pasteMeasure(withDecorations, withDecorations.measures[1].id, { idFactory: idFactory() });
   assert.ok(pasted);
   const target = pasted.document.measures[1];
-  assert.notEqual(target.events[0].id, withRelation.measures[0].events[0].id);
+  assert.notEqual(target.events[0].id, withDecorations.measures[0].events[0].id);
   assert.notEqual(target.events[0].notes[0].id, noteA.id);
-  const pastedTie = pasted.document.relations.find(relation => relation.type === 'tie' && relation.id !== withRelation.relations[0].id);
+  assert.notEqual(target.events[0].notes[0].techniques[0].id, sourceTechniqueId, 'pasted techniques need fresh IDs');
+  assert.notEqual(target.events[0].marks[0].id, sourceMarkId, 'pasted marks need fresh IDs');
+  const pastedTie = pasted.document.relations.find(relation => relation.type === 'tie' && relation.id !== withDecorations.relations[0].id);
   assert.ok(pastedTie);
   const targetNoteIds = new Set(target.events.flatMap(event => event.notes.map(note => note.id)));
   assert.equal(targetNoteIds.has(pastedTie.fromNoteId), true);
@@ -196,6 +215,12 @@ let slideId;
   }, { idFactory: idFactory() });
   assert.deepEqual(result.changeSet.measures, [measureId]);
   assert.equal(store.getDocument().measures[0].events.some(event => event.notes.some(note => note.fret === '9')), true);
+
+  const authoritative = store.snapshot();
+  song.rows[0][0][0] = '22';
+  assert.deepEqual(store.getDocument(), authoritative, 'legacy rows must not rewrite the V3 store');
+  assert.equal(typeof store.reconcileLegacySong, 'undefined');
+  assert.equal(typeof store.reconcileLegacyMeasure, 'undefined');
 }
 
 {
