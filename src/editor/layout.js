@@ -39,11 +39,17 @@ function relationCountsByMeasure(document) {
   return counts;
 }
 
+function rhythmicComplexity(event) {
+  const duration = fractionToNumber(event?.duration || [1, 1]);
+  if (!Number.isFinite(duration) || duration <= 0 || duration >= 0.25) return 0;
+  return Math.min(1.2, (0.25 / duration - 1) * 0.55);
+}
+
 function complexityForMeasure(measure, relationCount = 0) {
   let score = 1;
   for (const event of measure?.events || []) {
     const notes = event.notes || [];
-    score += 0.52;
+    score += 0.52 + rhythmicComplexity(event);
     if (notes.length > 1) score += (notes.length - 1) * 0.18;
     score += (event.marks || []).length * 0.85;
     for (const note of notes) {
