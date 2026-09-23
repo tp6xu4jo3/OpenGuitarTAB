@@ -8,6 +8,11 @@ function svgNode(name, attributes = {}) {
   return node;
 }
 
+function escapeSelector(value) {
+  const text = String(value ?? '');
+  return globalThis.CSS?.escape ? CSS.escape(text) : text.replace(/["\\]/g, '\\$&');
+}
+
 function centerIn(element, container) {
   const rect = element.getBoundingClientRect();
   const base = container.getBoundingClientRect();
@@ -26,6 +31,25 @@ function relationPath(type, from, to) {
     return `M ${from.x} ${from.y} Q ${controlX} ${controlY} ${to.x} ${to.y}`;
   }
   return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+}
+
+function appendRelationPath(svg, { type, from, to, relationId = '', preview = false }) {
+  const path = svgNode('path', {
+    d: relationPath(type, from, to),
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': type === 'slide' ? 1.5 : 1.2,
+    'stroke-linecap': 'round',
+    'vector-effect': 'non-scaling-stroke'
+  });
+  if (relationId) path.dataset.relationId = relationId;
+  path.classList.add(
+    'notation-relation',
+    `notation-relation-${type || 'generic'}`,
+    ...(preview ? ['notation-relation-preview'] : [])
+  );
+  svg.appendChild(path);
+  return path;
 }
 
 export class RelationRenderer {
@@ -63,6 +87,26 @@ export class RelationRenderer {
     svg.replaceChildren();
   }
 
+  clearPreview(root) {
+    root?.querySelectorAll?.('.notation-relation-preview').forEach(node => node.remove());
+  }
+
+  preview(root, { fromNoteId, type = 'slur', clientX, clientY } = {}) {
+    this.clearPreview(root);
+    if (!root || !fromNoteId || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+    const fromNode = root.querySelector(`.note-input[data-note-id="${escapeSelector(fromNoteId)}"]`);
+    const systemElement = fromNode?.closest?.('.tab-system');
+    if (!fromNode || !systemElement) return;
+    const svg = this.ensureOverlay(systemElement);
+    const base = systemElement.getBoundingClientRect();
+    appendRelationPath(svg, {
+      type,
+      from: centerIn(fromNode, systemElement),
+      to: { x: clientX - base.left, y: clientY - base.top },
+      preview: true
+    });
+  }
+
   render(documentModel, systemElement, measureIds) {
     if (!systemElement) return;
     const svg = this.ensureOverlay(systemElement);
@@ -77,23 +121,16 @@ export class RelationRenderer {
       if (locations.some(location => !location || !measureSet.has(location.measureId))) continue;
       const fromId = relation.fromNoteId || noteIds[0];
       const toId = relation.toNoteId || noteIds[noteIds.length - 1];
-      const fromNode = systemElement.querySelector(`[data-note-id="${CSS.escape(String(fromId))}"]`);
-      const toNode = systemElement.querySelector(`[data-note-id="${CSS.escape(String(toId))}"]`);
+      const fromNode = systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(fromId)}"]`);
+      const toNode = systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(toId)}"]`);
       if (!fromNode || !toNode) continue;
 
-      const from = centerIn(fromNode, systemElement);
-      const to = centerIn(toNode, systemElement);
-      const path = svgNode('path', {
-        d: relationPath(relation.type, from, to),
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': relation.type === 'slide' ? 1.5 : 1.2,
-        'stroke-linecap': 'round',
-        'vector-effect': 'non-scaling-stroke',
-        'data-relation-id': relation.id || ''
+      appendRelationPath(svg, {
+        type: relation.type,
+        from: centerIn(fromNode, systemElement),
+        to: centerIn(toNode, systemElement),
+        relationId: relation.id
       });
-      path.classList.add('notation-relation', `notation-relation-${relation.type || 'generic'}`);
-      svg.appendChild(path);
     }
   }
 }

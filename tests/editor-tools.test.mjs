@@ -3,6 +3,7 @@ import { applyCommand } from '../src/editor/commands.js';
 import { createDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
 import { documentToLegacyProjection, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
+import { resolveTechniqueTarget } from '../src/editor/technique-rules.js';
 import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from '../src/editor/tool-session.js';
 import { eventRangeFromEvent, ToolRegistry } from '../src/editor/tools.js';
 
@@ -12,26 +13,41 @@ function idFactory() {
 }
 
 const definitions = new ToolRegistry();
+const expectedOrder = [
+  'harmonic',
+  'strumUp',
+  'strumDown',
+  'arpeggioUp',
+  'arpeggioDown',
+  'arc',
+  'slide',
+  'triplet',
+  'duration32'
+];
+assert.deepEqual(definitions.list().map(tool => tool.id), expectedOrder, 'palette order must match the compact guitar workflow');
+
 const expectedTargets = {
   harmonic: 'note',
   strumUp: 'event',
   strumDown: 'event',
-  duration32: 'event',
-  triplet: 'eventRange',
+  arpeggioUp: 'event',
+  arpeggioDown: 'event',
+  arc: 'notePair',
   slide: 'notePair',
-  tie: 'notePair',
-  slur: 'notePair'
+  triplet: 'eventRange',
+  duration32: 'event'
 };
 
 const expectedTargetKinds = {
   harmonic: TOOL_TARGET_KINDS.NOTE,
   strumUp: TOOL_TARGET_KINDS.COLUMN,
   strumDown: TOOL_TARGET_KINDS.COLUMN,
-  duration32: TOOL_TARGET_KINDS.COLUMN,
-  triplet: TOOL_TARGET_KINDS.RANGE,
+  arpeggioUp: TOOL_TARGET_KINDS.COLUMN,
+  arpeggioDown: TOOL_TARGET_KINDS.COLUMN,
+  arc: TOOL_TARGET_KINDS.NOTE_PAIR,
   slide: TOOL_TARGET_KINDS.NOTE_PAIR,
-  tie: TOOL_TARGET_KINDS.NOTE_PAIR,
-  slur: TOOL_TARGET_KINDS.NOTE_PAIR
+  triplet: TOOL_TARGET_KINDS.RANGE,
+  duration32: TOOL_TARGET_KINDS.COLUMN
 };
 
 for (const [toolId, target] of Object.entries(expectedTargets)) {
@@ -40,6 +56,8 @@ for (const [toolId, target] of Object.entries(expectedTargets)) {
   assert.ok(definitions.get(toolId)?.label, `${toolId} must expose palette metadata`);
   assert.equal(definitions.get(toolId)?.hint.includes('拖'), false, `${toolId} hint must describe click interaction`);
 }
+assert.equal(definitions.get('tie'), null, 'tie must not occupy a separate palette button');
+assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate palette button');
 
 {
   const session = new ToolSession();
@@ -112,6 +130,58 @@ for (const [toolId, target] of Object.entries(expectedTargets)) {
 }
 
 {
+  const rulesDocument = createDocumentV3({
+    measures: [{
+      id: 'm-rules',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [
+        {
+          id: 'e-chord',
+          at: [0, 1],
+          duration: [1, 1],
+          notes: [
+            { id: 'n-fret-1', string: 0, fret: '1' },
+            { id: 'n-chord-2', string: 2, fret: '2' }
+          ]
+        },
+        { id: 'e-same', at: [1, 1], duration: [1, 1], notes: [{ id: 'n-same', string: 0, fret: '1' }] },
+        { id: 'e-slide', at: [2, 1], duration: [1, 1], notes: [{ id: 'n-slide', string: 0, fret: '5' }] },
+        { id: 'e-other', at: [3, 1], duration: [1, 1], notes: [{ id: 'n-other', string: 1, fret: '7' }] }
+      ],
+      groups: []
+    }]
+  });
+
+  assert.equal(resolveTechniqueTarget('harmonic', { noteId: 'n-fret-1' }, rulesDocument).ok, true);
+  assert.equal(resolveTechniqueTarget('strumUp', { eventId: 'e-same' }, rulesDocument).ok, false, 'brush needs a chord');
+  assert.equal(resolveTechniqueTarget('arpeggioDown', { eventId: 'e-chord' }, rulesDocument).ok, true, 'arpeggio accepts a chord');
+
+  const tie = resolveTechniqueTarget('arc', { fromNoteId: 'n-fret-1', toNoteId: 'n-same' }, rulesDocument);
+  assert.equal(tie.ok, true);
+  assert.equal(tie.target.relationType, 'tie', 'same string and fret resolves to a tie');
+
+  const slur = resolveTechniqueTarget('arc', { fromNoteId: 'n-fret-1', toNoteId: 'n-slide' }, rulesDocument);
+  assert.equal(slur.ok, true);
+  assert.equal(slur.target.relationType, 'slur', 'different pitch resolves to a slur');
+
+  assert.equal(resolveTechniqueTarget('slide', { fromNoteId: 'n-fret-1', toNoteId: 'n-slide' }, rulesDocument).ok, true);
+  assert.equal(resolveTechniqueTarget('slide', { fromNoteId: 'n-fret-1', toNoteId: 'n-other' }, rulesDocument).ok, false, 'slide must stay on one string');
+  assert.equal(resolveTechniqueTarget('slide', { fromNoteId: 'n-slide', toNoteId: 'n-fret-1' }, rulesDocument).ok, false, 'pair relations must move forward in time');
+}
+
+{
+  const openString = createDocumentV3({
+    measures: [{
+      id: 'm-open',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [{ id: 'e-open', at: [0, 1], duration: [1, 1], notes: [{ id: 'n-open', string: 0, fret: '0' }] }],
+      groups: []
+    }]
+  });
+  assert.equal(resolveTechniqueTarget('harmonic', { noteId: 'n-open' }, openString).ok, false, 'artificial harmonic requires a fretted note');
+}
+
+{
   const row = Array.from({ length: 6 }, () => Array(64).fill(''));
   row[0][0] = '5';
   const legacySong = {
@@ -175,12 +245,34 @@ for (const [toolId, target] of Object.entries(expectedTargets)) {
   assert.deepEqual(definitions.createCommand('harmonic', { noteId: 'n' }).technique, { type: 'harmonic' });
   assert.equal(definitions.createCommand('strumUp', { eventId: 'e' }).mark.direction, 'up');
   assert.equal(definitions.createCommand('strumDown', { eventId: 'e' }).mark.direction, 'down');
+  assert.equal(definitions.createCommand('arpeggioUp', { eventId: 'e' }).mark.type, 'arpeggio');
+  assert.equal(definitions.createCommand('arpeggioDown', { eventId: 'e' }).mark.direction, 'down');
   assert.deepEqual(definitions.createCommand('duration32', { eventId: 'e' }).duration, [1, 8]);
-  for (const toolId of ['slide', 'tie', 'slur']) {
-    const command = definitions.createCommand(toolId, { fromNoteId: 'a', toNoteId: 'b' });
-    assert.equal(command.type, 'relation/add');
-    assert.equal(command.relation.type, toolId);
-  }
+  assert.equal(definitions.createCommand('slide', { fromNoteId: 'a', toNoteId: 'b' }).relation.type, 'slide');
+  assert.equal(definitions.createCommand('arc', { fromNoteId: 'a', toNoteId: 'b', relationType: 'tie' }).relation.type, 'tie');
+  assert.equal(definitions.createCommand('arc', { fromNoteId: 'a', toNoteId: 'b', relationType: 'slur' }).relation.type, 'slur');
+}
+
+{
+  let documentModel = createDocumentV3({
+    measures: [{
+      id: 'm-sweep',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [{
+        id: 'e-sweep',
+        at: [0, 1],
+        duration: [1, 1],
+        notes: [{ id: 'n-sweep-1', string: 0, fret: '3' }, { id: 'n-sweep-2', string: 2, fret: '2' }],
+        marks: []
+      }],
+      groups: []
+    }]
+  });
+  const ids = idFactory();
+  documentModel = applyCommand(documentModel, definitions.createCommand('strumUp', { eventId: 'e-sweep' }), { idFactory: ids }).document;
+  documentModel = applyCommand(documentModel, definitions.createCommand('arpeggioDown', { eventId: 'e-sweep' }), { idFactory: ids }).document;
+  assert.equal(documentModel.measures[0].events[0].marks.length, 1, 'brush and arpeggio are mutually exclusive sweep marks');
+  assert.equal(documentModel.measures[0].events[0].marks[0].type, 'arpeggio');
 }
 
 console.log('editor tool tests passed');

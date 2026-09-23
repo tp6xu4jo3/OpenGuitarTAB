@@ -7,6 +7,7 @@ import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
 import { EditorStateSync } from './state-sync.js';
 import { StoreRegistry } from './store.js';
+import { resolveTechniqueTarget } from './technique-rules.js';
 import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from './tool-session.js';
 import { ToolRegistry } from './tools.js';
 import { installViewState, isPreviewActive, isScoreViewActive } from './view-state.js';
@@ -22,6 +23,8 @@ let installed = false;
 let notationRenderer = null;
 let toolPalette = null;
 let toolboxCollapsed = false;
+let selectedTechniqueRef = null;
+let techniqueContextMenu = null;
 
 function toast(message) {
   window.showToast?.(message);
@@ -229,8 +232,79 @@ function dispatchTool(toolId, target, options = {}) {
     return false;
   }
 
-  dispatchCommand(toolRegistry.createCommand(toolId, resolved, options));
+  const validation = resolveTechniqueTarget(toolId, resolved, store.getDocument());
+  if (!validation.ok) {
+    toast(validation.message || '這個目標無法套用此技巧');
+    return false;
+  }
+
+  dispatchCommand(toolRegistry.createCommand(toolId, validation.target, options));
   return true;
+}
+
+function clearTechniqueSelection() {
+  document.querySelectorAll('.technique-marker.is-selected').forEach(marker => marker.classList.remove('is-selected'));
+  selectedTechniqueRef = null;
+}
+
+function hideTechniqueContextMenu() {
+  if (techniqueContextMenu) techniqueContextMenu.hidden = true;
+}
+
+function ensureTechniqueContextMenu() {
+  if (techniqueContextMenu?.isConnected) return techniqueContextMenu;
+  const menu = document.createElement('div');
+  menu.className = 'technique-context-menu';
+  menu.hidden = true;
+  menu.setAttribute('role', 'menu');
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.dataset.deleteTechnique = 'true';
+  remove.setAttribute('role', 'menuitem');
+  remove.textContent = '刪除技巧';
+  menu.appendChild(remove);
+  document.body.appendChild(menu);
+  techniqueContextMenu = menu;
+  return menu;
+}
+
+function selectTechniqueMarker(marker) {
+  if (!marker) return null;
+  clearTechniqueSelection();
+  marker.classList.add('is-selected');
+  marker.focus({ preventScroll: true });
+  selectedTechniqueRef = {
+    kind: String(marker.dataset.techniqueKind || ''),
+    id: String(marker.dataset.techniqueId || '')
+  };
+  return selectedTechniqueRef;
+}
+
+function deleteSelectedTechnique() {
+  const reference = selectedTechniqueRef;
+  if (!reference?.id) return false;
+  const commandByKind = {
+    technique: { type: 'technique/delete', techniqueId: reference.id },
+    mark: { type: 'mark/delete', markId: reference.id },
+    group: { type: 'group/delete', groupId: reference.id },
+    relation: { type: 'relation/delete', relationId: reference.id }
+  };
+  const command = commandByKind[reference.kind];
+  if (!command) return false;
+  dispatchCommand(command);
+  clearTechniqueSelection();
+  hideTechniqueContextMenu();
+  toast('已刪除技巧');
+  return true;
+}
+
+function showTechniqueContextMenu(marker, event) {
+  selectTechniqueMarker(marker);
+  const menu = ensureTechniqueContextMenu();
+  menu.style.left = `${Math.max(8, event.clientX)}px`;
+  menu.style.top = `${Math.max(8, event.clientY)}px`;
+  menu.hidden = false;
 }
 
 function syncToolButtons() {
@@ -260,7 +334,10 @@ function setActiveTool(toolId) {
   const definition = toolRegistry.get(toolId);
   if (!definition) toolSession.cancel();
   else toolSession.activate(definition.id, toolTargetKind(definition));
+  notationRenderer?.clearPreview();
   clearToolSource();
+  clearTechniqueSelection();
+  hideTechniqueContextMenu();
   syncToolButtons();
   return toolSession.snapshot().toolId;
 }
@@ -355,6 +432,7 @@ function handleToolSelection(target) {
     const committed = dispatchTool(snapshot.toolId, result.target);
     if (committed) {
       toolSession.commitSuccess();
+      notationRenderer?.clearPreview();
       clearToolSource();
       syncToolButtons();
     }
@@ -366,6 +444,30 @@ function handleToolSelection(target) {
 
 function installToolInteractions() {
   document.addEventListener('click', event => {
+    const deleteAction = event.target?.closest?.('[data-delete-technique]');
+    if (deleteAction) {
+      event.preventDefault();
+      deleteSelectedTechnique();
+      return;
+    }
+
+    const techniqueMarker = event.target?.closest?.('.technique-marker');
+    if (techniqueMarker) {
+      event.preventDefault();
+      toolSession.cancel();
+      notationRenderer?.clearPreview();
+      clearToolSource();
+      syncToolButtons();
+      selectTechniqueMarker(techniqueMarker);
+      hideTechniqueContextMenu();
+      return;
+    }
+
+    if (!event.target?.closest?.('.technique-context-menu')) {
+      clearTechniqueSelection();
+      hideTechniqueContextMenu();
+    }
+
     const collapseButton = event.target?.closest?.('[data-editor-toolbox-toggle]');
     if (collapseButton) {
       event.preventDefault();
@@ -396,11 +498,50 @@ function installToolInteractions() {
     handleToolSelection(target);
   });
 
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !toolSession.active) return;
+  document.addEventListener('contextmenu', event => {
+    const marker = event.target?.closest?.('.technique-marker');
+    if (!marker) return;
     event.preventDefault();
     toolSession.cancel();
+    notationRenderer?.clearPreview();
     clearToolSource();
+    syncToolButtons();
+    showTechniqueContextMenu(marker, event);
+  });
+
+  document.addEventListener('pointermove', event => {
+    const snapshot = toolSession.snapshot();
+    if (snapshot.targetKind !== TOOL_TARGET_KINDS.NOTE_PAIR || !snapshot.firstTarget?.noteId) {
+      notationRenderer?.clearPreview();
+      return;
+    }
+    notationRenderer?.previewRelation({
+      fromNoteId: snapshot.firstTarget.noteId,
+      type: snapshot.toolId === 'slide' ? 'slide' : 'slur',
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+  }, { passive: true });
+
+  document.addEventListener('keydown', event => {
+    const editable = event.target instanceof HTMLInputElement
+      || event.target instanceof HTMLTextAreaElement
+      || event.target?.isContentEditable;
+
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedTechniqueRef && !editable) {
+      event.preventDefault();
+      deleteSelectedTechnique();
+      return;
+    }
+
+    if (event.key !== 'Escape') return;
+    if (!toolSession.active && !selectedTechniqueRef && techniqueContextMenu?.hidden !== false) return;
+    event.preventDefault();
+    toolSession.cancel();
+    notationRenderer?.clearPreview();
+    clearToolSource();
+    clearTechniqueSelection();
+    hideTechniqueContextMenu();
     syncToolButtons();
   });
 }
@@ -413,7 +554,7 @@ function installNotationSync() {
   const gridObserver = new MutationObserver(mutations => {
     const hasGridMutation = mutations.some(mutation => {
       const target = mutation.target;
-      return !(target instanceof Element && target.closest('.notation-overlay'));
+      return !(target instanceof Element && target.closest('.notation-overlay,.technique-marker-layer'));
     });
     if (!hasGridMutation) return;
     const store = ensureStore({ reconcile: false });

@@ -276,7 +276,12 @@ function addMark(document, command, idFactory) {
     const marks = Array.isArray(event.marks) ? cloneValue(event.marks) : [];
     const mark = { ...raw, id: String(raw.id || idFactory('mk')) };
     if (marks.some(item => sameEntityPayload(item, mark))) return event;
-    return { ...event, marks: [...marks, mark] };
+
+    const isSweep = ['strum', 'arpeggio'].includes(mark.type);
+    const retained = isSweep
+      ? marks.filter(item => !['strum', 'arpeggio'].includes(item.type))
+      : marks;
+    return { ...event, marks: [...retained, mark] };
   }, { playback: false });
 }
 
