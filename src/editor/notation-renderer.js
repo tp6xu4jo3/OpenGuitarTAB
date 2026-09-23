@@ -163,7 +163,7 @@ export class NotationRenderer {
   }
 
   annotateAll(locations) {
-    this.root.querySelectorAll('.note-input[data-note-id],.note-input[data-event-id],.note-input[data-measure-id]').forEach(input => {
+    this.root.querySelectorAll('.note-input').forEach(input => {
       delete input.dataset.noteId;
       delete input.dataset.eventId;
       delete input.dataset.measureId;
