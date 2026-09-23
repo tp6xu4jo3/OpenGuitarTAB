@@ -1,4 +1,4 @@
-import { fractionToNumber } from './model.js';
+import { fractionToNumber, indexDocument, noteDisplayValue } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -58,7 +58,7 @@ function noteNodes(root, noteId) {
 }
 
 function eventNodes(root, eventId) {
-  return [...root.querySelectorAll(`[data-event-id="${escapeSelector(eventId)}"]`)];
+  return [...root.querySelectorAll(`.note-input[data-event-id="${escapeSelector(eventId)}"]`)];
 }
 
 function centerIn(element, container) {
@@ -90,7 +90,7 @@ function systemContainsMeasure(systemElement, measureId, systems) {
 }
 
 function representativeEventNode(systemElement, eventId) {
-  return systemElement.querySelector(`[data-event-id="${escapeSelector(eventId)}"]`);
+  return systemElement.querySelector(`.note-input[data-event-id="${escapeSelector(eventId)}"]`);
 }
 
 function appendText(svg, { x, y, text, className, eventId = '', noteId = '' }) {
@@ -107,6 +107,115 @@ function appendText(svg, { x, y, text, className, eventId = '', noteId = '' }) {
   if (noteId) node.dataset.noteId = noteId;
   svg.appendChild(node);
   return node;
+}
+
+function appendStraightSweep(svg, { x, top, bottom, direction, eventId }) {
+  const fromY = direction === 'up' ? bottom : top;
+  const toY = direction === 'up' ? top : bottom;
+  const shaft = svgNode('path', {
+    d: `M ${x} ${fromY} L ${x} ${toY}`,
+    fill: 'none',
+    'vector-effect': 'non-scaling-stroke',
+    'data-event-id': eventId
+  });
+  shaft.classList.add('notation-symbol', 'notation-strum', `notation-strum-${direction || 'down'}`);
+  svg.appendChild(shaft);
+
+  const arrow = direction === 'up'
+    ? `M ${x - 4} ${toY + 5} L ${x} ${toY} L ${x + 4} ${toY + 5}`
+    : `M ${x - 4} ${toY - 5} L ${x} ${toY} L ${x + 4} ${toY - 5}`;
+  const head = svgNode('path', {
+    d: arrow,
+    fill: 'none',
+    'vector-effect': 'non-scaling-stroke',
+    'data-event-id': eventId
+  });
+  head.classList.add('notation-symbol', 'notation-strum', `notation-strum-${direction || 'down'}`);
+  svg.appendChild(head);
+}
+
+function wavePath(x, top, bottom) {
+  const height = Math.max(10, bottom - top);
+  const segments = Math.max(2, Math.ceil(height / 7));
+  const step = height / segments;
+  let path = `M ${x} ${top}`;
+  for (let index = 0; index < segments; index++) {
+    const y0 = top + index * step;
+    const y1 = y0 + step;
+    const direction = index % 2 === 0 ? 1 : -1;
+    path += ` C ${x + 4 * direction} ${y0 + step * 0.25}, ${x + 4 * direction} ${y0 + step * 0.75}, ${x} ${y1}`;
+  }
+  return path;
+}
+
+function appendArpeggio(svg, { x, top, bottom, direction, eventId }) {
+  const wave = svgNode('path', {
+    d: wavePath(x, top, bottom),
+    fill: 'none',
+    'vector-effect': 'non-scaling-stroke',
+    'data-event-id': eventId
+  });
+  wave.classList.add('notation-symbol', 'notation-arpeggio', `notation-arpeggio-${direction || 'down'}`);
+  svg.appendChild(wave);
+
+  const tipY = direction === 'up' ? top : bottom;
+  const arrow = direction === 'up'
+    ? `M ${x - 4} ${tipY + 5} L ${x} ${tipY} L ${x + 4} ${tipY + 5}`
+    : `M ${x - 4} ${tipY - 5} L ${x} ${tipY} L ${x + 4} ${tipY - 5}`;
+  const head = svgNode('path', {
+    d: arrow,
+    fill: 'none',
+    'vector-effect': 'non-scaling-stroke',
+    'data-event-id': eventId
+  });
+  head.classList.add('notation-symbol', 'notation-arpeggio', `notation-arpeggio-${direction || 'down'}`);
+  svg.appendChild(head);
+}
+
+function ensureMarkerLayer(systemElement) {
+  let layer = systemElement.querySelector(':scope > .technique-marker-layer');
+  if (layer) return layer;
+  layer = document.createElement('div');
+  layer.className = 'technique-marker-layer';
+  layer.setAttribute('aria-label', '技巧標記');
+  systemElement.appendChild(layer);
+  return layer;
+}
+
+function markerYForNode(node, systemElement) {
+  const grid = node?.closest?.('.tab-grid');
+  if (!grid) return Math.max(0, systemElement.getBoundingClientRect().height - 12);
+  const gridRect = grid.getBoundingClientRect();
+  const base = systemElement.getBoundingClientRect();
+  return gridRect.bottom - base.top - 12;
+}
+
+function appendTechniqueMarker(layer, markerOffsets, { node, systemElement, kind, id, label, title }) {
+  if (!node || !id) return;
+  const point = centerIn(node, systemElement);
+  const y = markerYForNode(node, systemElement);
+  const key = `${Math.round(point.x / 4)}:${Math.round(y / 4)}`;
+  const offset = markerOffsets.get(key) || 0;
+  markerOffsets.set(key, offset + 1);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'technique-marker';
+  button.dataset.techniqueKind = kind;
+  button.dataset.techniqueId = String(id);
+  button.textContent = label;
+  button.title = title;
+  button.setAttribute('aria-label', `${title}，點選後可按Delete刪除`);
+  button.style.left = `${point.x + offset * 22}px`;
+  button.style.top = `${y}px`;
+  layer.appendChild(button);
+}
+
+function relationMarkerLabel(type) {
+  if (type === 'slide') return '/';
+  if (type === 'tie') return 'T';
+  if (type === 'slur') return 'L';
+  return '↔';
 }
 
 export class NotationRenderer {
@@ -144,6 +253,18 @@ export class NotationRenderer {
     });
   }
 
+  previewRelation({ fromNoteId, type = 'slur', clientX, clientY } = {}) {
+    if (!fromNoteId || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+      this.relationRenderer.clearPreview(this.root);
+      return;
+    }
+    this.relationRenderer.preview(this.root, { fromNoteId, type, clientX, clientY });
+  }
+
+  clearPreview() {
+    this.relationRenderer.clearPreview(this.root);
+  }
+
   render(documentModel, changeSet = null) {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
@@ -166,6 +287,7 @@ export class NotationRenderer {
     this.root.querySelectorAll('.note-input').forEach(input => {
       delete input.dataset.noteId;
       delete input.dataset.eventId;
+      delete input.dataset.notationDisplay;
       input.classList.remove('notation-harmonic-target');
     });
     locations.forEach(system => system.measures.forEach(entry => this.annotateMeasureEntry(entry)));
@@ -181,6 +303,7 @@ export class NotationRenderer {
       if (position < start || position >= end) return;
       delete input.dataset.noteId;
       delete input.dataset.eventId;
+      delete input.dataset.notationDisplay;
       input.classList.remove('notation-harmonic-target');
     });
     this.annotateMeasureEntry(entry);
@@ -194,10 +317,13 @@ export class NotationRenderer {
       for (const note of event.notes || []) {
         const selector = `.note-input[data-row="${rowIndex}"][data-string="${Number(note.string)}"][data-position="${absolutePosition}"]`;
         this.root.querySelectorAll(selector).forEach(input => {
+          const harmonic = (note.techniques || []).some(technique => technique.type === 'harmonic');
           input.dataset.noteId = note.id;
           input.dataset.eventId = event.id;
           input.dataset.measureId = measure.id;
-          input.classList.toggle('notation-harmonic-target', (note.techniques || []).some(technique => technique.type === 'harmonic'));
+          input.classList.toggle('notation-harmonic-target', harmonic);
+          if (harmonic) input.dataset.notationDisplay = noteDisplayValue(note);
+          else delete input.dataset.notationDisplay;
         });
       }
     }
@@ -208,6 +334,10 @@ export class NotationRenderer {
     this.relationRenderer.render(this.document, systemElement, measureIds);
     const svg = systemElement.querySelector(':scope > svg.notation-overlay');
     if (!svg) return;
+
+    const markerLayer = ensureMarkerLayer(systemElement);
+    markerLayer.replaceChildren();
+    const markerOffsets = new Map();
     const measureSet = new Set(measureIds.map(String));
     const measures = this.document.measures.filter(measure => measureSet.has(String(measure.id)));
 
@@ -217,24 +347,51 @@ export class NotationRenderer {
         if (!nodes.length) continue;
         const points = nodes.map(node => centerIn(node, systemElement));
         const anchor = points[0];
-        const top = Math.min(...points.map(point => point.top));
-        const bottom = Math.max(...points.map(point => point.bottom));
+        const top = Math.min(...points.map(point => point.y)) - 5;
+        const bottom = Math.max(...points.map(point => point.y)) + 5;
 
         for (const mark of event.marks || []) {
-          if (mark.type !== 'strum') continue;
-          appendText(svg, {
-            x: anchor.x - 13,
-            y: top + (bottom - top) / 2,
-            text: mark.direction === 'up' ? '↑' : '↓',
-            className: `notation-strum notation-strum-${mark.direction || 'down'}`,
-            eventId: event.id
-          });
+          if (mark.type === 'strum') {
+            appendStraightSweep(svg, {
+              x: anchor.x - 14,
+              top,
+              bottom,
+              direction: mark.direction === 'up' ? 'up' : 'down',
+              eventId: event.id
+            });
+            appendTechniqueMarker(markerLayer, markerOffsets, {
+              node: nodes[0],
+              systemElement,
+              kind: 'mark',
+              id: mark.id,
+              label: mark.direction === 'up' ? '↑' : '↓',
+              title: mark.direction === 'up' ? '上刷' : '下刷'
+            });
+          }
+
+          if (mark.type === 'arpeggio') {
+            appendArpeggio(svg, {
+              x: anchor.x - 14,
+              top,
+              bottom,
+              direction: mark.direction === 'up' ? 'up' : 'down',
+              eventId: event.id
+            });
+            appendTechniqueMarker(markerLayer, markerOffsets, {
+              node: nodes[0],
+              systemElement,
+              kind: 'mark',
+              id: mark.id,
+              label: mark.direction === 'up' ? 'A↑' : 'A↓',
+              title: mark.direction === 'up' ? '向上琶音' : '向下琶音'
+            });
+          }
         }
 
         if (fractionToNumber(event.duration) === 1 / 8) {
           appendText(svg, {
             x: anchor.x + 13,
-            y: bottom + 13,
+            y: bottom + 8,
             text: '32',
             className: 'notation-duration-32',
             eventId: event.id
@@ -242,17 +399,25 @@ export class NotationRenderer {
         }
 
         for (const note of event.notes || []) {
-          if (!(note.techniques || []).some(technique => technique.type === 'harmonic')) continue;
-          for (const node of noteNodes(systemElement, note.id)) {
+          const harmonic = (note.techniques || []).find(technique => technique.type === 'harmonic');
+          if (!harmonic) continue;
+          for (const node of noteNodes(systemElement, note.id).filter(item => item.classList?.contains('note-input'))) {
             const point = centerIn(node, systemElement);
-            const diamond = svgNode('path', {
-              d: `M ${point.x} ${point.y - 13} L ${point.x + 13} ${point.y} L ${point.x} ${point.y + 13} L ${point.x - 13} ${point.y} Z`,
-              fill: 'none',
-              'vector-effect': 'non-scaling-stroke',
-              'data-note-id': note.id
+            appendText(svg, {
+              x: point.x,
+              y: point.y,
+              text: noteDisplayValue(note),
+              className: 'notation-harmonic-label',
+              noteId: note.id
             });
-            diamond.classList.add('notation-symbol', 'notation-harmonic');
-            svg.appendChild(diamond);
+            appendTechniqueMarker(markerLayer, markerOffsets, {
+              node,
+              systemElement,
+              kind: 'technique',
+              id: harmonic.id,
+              label: 'H',
+              title: '人工泛音'
+            });
           }
         }
       }
@@ -280,7 +445,31 @@ export class NotationRenderer {
           text: String(group.ratio?.[0] || 3),
           className: 'notation-tuplet-number'
         });
+        appendTechniqueMarker(markerLayer, markerOffsets, {
+          node: firstNode,
+          systemElement,
+          kind: 'group',
+          id: group.id,
+          label: String(group.ratio?.[0] || 3),
+          title: '三連音'
+        });
       }
+    }
+
+    const index = indexDocument(this.document);
+    for (const relation of this.document.relations || []) {
+      const sourceLocation = index.noteLocation.get(String(relation.fromNoteId || ''));
+      if (!sourceLocation || !measureSet.has(String(sourceLocation.measureId))) continue;
+      const sourceNode = systemElement.querySelector(`.note-input[data-note-id="${escapeSelector(relation.fromNoteId)}"]`);
+      if (!sourceNode) continue;
+      appendTechniqueMarker(markerLayer, markerOffsets, {
+        node: sourceNode,
+        systemElement,
+        kind: 'relation',
+        id: relation.id,
+        label: relationMarkerLabel(relation.type),
+        title: relation.type === 'slide' ? '滑音' : relation.type === 'tie' ? '延音線' : '圓滑線'
+      });
     }
   }
 }
