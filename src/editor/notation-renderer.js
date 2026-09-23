@@ -166,7 +166,6 @@ export class NotationRenderer {
     this.root.querySelectorAll('.note-input').forEach(input => {
       delete input.dataset.noteId;
       delete input.dataset.eventId;
-      delete input.dataset.measureId;
       input.classList.remove('notation-harmonic-target');
     });
     locations.forEach(system => system.measures.forEach(entry => this.annotateMeasureEntry(entry)));
@@ -182,7 +181,6 @@ export class NotationRenderer {
       if (position < start || position >= end) return;
       delete input.dataset.noteId;
       delete input.dataset.eventId;
-      delete input.dataset.measureId;
       input.classList.remove('notation-harmonic-target');
     });
     this.annotateMeasureEntry(entry);
