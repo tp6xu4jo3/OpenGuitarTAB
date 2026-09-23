@@ -23,7 +23,11 @@ async function refreshCatalogIfNeeded() {
 function prepareCurrentSong() {
   const song = currentSongSafe();
   if (!song) return null;
-  window.saveRowsToCurrentSong?.(window.readRowsFromDom?.() || song.rows || [], false);
+  const store = window.editorV3?.getStore?.({ reconcile: false });
+  if (store) return window.editorV3.sync.prepareForPersistence(store) || song;
+  if (typeof window.getTempo === 'function') song.tempo = window.getTempo();
+  if (typeof window.getCapo === 'function') song.capo = window.getCapo();
+  song.updatedAt = Date.now();
   return song;
 }
 
