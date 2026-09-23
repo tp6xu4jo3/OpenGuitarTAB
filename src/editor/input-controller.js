@@ -1,4 +1,5 @@
 import { legacyGridLocationToV3 } from './migrate-v2.js';
+import { normalizeFraction } from './model.js';
 import { isPreviewActive, isScoreViewActive } from './view-state.js';
 
 const STRING_COUNT = 6;
@@ -68,6 +69,19 @@ function markDirty(input, rowIndex) {
   if (!editorFrame) editorFrame = requestAnimationFrame(flushDirtyUi);
 }
 
+function fractionFromDataset(value) {
+  const match = String(value || '').match(/^(-?\d+)\/(\d+)$/);
+  if (!match) return null;
+  return normalizeFraction([Number(match[1]), Number(match[2])]);
+}
+
+function inputLocation(input, store, rowIndex, position) {
+  const measureId = String(input.dataset.measureId || '');
+  const at = fractionFromDataset(input.dataset.at);
+  if (measureId && at) return { measureId, at };
+  return legacyGridLocationToV3(store.getDocument(), rowIndex, position);
+}
+
 function handleInput(event, { getStore, markStoreCurrent }) {
   const input = event.target.closest?.('.note-input');
   if (!input || isPreviewActive() || isScoreViewActive()) return;
@@ -86,7 +100,7 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   const store = getStore();
   const song = currentSongSafe();
   if (!store || !song) return;
-  const location = legacyGridLocationToV3(store.getDocument(), rowIndex, position);
+  const location = inputLocation(input, store, rowIndex, position);
   if (!location) return;
 
   store.dispatch({
