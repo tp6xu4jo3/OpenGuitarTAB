@@ -12,7 +12,6 @@ import {
   legacyRowMeasureCount,
   legacyRowPositionCount,
   legacyRowStepCount,
-  normalizeLegacyMeasureCount,
   projectSystemCountsToLegacySong,
   rhythmOnsetsFromLegacyRow,
   rhythmRowFromLegacyRow
