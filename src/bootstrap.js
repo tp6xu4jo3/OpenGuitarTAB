@@ -9,6 +9,7 @@ import {
 } from './core/song-permissions.js';
 import { APP_CONFIG } from './config/app-config.js';
 import { installEditorV3 } from './editor/controller.js';
+import { installLegacyUiBridge } from './editor/legacy-ui-bridge.js';
 import { cloudApi } from './services/cloud-api.js';
 
 Object.assign(window, {
@@ -34,19 +35,16 @@ const EDITOR_SCRIPTS = [
   './src/app-note-backgrounds.js',
   './src/app-row-layout.js',
   './src/app-measure-lines.js',
-  './src/app-editor-stability.js',
   './src/app-editor-modules.js',
   './src/app-editor-insert-zones.js',
   './src/app-editor-row-controls.js',
   './src/app-editor-drag-grip.js',
-  './src/app-editor-performance.js',
   './src/app-audio.js',
   './src/app-row-playback.js',
   './src/app-adaptive-measures.js',
   './src/app-score-layout.js',
   './src/app-density-fit-v2.js',
   './src/app-playback.js',
-  './src/app-editor-drop-guard.js',
   './src/app-editor-hotpath.js'
 ];
 
@@ -74,7 +72,8 @@ function loadClassicScriptsInOrder(sources) {
 // cloudApi.catalog() deduplicates the later catalog request made by app-catalog.js.
 void cloudApi.catalog().catch(() => null);
 
-// Classic compatibility scripts still load in their historical order while Editor V3 owns
-// the score document, commands, clipboard and future tool/renderer pipeline.
+// Remaining classic scripts are compatibility render/playback pieces. Input state,
+// score-mode stability and V3 document ownership now live under src/editor/.
 await loadClassicScriptsInOrder(APP_SCRIPTS);
+installLegacyUiBridge();
 installEditorV3();
