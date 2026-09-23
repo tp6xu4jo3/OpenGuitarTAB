@@ -1,5 +1,6 @@
 export const DOCUMENT_VERSION = 3;
 export const STRING_COUNT = 6;
+export const ARTIFICIAL_HARMONIC_OFFSET = 12;
 
 export function cloneValue(value) {
   if (typeof structuredClone === 'function') return structuredClone(value);
@@ -68,15 +69,64 @@ function normalizeTimeSignature(value) {
   return { numerator, denominator };
 }
 
+function normalizeOwnedEntity(value, prefix, idFactory) {
+  const source = value && typeof value === 'object' ? cloneValue(value) : {};
+  source.id = String(source.id || idFactory(prefix));
+  return source;
+}
+
+function normalizeTechnique(technique, idFactory, fallbackFret = '') {
+  const normalized = normalizeOwnedEntity(technique, 't', idFactory);
+  if (normalized.type !== 'harmonic') return normalized;
+
+  let touchFret = Number(normalized.touchFret);
+  if (!Number.isFinite(touchFret)) {
+    const baseFret = Number(fallbackFret);
+    if (Number.isFinite(baseFret)) touchFret = baseFret + ARTIFICIAL_HARMONIC_OFFSET;
+  }
+  if (Number.isFinite(touchFret)) normalized.touchFret = Math.max(ARTIFICIAL_HARMONIC_OFFSET, Math.trunc(touchFret));
+  else delete normalized.touchFret;
+  delete normalized.kind;
+  delete normalized.baseFret;
+  delete normalized.fret;
+  return normalized;
+}
+
+export function harmonicTechnique(note) {
+  return (note?.techniques || []).find(technique => technique?.type === 'harmonic' && Number.isFinite(Number(technique?.touchFret))) || null;
+}
+
+export function noteBaseFret(note) {
+  const harmonic = harmonicTechnique(note);
+  if (harmonic) return String(Math.max(0, Math.trunc(Number(harmonic.touchFret)) - ARTIFICIAL_HARMONIC_OFFSET));
+  return String(note?.fret ?? '');
+}
+
+export function noteSoundingFret(note) {
+  const harmonic = harmonicTechnique(note);
+  if (harmonic) return String(Math.max(0, Math.trunc(Number(harmonic.touchFret))));
+  return String(note?.fret ?? '');
+}
+
+export function noteDisplayValue(note) {
+  const harmonic = harmonicTechnique(note);
+  if (!harmonic) return String(note?.fret ?? '');
+  return `${noteBaseFret(note)}<${Math.trunc(Number(harmonic.touchFret))}>`;
+}
+
 function normalizeNote(note, idFactory) {
   const string = Math.max(0, Math.min(STRING_COUNT - 1, Math.trunc(Number(note?.string) || 0)));
-  const fret = String(note?.fret ?? '');
+  const sourceFret = String(note?.fret ?? '');
+  const techniques = Array.isArray(note?.techniques)
+    ? note.techniques.map(technique => normalizeTechnique(technique, idFactory, sourceFret))
+    : [];
+  const hasCanonicalHarmonic = techniques.some(technique => technique.type === 'harmonic' && Number.isFinite(Number(technique.touchFret)));
   return {
     ...(note && typeof note === 'object' ? cloneValue(note) : {}),
     id: String(note?.id || idFactory('n')),
     string,
-    fret,
-    techniques: Array.isArray(note?.techniques) ? cloneValue(note.techniques) : []
+    fret: hasCanonicalHarmonic ? '' : sourceFret,
+    techniques
   };
 }
 
@@ -88,8 +138,14 @@ function normalizeEvent(event, idFactory) {
     at: normalizeFraction(event?.at, [0, 1]),
     duration: duration[0] > 0 ? duration : [1, 1],
     notes: Array.isArray(event?.notes) ? event.notes.map(note => normalizeNote(note, idFactory)) : [],
-    marks: Array.isArray(event?.marks) ? cloneValue(event.marks) : []
+    marks: Array.isArray(event?.marks) ? event.marks.map(mark => normalizeOwnedEntity(mark, 'mk', idFactory)) : []
   };
+}
+
+function normalizeGroup(group, idFactory) {
+  const normalized = normalizeOwnedEntity(group, 'g', idFactory);
+  if (Array.isArray(normalized.eventIds)) normalized.eventIds = normalized.eventIds.map(String);
+  return normalized;
 }
 
 function normalizeMeasure(measure, idFactory) {
@@ -102,12 +158,22 @@ function normalizeMeasure(measure, idFactory) {
     id: String(measure?.id || idFactory('m')),
     timeSignature: normalizeTimeSignature(measure?.timeSignature),
     events,
-    groups: Array.isArray(measure?.groups) ? cloneValue(measure.groups) : []
+    groups: Array.isArray(measure?.groups) ? measure.groups.map(group => normalizeGroup(group, idFactory)) : []
   };
 }
 
+function normalizeRelation(relation, idFactory) {
+  const normalized = normalizeOwnedEntity(relation, 'r', idFactory);
+  if (normalized.fromNoteId) normalized.fromNoteId = String(normalized.fromNoteId);
+  if (normalized.toNoteId) normalized.toNoteId = String(normalized.toNoteId);
+  if (Array.isArray(normalized.noteIds)) normalized.noteIds = normalized.noteIds.map(String);
+  return normalized;
+}
+
 export function createDocumentV3({ measures = [], relations = [], layout = {}, idFactory = createId } = {}) {
-  const sourceMeasures = measures.length ? measures : [{ id: idFactory('m'), timeSignature: { numerator: 4, denominator: 4 }, events: [], groups: [] }];
+  const sourceMeasures = measures.length
+    ? measures
+    : [{ id: idFactory('m'), timeSignature: { numerator: 4, denominator: 4 }, events: [], groups: [] }];
   return normalizeDocumentV3({
     version: DOCUMENT_VERSION,
     measures: sourceMeasures,
@@ -131,7 +197,7 @@ export function normalizeDocumentV3(document, { idFactory = createId } = {}) {
     ...source,
     version: DOCUMENT_VERSION,
     measures,
-    relations: Array.isArray(source.relations) ? cloneValue(source.relations) : [],
+    relations: Array.isArray(source.relations) ? source.relations.map(relation => normalizeRelation(relation, idFactory)) : [],
     layout: {
       ...(source.layout && typeof source.layout === 'object' ? source.layout : {}),
       systemBreakAfter
@@ -151,23 +217,52 @@ export function indexDocument(document) {
   const measureById = new Map();
   const eventById = new Map();
   const noteById = new Map();
+  const techniqueById = new Map();
+  const markById = new Map();
+  const groupById = new Map();
+  const relationById = new Map();
   const eventLocation = new Map();
   const noteLocation = new Map();
 
   for (let measureIndex = 0; measureIndex < (document?.measures?.length || 0); measureIndex++) {
     const measure = document.measures[measureIndex];
     measureById.set(measure.id, { measure, measureIndex });
+    for (const group of measure.groups || []) groupById.set(group.id, { group, measureId: measure.id, measureIndex });
     for (let eventIndex = 0; eventIndex < (measure.events?.length || 0); eventIndex++) {
       const event = measure.events[eventIndex];
       eventById.set(event.id, event);
       eventLocation.set(event.id, { measureId: measure.id, measureIndex, eventIndex });
+      for (const mark of event.marks || []) markById.set(mark.id, { mark, measureId: measure.id, measureIndex, eventId: event.id, eventIndex });
       for (let noteIndex = 0; noteIndex < (event.notes?.length || 0); noteIndex++) {
         const note = event.notes[noteIndex];
         noteById.set(note.id, note);
         noteLocation.set(note.id, { measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteIndex });
+        for (const technique of note.techniques || []) {
+          techniqueById.set(technique.id, {
+            technique,
+            measureId: measure.id,
+            measureIndex,
+            eventId: event.id,
+            eventIndex,
+            noteId: note.id,
+            noteIndex
+          });
+        }
       }
     }
   }
 
-  return { measureById, eventById, noteById, eventLocation, noteLocation };
+  for (const relation of document?.relations || []) relationById.set(relation.id, relation);
+
+  return {
+    measureById,
+    eventById,
+    noteById,
+    techniqueById,
+    markById,
+    groupById,
+    relationById,
+    eventLocation,
+    noteLocation
+  };
 }
