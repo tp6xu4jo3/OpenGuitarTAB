@@ -6,6 +6,7 @@ import {
   isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
+  noteBaseFret,
   relationNoteIds
 } from './model.js';
 
@@ -140,6 +141,28 @@ function buildSystems(document, maxMeasures = LEGACY_MEASURES_PER_ROW) {
   return systems.length ? systems : [[]];
 }
 
+export function legacyGridLocationToV3(document, rowIndex, position) {
+  const systems = buildSystems(normalizeDocumentV3(document));
+  const measures = systems?.[Number(rowIndex)] || [];
+  if (!measures.length) return null;
+  let remaining = Math.max(0, Math.trunc(Number(position) || 0));
+
+  for (const measure of measures) {
+    const signature = measure.timeSignature || { numerator: 4, denominator: 4 };
+    const beats = Number(signature.numerator || 4) * (4 / Number(signature.denominator || 4));
+    const slots = Math.max(1, Math.round(beats * LEGACY_SLOTS_PER_BEAT));
+    if (remaining < slots) {
+      return {
+        measure,
+        measureId: measure.id,
+        at: normalizeFraction([remaining, LEGACY_SLOTS_PER_BEAT])
+      };
+    }
+    remaining -= slots;
+  }
+  return null;
+}
+
 function mergeLegacyMeasure(existingMeasure, generatedMeasure) {
   if (!existingMeasure) return generatedMeasure;
   const existingEventsByAt = new Map((existingMeasure.events || []).map(event => [fractionKey(event.at), event]));
@@ -151,11 +174,16 @@ function mergeLegacyMeasure(existingMeasure, generatedMeasure) {
     const notes = generatedEvent.notes.map(generatedNote => {
       const existingNote = existingNotesByString.get(Number(generatedNote.string));
       if (!existingNote) return generatedNote;
+      const techniques = Array.isArray(existingNote.techniques) ? cloneValue(existingNote.techniques) : [];
+      const harmonic = techniques.find(technique => technique?.type === 'harmonic');
+      if (harmonic && Number.isFinite(Number(generatedNote.fret))) {
+        harmonic.touchFret = Number(generatedNote.fret) + 12;
+      }
       return {
         ...cloneValue(existingNote),
         string: generatedNote.string,
-        fret: generatedNote.fret,
-        techniques: Array.isArray(existingNote.techniques) ? cloneValue(existingNote.techniques) : []
+        fret: harmonic ? '' : generatedNote.fret,
+        techniques
       };
     });
     return {
@@ -296,7 +324,7 @@ export function documentToLegacyProjection(document) {
             structuralLossy = true;
             continue;
           }
-          rows[rowIndex][string][absolutePosition] = String(note.fret ?? '');
+          rows[rowIndex][string][absolutePosition] = noteBaseFret(note);
         }
         rhythmRows[rowIndex][absolutePosition] = Math.max(1, Math.min(measureSlots, durationSlots));
       }
