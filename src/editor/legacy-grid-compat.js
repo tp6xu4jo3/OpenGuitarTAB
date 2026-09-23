@@ -1,9 +1,14 @@
 import { buildSystems } from './layout.js';
-import { documentToLegacyProjection } from './migrate-v2.js';
+import {
+  documentToLegacyProjection,
+  LEGACY_MEASURES_PER_ROW,
+  LEGACY_SLOTS_PER_BEAT as MIGRATION_SLOTS_PER_BEAT,
+  LEGACY_STRINGS
+} from './migrate-v2.js';
 
-export const LEGACY_STRING_COUNT = 6;
-export const LEGACY_SLOTS_PER_BEAT = 4;
-export const LEGACY_MAX_MEASURES_PER_SYSTEM = 4;
+export const LEGACY_STRING_COUNT = LEGACY_STRINGS;
+export const LEGACY_SLOTS_PER_BEAT = MIGRATION_SLOTS_PER_BEAT;
+export const LEGACY_MAX_MEASURES_PER_SYSTEM = LEGACY_MEASURES_PER_ROW;
 
 export function legacyBeatsPerMeasure(song) {
   return Number(song?.beatsPerMeasure) === 3 ? 3 : 4;
