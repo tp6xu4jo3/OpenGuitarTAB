@@ -92,7 +92,7 @@ const secondNote = firstEvent.notes[1];
   const harmonicNote = documentModel.measures[0].events[0].notes[0];
   assert.deepEqual(result.changeSet.measures, [firstMeasure.id]);
   assert.deepEqual(result.changeSet.playback, [firstMeasure.id]);
-  assert.equal(harmonicNote.fret, '');
+  assert.equal(harmonicNote.fret, '5', 'harmonic metadata must not erase the fretted note');
   assert.equal(harmonicNote.techniques[0].type, 'harmonic');
   assert.equal(harmonicNote.techniques[0].touchFret, 17);
   assert.ok(harmonicNote.techniques[0].id);
