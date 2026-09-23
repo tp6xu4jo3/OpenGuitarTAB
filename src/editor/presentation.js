@@ -1,3 +1,6 @@
+import { fractionalPercentForGrid, legacyPositionPercentForGrid } from './grid-geometry.js';
+import { legacyBeatsPerMeasure, LEGACY_SLOTS_PER_BEAT } from './legacy-grid-compat.js';
+
 const SCORE_MAX_FONT_SIZE = 20;
 const EDIT_FONT_SIZE = 24;
 const MIN_TWO_DIGIT_SCALE = 0.58;
@@ -49,7 +52,12 @@ function backgroundMap(layer) {
 }
 
 function backgroundKey(input) {
-  return `${input.dataset.string}:${input.dataset.position}`;
+  return [
+    input.dataset.string,
+    input.dataset.measureId || '',
+    input.dataset.at || '',
+    input.dataset.position || ''
+  ].join(':');
 }
 
 function positionCountForGrid(grid) {
@@ -64,11 +72,44 @@ function positionCountForGrid(grid) {
   return 1;
 }
 
-function positionPercent(grid, position) {
-  if (typeof window.positionPercentForGrid === 'function') return window.positionPercentForGrid(grid, position);
-  const startPosition = Number(grid.dataset.positionStart) || 0;
-  const count = positionCountForGrid(grid);
-  return ((Number(position) - startPosition + 1) / count) * 100;
+function parseFraction(value, fallback = [0, 1]) {
+  const match = String(value || '').match(/^(-?\d+)\/(\d+)$/);
+  return match ? [Number(match[1]), Number(match[2])] : fallback;
+}
+
+function currentSongSafe() {
+  return typeof window.currentSong === 'function' ? window.currentSong() : null;
+}
+
+function currentDocumentSafe() {
+  return window.editorV3?.getStore?.({ reconcile: false })?.getDocument?.()
+    || currentSongSafe()?.document
+    || null;
+}
+
+function positionPercent(grid, input) {
+  if (input?.dataset?.v3Only === 'true') {
+    const documentModel = currentDocumentSafe();
+    const measureId = String(input.dataset.measureId || '');
+    const measure = documentModel?.measures?.find(item => String(item.id) === measureId);
+    const measureIds = String(grid.dataset.measureIds || '').split(',').filter(Boolean);
+    const localMeasure = measureIds.indexOf(measureId);
+    if (measure && localMeasure >= 0) {
+      const absoluteMeasure = (Number(grid.dataset.measureStart) || 0) + localMeasure;
+      return fractionalPercentForGrid(
+        grid,
+        absoluteMeasure,
+        parseFraction(input.dataset.at),
+        parseFraction(input.dataset.duration, [1, 4]),
+        measure
+      );
+    }
+  }
+
+  return legacyPositionPercentForGrid(grid, Number(input?.dataset?.position), {
+    beatsPerMeasure: legacyBeatsPerMeasure(currentSongSafe()),
+    slotsPerBeat: LEGACY_SLOTS_PER_BEAT
+  });
 }
 
 function syncInputBackground(input, knownLayer = null, knownMap = null) {
@@ -93,13 +134,15 @@ function syncInputBackground(input, knownLayer = null, knownMap = null) {
     return;
   }
 
-  const startPosition = Number(grid.dataset.positionStart) || 0;
-  const positionCount = positionCountForGrid(grid);
-  const localPosition = position - startPosition;
-  if (localPosition < 0 || localPosition >= positionCount) {
-    background?.remove();
-    map.delete(key);
-    return;
+  if (input.dataset.v3Only !== 'true') {
+    const startPosition = Number(grid.dataset.positionStart) || 0;
+    const positionCount = positionCountForGrid(grid);
+    const localPosition = position - startPosition;
+    if (localPosition < 0 || localPosition >= positionCount) {
+      background?.remove();
+      map.delete(key);
+      return;
+    }
   }
 
   if (!background) {
@@ -109,7 +152,7 @@ function syncInputBackground(input, knownLayer = null, knownMap = null) {
     map.set(key, background);
   }
 
-  background.style.setProperty('--note-x', `${positionPercent(grid, position)}%`);
+  background.style.setProperty('--note-x', `${positionPercent(grid, input)}%`);
   background.style.setProperty('--string-index', String(string));
 }
 
@@ -165,7 +208,7 @@ function resetTwoDigitFit(input) {
 }
 
 function noteSignature(filled) {
-  return filled.map(input => `${input.dataset.string}:${input.dataset.position}:${input.value}`).join('|');
+  return filled.map(input => `${backgroundKey(input)}:${input.value}`).join('|');
 }
 
 function fitGrid(grid, force = false) {
@@ -198,7 +241,7 @@ function fitGrid(grid, force = false) {
       const notes = inputs.map(input => ({
         input,
         value: String(input.value || ''),
-        center: rect.left + positionPercent(grid, Number(input.dataset.position)) / 100 * rect.width
+        center: rect.left + positionPercent(grid, input) / 100 * rect.width
       })).sort((a, b) => a.center - b.center);
 
       notes.forEach((note, index) => {
