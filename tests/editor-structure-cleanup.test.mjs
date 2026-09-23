@@ -6,9 +6,11 @@ import {
   measureWidthsForGrid
 } from '../src/editor/grid-geometry.js';
 import { focusRelativeInput, handleGridNavigationKeydown } from '../src/editor/grid-navigation.js';
+import { createDocumentV3 } from '../src/editor/model.js';
 import {
   LEGACY_SLOTS_PER_BEAT,
   legacyRowPositionCount,
+  projectDocumentToLegacySong,
   rhythmRowFromLegacyRow
 } from '../src/editor/legacy-grid-compat.js';
 
@@ -34,6 +36,28 @@ import {
     ),
     1.25
   );
+}
+
+{
+  const song = { id: 'projection', rows: [], rhythmRows: [], rowMeasureCounts: [] };
+  const documentModel = createDocumentV3({
+    measures: [{
+      id: 'm-projection',
+      timeSignature: { numerator: 4, denominator: 4 },
+      events: [{
+        id: 'e-projection',
+        at: [0, 1],
+        duration: [1, 4],
+        notes: [{ id: 'n-projection', string: 0, fret: '3', techniques: [] }],
+        marks: []
+      }],
+      groups: []
+    }]
+  });
+  const result = projectDocumentToLegacySong(song, documentModel, { touch: false });
+  assert.equal(result.ok, true);
+  assert.equal(song.rows[0][0][0], '3');
+  assert.deepEqual(song.rowMeasureCounts, [1]);
 }
 
 {
