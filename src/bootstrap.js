@@ -31,7 +31,7 @@ const RUNTIME_SCRIPTS = [
   './src/app-editor-core.js'
 ];
 
-const EDITOR_SCRIPTS = [
+const EDITOR_COMPAT_SCRIPTS = [
   './src/app-note-backgrounds.js',
   './src/app-row-layout.js',
   './src/app-measure-lines.js',
@@ -44,13 +44,11 @@ const EDITOR_SCRIPTS = [
   './src/app-adaptive-measures.js',
   './src/app-score-layout.js',
   './src/app-density-fit-v2.js',
-  './src/app-playback.js',
-  './src/app-editor-hotpath.js'
+  './src/app-playback.js'
 ];
 
-const APP_SCRIPTS = [
-  ...RUNTIME_SCRIPTS,
-  ...EDITOR_SCRIPTS,
+const LATE_SCRIPTS = [
+  './src/app-editor-hotpath.js',
   './src/app-library.js',
   './src/app-catalog.js',
   './src/app-source-ui.js'
@@ -72,8 +70,10 @@ function loadClassicScriptsInOrder(sources) {
 // cloudApi.catalog() deduplicates the later catalog request made by app-catalog.js.
 void cloudApi.catalog().catch(() => null);
 
-// Remaining classic scripts are compatibility render/playback pieces. Input state,
-// score-mode stability and V3 document ownership now live under src/editor/.
-await loadClassicScriptsInOrder(APP_SCRIPTS);
+// V3 owns input-state synchronization and score-mode stability before the final
+// legacy drag hotpath registers its capture listeners. This lets the bridge absorb
+// the old standalone stability/performance/drop-guard patches without changing UX.
+await loadClassicScriptsInOrder([...RUNTIME_SCRIPTS, ...EDITOR_COMPAT_SCRIPTS]);
 installLegacyUiBridge();
+await loadClassicScriptsInOrder(LATE_SCRIPTS);
 installEditorV3();
