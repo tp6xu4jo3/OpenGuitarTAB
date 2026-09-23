@@ -176,6 +176,18 @@ function formatBeat(entry) {
   return Number.isInteger(beat) ? String(beat) : beat.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+function visualLocationForEntry(entry) {
+  const grid = gridForEntry(entry);
+  const system = grid?.closest?.('.tab-system');
+  const line = system?.closest?.('.score-density-line');
+  const visualRow = Number(line?.dataset.visualRow ?? system?.dataset.visualRow);
+  const startMeasure = Number(grid?.dataset.measureStart) || 0;
+  return {
+    rowIndex: Number.isInteger(visualRow) ? visualRow : entry.rowIndex,
+    measureIndex: Math.max(0, entry.measureIndexInSystem - startMeasure)
+  };
+}
+
 function updateProgressLabel(index) {
   const label = document.getElementById('progressLabel');
   if (!label) return;
@@ -184,7 +196,8 @@ function updateProgressLabel(index) {
     label.textContent = '尚無音符';
     return;
   }
-  label.textContent = `第 ${entry.rowIndex + 1} 列 / 第 ${entry.measureIndexInSystem + 1} 小節 / 第 ${formatBeat(entry)} 拍`;
+  const location = visualLocationForEntry(entry);
+  label.textContent = `第 ${location.rowIndex + 1} 列 / 第 ${location.measureIndex + 1} 小節 / 第 ${formatBeat(entry)} 拍`;
 }
 
 function totalSlots() {

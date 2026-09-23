@@ -159,7 +159,7 @@ function noteSet(document, command, idFactory) {
   };
 }
 
-function updateEvent(document, eventId, updater, { playback = true } = {}) {
+function updateEvent(document, eventId, updater, { playback = true, layout = false } = {}) {
   for (let measureIndex = 0; measureIndex < document.measures.length; measureIndex++) {
     const sourceMeasure = document.measures[measureIndex];
     const eventIndex = sourceMeasure.events.findIndex(event => event.id === eventId);
@@ -168,13 +168,13 @@ function updateEvent(document, eventId, updater, { playback = true } = {}) {
     measure.events[eventIndex] = updater(measure.events[eventIndex]);
     return {
       document: withMeasure(document, measureIndex, measure),
-      changeSet: changedMeasure(measure.id, { playback })
+      changeSet: changedMeasure(measure.id, { playback, layoutFrom: layout ? measure.id : null })
     };
   }
   return { document, changeSet: createChangeSet() };
 }
 
-function updateNote(document, noteId, updater, { playback = false } = {}) {
+function updateNote(document, noteId, updater, { playback = false, layout = false } = {}) {
   for (let measureIndex = 0; measureIndex < document.measures.length; measureIndex++) {
     const sourceMeasure = document.measures[measureIndex];
     for (let eventIndex = 0; eventIndex < sourceMeasure.events.length; eventIndex++) {
@@ -184,7 +184,7 @@ function updateNote(document, noteId, updater, { playback = false } = {}) {
       measure.events[eventIndex].notes[noteIndex] = updater(measure.events[eventIndex].notes[noteIndex]);
       return {
         document: withMeasure(document, measureIndex, measure),
-        changeSet: changedMeasure(measure.id, { playback })
+        changeSet: changedMeasure(measure.id, { playback, layoutFrom: layout ? measure.id : null })
       };
     }
   }
@@ -250,7 +250,7 @@ function addTechnique(document, command, idFactory) {
     const technique = { ...raw, id: String(raw.id || idFactory('t')) };
     if (techniques.some(item => sameEntityPayload(item, technique))) return note;
     return { ...note, techniques: [...techniques, technique] };
-  }, { playback: true });
+  }, { playback: true, layout: true });
 }
 
 function deleteTechnique(document, techniqueId) {
@@ -259,14 +259,14 @@ function deleteTechnique(document, techniqueId) {
   return updateNote(document, location.noteId, note => {
     const techniques = (note.techniques || []).filter(item => item.id !== techniqueId);
     return { ...note, techniques };
-  }, { playback: true });
+  }, { playback: true, layout: true });
 }
 
 function deleteTechniqueByType(document, noteId, techniqueType) {
   return updateNote(document, String(noteId || ''), note => {
     const techniques = (note.techniques || []).filter(item => item.type !== techniqueType);
     return { ...note, techniques };
-  }, { playback: true });
+  }, { playback: true, layout: true });
 }
 
 function addMark(document, command, idFactory) {
@@ -281,7 +281,7 @@ function addMark(document, command, idFactory) {
       ? marks.filter(item => !['strum', 'arpeggio'].includes(item.type))
       : marks;
     return { ...event, marks: [...retained, mark] };
-  }, { playback: false });
+  }, { playback: false, layout: true });
 }
 
 function deleteMark(document, markId) {
@@ -290,7 +290,7 @@ function deleteMark(document, markId) {
   return updateEvent(document, location.eventId, event => ({
     ...event,
     marks: (event.marks || []).filter(mark => mark.id !== markId)
-  }), { playback: false });
+  }), { playback: false, layout: true });
 }
 
 function applyRhythmRange(document, command, idFactory, transformer) {
@@ -369,7 +369,7 @@ function addRelation(document, command, idFactory) {
   const measures = [...new Set(noteIds.map(id => index.noteLocation.get(id)?.measureId).filter(Boolean))];
   return {
     document: { ...document, relations: [...(document.relations || []), relation] },
-    changeSet: createChangeSet({ measures, relations: [relation.id] })
+    changeSet: createChangeSet({ measures, relations: [relation.id], layoutFrom: measures[0] || null })
   };
 }
 
@@ -380,7 +380,7 @@ function deleteRelation(document, relationId) {
   const measures = [...new Set(relationNoteIds(relation).map(id => index.noteLocation.get(id)?.measureId).filter(Boolean))];
   return {
     document: { ...document, relations: document.relations.filter(item => item.id !== relationId) },
-    changeSet: createChangeSet({ measures, relations: [relationId] })
+    changeSet: createChangeSet({ measures, relations: [relationId], layoutFrom: measures[0] || null })
   };
 }
 

@@ -125,6 +125,9 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
     }
     if (!count) count = 1;
 
+    const remaining = measures.length - (cursor + count);
+    if (remaining === 1 && count >= 3) count -= 1;
+
     const slice = measures.slice(cursor, cursor + count);
     const allocation = allocateWidths(slice, availableWidth, metrics);
     result.push({

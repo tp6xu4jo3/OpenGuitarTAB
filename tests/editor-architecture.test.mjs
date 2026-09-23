@@ -149,7 +149,10 @@ assert.equal(stateSync.includes('window.renderRows'), false, 'state sync must ca
 assert.equal(stateSync.includes('window.syncNoteInputBackground'), false, 'state sync must call presentation helpers directly');
 assert.equal(controller.includes('window.scheduleEditorLayout'), false, 'controller must call the layout scheduler directly');
 assert.equal(controller.includes('if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();'), true, 'tool commands must request a full grid render only for explicit layout invalidations');
-assert.equal(controller.includes('stateSync.markCurrent(store);\n  scheduleLayoutRender();'), false, 'ordinary technique commands must not unconditionally rebuild the full grid');
+assert.equal(controller.includes('stateSync.markCurrent(store);\n  scheduleLayoutRender();'), false, 'commands must not bypass ChangeSet-driven layout invalidation');
+assert.equal(inputController.includes('layoutDirty'), false, 'ordinary note input must not schedule adaptive layout on blur');
+assert.equal(gridRenderer.includes('renderAdaptiveRows'), true, 'adaptive wraps must render as first-class visual rows instead of stacked grids inside one row');
+assert.equal(structureController.includes('makeVisualRowLabel'), true, 'responsive continuation rows must have visible row identity without duplicating logical row controls');
 assert.equal(commands.includes("fret: '',\n        techniques"), false, 'harmonic commands must not erase the actual fretted note');
 assert.equal(notationRenderer.includes('const noteTargets = eventNoteNodes(systemElement, event)'), true, 'sweep notation must derive its span from actual event notes');
 assert.equal(notationRenderer.includes("String(grid.dataset.measureIds || '')"), true, 'notation must consume the renderer layout measure IDs directly');

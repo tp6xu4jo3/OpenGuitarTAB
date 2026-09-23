@@ -157,23 +157,23 @@ function openMenu(target, x, y) {
   menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
 }
 
-function makeRowHandle(rowIndex) {
+function makeRowHandle(rowIndex, visualRowIndex = rowIndex) {
   const handle = document.createElement('div');
   handle.className = 'system-label row-module-handle';
   handle.draggable = true;
   handle.dataset.row = String(rowIndex);
-  handle.setAttribute('aria-label', `第 ${rowIndex + 1} 列，可拖曳排序`);
+  handle.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列，可拖曳其來源列排序`);
   const grip = document.createElement('span');
   grip.className = 'row-drag-grip';
   grip.textContent = '⠿';
   const label = document.createElement('span');
   label.className = 'row-module-label';
-  label.textContent = `第 ${rowIndex + 1} 列`;
+  label.textContent = `第 ${visualRowIndex + 1} 列`;
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'row-module-more';
   more.textContent = '…';
-  more.setAttribute('aria-label', `第 ${rowIndex + 1} 列操作`);
+  more.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列操作`);
   more.addEventListener('click', event => {
     event.stopPropagation();
     const rect = more.getBoundingClientRect();
@@ -188,6 +188,17 @@ function makeRowHandle(rowIndex) {
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   });
   return handle;
+}
+
+function makeVisualRowLabel(visualRowIndex) {
+  const label = document.createElement('div');
+  label.className = 'system-label visual-row-handle';
+  label.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列，自動換行`);
+  const text = document.createElement('span');
+  text.className = 'row-module-label';
+  text.textContent = `第 ${visualRowIndex + 1} 列`;
+  label.appendChild(text);
+  return label;
 }
 
 function boundaryPercent(grid, localBoundary) {
@@ -253,17 +264,24 @@ function decorateEditor() {
   if (!tabArea) return;
   tabArea.querySelectorAll('.row-insert-zone').forEach(node => node.remove());
   const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
+  let logicalRowCount = 0;
 
-  systems.forEach((system, rowIndex) => {
+  systems.forEach((system, visualRowIndex) => {
+    const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
+    const sourceStart = system.dataset.sourceStart !== 'false';
+    if (!Number.isInteger(rowIndex)) return;
+    logicalRowCount = Math.max(logicalRowCount, rowIndex + 1);
+
     system.classList.add('editor-row-module');
     system.dataset.row = String(rowIndex);
-    system.querySelector('.row-module-handle')?.remove();
+    system.dataset.visualRow = String(visualRowIndex);
+    system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
     system.querySelector('.layout-rail-placeholder')?.remove();
-    system.prepend(makeRowHandle(rowIndex));
+    system.prepend(sourceStart ? makeRowHandle(rowIndex, visualRowIndex) : makeVisualRowLabel(visualRowIndex));
     system.querySelectorAll('.tab-grid').forEach(grid => addMeasureUi(grid, rowIndex));
-    tabArea.insertBefore(makeInsertZone(rowIndex), system);
+    if (sourceStart) tabArea.insertBefore(makeInsertZone(rowIndex), system);
   });
-  tabArea.appendChild(makeInsertZone(systems.length));
+  tabArea.appendChild(makeInsertZone(logicalRowCount));
   if (selected) setSelected(selected);
 }
 

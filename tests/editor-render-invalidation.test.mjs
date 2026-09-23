@@ -57,24 +57,36 @@ function apply(command) {
     noteId: 'n-a',
     technique: { type: 'harmonic' }
   });
-  assert.equal(harmonic.changeSet.layoutFrom, null, 'harmonic is notation-only and must not invalidate the full grid layout');
+  assert.equal(harmonic.changeSet.layoutFrom, 'm-technique', 'technique insertion may change notation spacing and should recompute layout once');
 
   const strum = apply({
     type: 'event/mark/add',
     eventId: 'e-chord',
     mark: { type: 'strum', direction: 'up' }
   });
-  assert.equal(strum.changeSet.layoutFrom, null, 'strum is notation-only and must not invalidate the full grid layout');
+  assert.equal(strum.changeSet.layoutFrom, 'm-technique', 'sweep notation may change spacing and should recompute layout once');
 
   const relation = apply({
     type: 'relation/add',
     relation: { type: 'slide', fromNoteId: 'n-a', toNoteId: 'n-next' }
   });
-  assert.equal(relation.changeSet.layoutFrom, null, 'slide/tie/slur relations must stay on the partial notation path');
+  assert.equal(relation.changeSet.layoutFrom, 'm-technique', 'relation notation may change spacing and should recompute layout once');
 
   const relationId = relation.document.relations[0].id;
   const removedRelation = apply({ type: 'relation/delete', relationId });
-  assert.equal(removedRelation.changeSet.layoutFrom, null, 'deleting a relation must stay on the partial notation path');
+  assert.equal(removedRelation.changeSet.layoutFrom, 'm-technique', 'deleting relation notation should recompute layout once');
+}
+
+{
+  const note = apply({
+    type: 'note/set',
+    measureId: 'm-technique',
+    at: [3, 1],
+    duration: [1, 4],
+    string: 1,
+    fret: '12'
+  });
+  assert.equal(note.changeSet.layoutFrom, null, 'ordinary note entry must never trigger a full adaptive layout render');
 }
 
 {

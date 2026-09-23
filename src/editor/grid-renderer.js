@@ -462,7 +462,8 @@ function updateRemoveRowButton() {
 
 function layoutAvailableWidth(tabArea) {
   const measured = Number(tabArea?.clientWidth) || Number(tabArea?.getBoundingClientRect?.().width) || 0;
-  return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + EDITOR_RAIL_WIDTH) - EDITOR_RAIL_WIDTH);
+  const railWidth = isScoreViewActive() ? 0 : EDITOR_RAIL_WIDTH;
+  return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + railWidth) - railWidth);
 }
 
 function fallbackSegments(rowIndex, count) {
@@ -481,6 +482,7 @@ function renderCompactScoreRows(tabArea, normalized, systems, compactLayout) {
   compactLayout.rows.forEach((visualRow, visualIndex) => {
     const line = makeDiv('score-density-line');
     line.dataset.scoreLine = String(visualIndex);
+    line.dataset.visualRow = String(visualIndex);
     line.dataset.measureCount = String(visualRow.measureCount);
 
     visualRow.segments.forEach(segment => {
@@ -491,12 +493,37 @@ function renderCompactScoreRows(tabArea, normalized, systems, compactLayout) {
         logicalSystem: logical,
         segments: [segment]
       });
+      system.dataset.sourceRow = String(rowIndex);
+      system.dataset.visualRow = String(visualIndex);
       system.classList.add('score-density-segment');
       system.style.setProperty('--score-density-weight', String(Math.max(1, segment.widthWeight || segment.minimumWidth || 1)));
       line.appendChild(system);
     });
 
     tabArea.appendChild(line);
+  });
+
+  return rowCount;
+}
+
+function renderAdaptiveRows(tabArea, normalized, systems, adaptive) {
+  const rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
+  const segments = adaptive?.systems || [];
+
+  segments.forEach((segment, visualIndex) => {
+    const rowIndex = segment.sourceSystemIndex;
+    const logical = systems?.[rowIndex] || [];
+    const next = segments[visualIndex + 1];
+    const system = createTabSystem(rowIndex, rowCount, {
+      rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
+      logicalSystem: logical,
+      segments: [segment]
+    });
+    system.dataset.sourceRow = String(rowIndex);
+    system.dataset.visualRow = String(visualIndex);
+    system.dataset.sourceStart = String(Number(segment.startMeasure || 0) === 0);
+    system.dataset.sourceEnd = String(!next || next.sourceSystemIndex !== rowIndex);
+    tabArea.appendChild(system);
   });
 
   return rowCount;
@@ -526,15 +553,16 @@ function renderRows(rows) {
 
   if (compactLayout) {
     rowCount = renderCompactScoreRows(tabArea, normalized, systems, compactLayout);
+  } else if (adaptive?.systems?.length) {
+    rowCount = renderAdaptiveRows(tabArea, normalized, systems, adaptive);
   } else {
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const logical = systems?.[rowIndex] || [];
       const measureCount = logical.length || rowMeasureCount(rowIndex, song);
-      const segments = adaptive?.systems.filter(system => system.sourceSystemIndex === rowIndex) || fallbackSegments(rowIndex, measureCount);
       tabArea.appendChild(createTabSystem(rowIndex, rowCount, {
         rowValues: normalized?.[rowIndex] || Array.from({ length: STRINGS }, () => []),
         logicalSystem: logical,
-        segments
+        segments: fallbackSegments(rowIndex, measureCount)
       }));
     }
   }
