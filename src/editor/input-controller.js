@@ -61,9 +61,9 @@ function flushDirtyUi() {
   window.editorPlayback?.invalidate?.();
 }
 
-function markDirty(input, rowIndex) {
+function markDirty(input, rowIndex, { compatibility = true } = {}) {
   dirtyInputs.add(input);
-  dirtyRows.add(rowIndex);
+  if (compatibility) dirtyRows.add(rowIndex);
   const grid = input.closest('.tab-grid');
   if (grid) dirtyGrids.add(grid);
   if (!editorFrame) editorFrame = requestAnimationFrame(flushDirtyUi);
@@ -105,7 +105,9 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   const rowIndex = Number(input.dataset.row);
   const stringIndex = Number(input.dataset.string);
   const position = Number(input.dataset.position);
-  if (!Number.isInteger(rowIndex) || !Number.isInteger(stringIndex) || !Number.isInteger(position)) return;
+  const v3Only = input.dataset.v3Only === 'true';
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(stringIndex)) return;
+  if (!v3Only && !Number.isInteger(position)) return;
 
   const store = getStore();
   const song = currentSongSafe();
@@ -113,22 +115,25 @@ function handleInput(event, { getStore, markStoreCurrent }) {
   const location = inputLocation(input, store, rowIndex, position);
   if (!location) return;
 
+  const duration = fractionFromDataset(input.dataset.duration) || [1, 4];
   store.dispatch({
     type: 'note/set',
     measureId: location.measureId,
     at: location.at,
-    duration: [1, 4],
+    duration,
     string: stringIndex,
     fret: normalized
   });
   markStoreCurrent(store);
 
-  const row = ensureCompatibilityRow(song, rowIndex);
-  if (!Array.isArray(row[stringIndex])) row[stringIndex] = [];
-  row[stringIndex][position] = normalized;
+  if (!v3Only) {
+    const row = ensureCompatibilityRow(song, rowIndex);
+    if (!Array.isArray(row[stringIndex])) row[stringIndex] = [];
+    row[stringIndex][position] = normalized;
+  }
 
   window.jumpToInput?.(input, false);
-  markDirty(input, rowIndex);
+  markDirty(input, rowIndex, { compatibility: !v3Only });
   if (previousDensity !== nextDensity) input.dataset.layoutDirty = 'true';
   if (normalized.length === 2) window.focusRelative?.(input, 0, 1);
 }
