@@ -1,5 +1,5 @@
 import { buildSystems, percentageForTime, timeFromPointerX } from './layout.js';
-import { cloneValue, fractionKey, normalizeDocumentV3 } from './model.js';
+import { cloneValue, fractionKey, normalizeDocumentV3, noteBaseFret, noteDisplayValue } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 
 function div(className) {
@@ -9,8 +9,7 @@ function div(className) {
 }
 
 function noteLabel(note) {
-  const harmonic = (note.techniques || []).some(technique => technique.type === 'harmonic');
-  return harmonic ? `<${note.fret}>` : String(note.fret ?? '');
+  return noteDisplayValue(note);
 }
 
 export class SparseScoreRenderer {
@@ -124,7 +123,7 @@ export class SparseScoreRenderer {
         noteNode.dataset.string = String(note.string);
         noteNode.style.top = `${((Number(note.string) + 0.5) / this.stringCount) * 100}%`;
         noteNode.textContent = noteLabel(note);
-        noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${note.fret} 品`);
+        noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${noteBaseFret(note)} 品`);
         eventNode.appendChild(noteNode);
       }
       staff.appendChild(eventNode);
