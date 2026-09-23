@@ -145,6 +145,8 @@ assert.equal(stateSync.includes('documentToLegacyProjection'), false, 'state syn
 assert.equal(stateSync.includes('window.renderRows'), false, 'state sync must call the renderer module directly');
 assert.equal(stateSync.includes('window.syncNoteInputBackground'), false, 'state sync must call presentation helpers directly');
 assert.equal(controller.includes('window.scheduleEditorLayout'), false, 'controller must call the layout scheduler directly');
+assert.equal(controller.includes('if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();'), true, 'tool commands must request a full grid render only for explicit layout invalidations');
+assert.equal(controller.includes('stateSync.markCurrent(store);\n  scheduleLayoutRender();'), false, 'ordinary technique commands must not unconditionally rebuild the full grid');
 assert.equal(commands.includes("fret: '',\n        techniques"), false, 'harmonic commands must not erase the actual fretted note');
 assert.equal(notationRenderer.includes('const noteTargets = eventNoteNodes(systemElement, event)'), true, 'sweep notation must derive its span from actual event notes');
 assert.equal(notationRenderer.includes("String(grid.dataset.measureIds || '')"), true, 'notation must consume the renderer layout measure IDs directly');

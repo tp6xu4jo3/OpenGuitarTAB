@@ -41,6 +41,8 @@ Technique tools are click-only. Clicking a tool activates it, a successful targe
 
 Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.
 
+`ChangeSet.measures` drives local notation updates. `ChangeSet.layoutFrom` is reserved for commands that change grid/time structure or measure/system structure. Harmonic, strum/arpeggio, slide, tie, slur, and their deletion paths must not rebuild the full production grid; triplet/32nd subdivision, tuplet-group grid changes, measure content replacement, and structural edits must invalidate layout explicitly.
+
 ## Playback and audio
 
 - `playback-index.js` — builds an event timeline directly from V3 fractions.

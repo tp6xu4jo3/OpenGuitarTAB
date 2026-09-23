@@ -57,7 +57,7 @@ function dispatchCommand(command) {
   if (!store) return { document: null, changeSet: createChangeSet() };
   const result = store.dispatch(command);
   stateSync.markCurrent(store);
-  scheduleLayoutRender();
+  if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();
   return result;
 }
 
