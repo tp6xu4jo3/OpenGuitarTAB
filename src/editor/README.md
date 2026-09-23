@@ -35,7 +35,7 @@ Technique tools are click-only. Clicking a tool activates it, a successful targe
 - `grid-renderer.js` — current production TAB grid and adaptive visual-system composition. It does not own keyboard navigation or projection rules.
 - `grid-geometry.js` — shared measure-width and time-position geometry used by grid rendering, playback, structure UI, and presentation.
 - `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
-- `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations.
+- `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations. Relations are Note-ID based; adaptive line/system breaks render continuation segments at grid edges instead of storing or connecting stale screen coordinates.
 - `layout.js` — the shared adaptive V3 layout engine for edit and score views.
 - `presentation.js` — note backgrounds and density fitting.
 

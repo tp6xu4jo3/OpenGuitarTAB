@@ -16,6 +16,7 @@ const layout = read('src/editor/layout.js');
 const notationRenderer = read('src/editor/notation-renderer.js');
 const playbackController = read('src/editor/playback-controller.js');
 const rhythmGrid = read('src/editor/rhythm-grid.js');
+const relationRenderer = read('src/editor/relation-renderer.js');
 const stateSync = read('src/editor/state-sync.js');
 const techniqueRules = read('src/editor/technique-rules.js');
 const structureController = read('src/editor/structure-controller.js');
@@ -118,6 +119,10 @@ assert.equal(notationRenderer.includes('notation-harmonic-label'), true, 'artifi
 assert.equal(notationRenderer.includes('notation-arpeggio'), true, 'arpeggio must use a dedicated notation symbol');
 assert.equal(editorTools.includes('.notation-relation-preview'), true, 'pair preview must stay in the noninteractive notation layer');
 assert.equal(editorTools.includes('pointer-events: none'), true, 'notation relations must not block score inputs');
+assert.equal(relationRenderer.includes("relationGrid(fromNode)"), true, 'relation renderer must detect adaptive line boundaries from rendered grids');
+assert.equal(relationRenderer.includes("edgePoint(fromGrid, systemElement, 'right'"), true, 'relation source must continue to the right grid edge across a break');
+assert.equal(relationRenderer.includes("edgePoint(toGrid, systemElement, 'left'"), true, 'relation target must continue from the left grid edge across a break');
+assert.equal(relationRenderer.includes("locations.some(location => !location || !measureSet.has(location.measureId))"), false, 'cross-system relations must not be discarded when one endpoint is outside the current system');
 assert.equal(techniqueRules.includes("same string"), false, 'music-rule messages stay localized rather than leaking implementation comments');
 assert.equal(notationRenderer.includes('delete input.dataset.measureId'), false, 'notation sync must preserve measure/time metadata for empty column and range targets');
 assert.equal(tools.includes("'rhythm/triplet/apply'"), true, 'triplet tool must dispatch a regional rhythm transform');
