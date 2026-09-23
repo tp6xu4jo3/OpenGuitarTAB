@@ -4,12 +4,12 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '泛音',
     glyph: '◇',
     target: 'note',
-    hint: '拖到單一音符',
-    command(target, options = {}) {
+    hint: '套用人工泛音',
+    command(target) {
       return {
         type: 'note/technique/add',
         noteId: target.noteId,
-        technique: { type: 'harmonic', kind: options.kind || 'natural' }
+        technique: { type: 'harmonic' }
       };
     }
   },
