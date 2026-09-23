@@ -17,22 +17,24 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 ## Controllers
 
 - `controller.js` — composition root for Store, Clipboard, Tools, and renderer factory. Keep this file orchestration-only.
-- `input-controller.js` — note input and keyboard interaction. Input dispatches V3 commands first; compatibility rows are only updated for the current grid view.
-- `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and drag/drop.
+- `tool-session.js` — click-only tool state machine. It owns `idle -> selected -> selecting target -> commit -> idle` state and the Note/Column/NotePair/Range target shapes.
+- `input-controller.js` — note input and keyboard interaction. Arrow keys remain score navigation; tool selection must not intercept them.
+- `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
 - `view-state.js` — edit/score/preview mode state.
 - `playback-controller.js` — playback UI state and event scheduling.
 - `song-actions.js` — editor Save and Publish actions.
 
+Technique tools are click-only. Clicking a tool activates it, a successful target command returns the session to idle, invalid targets keep the tool active, and Escape or clicking the active tool again cancels it. Structure drag/drop remains a separate editor interaction.
+
 ## Rendering and layout
 
-- `grid-renderer.js` — current production TAB grid, rhythm notation, keyboard navigation, and row metrics.
+- `grid-renderer.js` — current production TAB grid, rhythm notation, keyboard navigation, row metrics, and adaptive visual systems.
 - `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
 - `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations.
-- `layout.js` — pure V3 system and time layout helpers.
-- `responsive-score-layout.js` — responsive/score presentation rules around the production grid.
+- `layout.js` — the shared adaptive V3 layout engine for edit and score views.
 - `presentation.js` — note backgrounds and density fitting.
 
-Rendering must not become a data source. DOM scanning is not a persistence path.
+Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.
 
 ## Playback and audio
 
@@ -44,7 +46,8 @@ Playback must read V3 Events, never legacy slots or `.note-input` values.
 
 ## Tools and notation
 
-- `tools.js` — Tool Registry and drag payloads.
+- `tools.js` — Tool Registry metadata and command factories. It contains no drag payload transport.
+- `tool-session.js` — interaction state only; it never writes song data.
 - note-local behavior belongs in `note.techniques`.
 - event-local notation belongs in `event.marks`.
 - grouped rhythm belongs in `measure.groups`.
