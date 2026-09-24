@@ -7,7 +7,11 @@ import {
   canUnlistSong,
   canDeleteSong
 } from '../src/core/song-permissions.js';
-
+import {
+  aggregateCatalogWorks,
+  createCatalogId,
+  ensureArrangementIdentity
+} from '../src/catalog/work-model.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -15,6 +19,8 @@ const SESSION_COOKIE = 'opentab_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const SONG_FIELD_ORDER = [
   'id',
+  'workId',
+  'arrangementId',
   'name',
   'tempo',
   'capo',
@@ -294,7 +300,7 @@ function authoritativeSong(song, file, folderId) {
   delete meta.sourceUser;
   delete meta.sourceFileId;
   source._opentab = meta;
-  return source;
+  return ensureArrangementIdentity(source, { fileId: file.id });
 }
 
 function isManagedSong(song, file, folderId) {
@@ -315,10 +321,12 @@ function attachFileMeta(song, file) {
 }
 
 function catalogMeta(song, file) {
-  const enriched = song || {};
+  const enriched = ensureArrangementIdentity(song, { fileId: file.id });
   const owner = songOwner(enriched);
   return {
     id: String(enriched.id || file.id),
+    workId: enriched.workId,
+    arrangementId: enriched.arrangementId,
     name: enriched.name || file.name.replace(/\.json$/i, ''),
     artist: enriched.artist,
     album: enriched.album,
@@ -339,10 +347,12 @@ function catalogMeta(song, file) {
 }
 
 export function cleanSongForWrite(song, meta) {
-  const input = song && typeof song === 'object' && !Array.isArray(song) ? structuredClone(song) : {};
+  const input = ensureArrangementIdentity(song);
   const beatsPerMeasure = Number(input.beatsPerMeasure) === 3 ? 3 : 4;
   const defaults = {
     id: String(input.id || `song-${Date.now().toString(36)}`),
+    workId: input.workId,
+    arrangementId: input.arrangementId,
     name: String(input.name || '未命名曲譜'),
     tempo: Number(input.tempo) || 120,
     capo: Number.isFinite(Number(input.capo)) ? Number(input.capo) : 0,
@@ -445,6 +455,14 @@ async function managedPublicEntries({ full = false } = {}) {
     .sort((a, b) => String(b._driveModifiedTime || '').localeCompare(String(a._driveModifiedTime || '')));
 }
 
+async function managedPublicCatalog() {
+  const songs = await managedPublicEntries();
+  return {
+    works: aggregateCatalogWorks(songs),
+    songs
+  };
+}
+
 async function userLibrary(session) {
   if (session.role === 'admin') {
     const [publicEntries, testEntries] = await Promise.all([
@@ -539,6 +557,7 @@ async function clonePublicToTest(fileId, session) {
   delete copy._driveFileName;
   delete copy._driveModifiedTime;
   copy.id = `song-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+  copy.arrangementId = createCatalogId('arr');
   copy.createdAt = Date.now();
   copy.updatedAt = Date.now();
   const meta = {
@@ -581,7 +600,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'catalog' && req.method === 'GET') {
-      return json(res, 200, { songs: await managedPublicEntries() });
+      return json(res, 200, await managedPublicCatalog());
     }
 
     if (action === 'catalog-song' && req.method === 'GET') {
