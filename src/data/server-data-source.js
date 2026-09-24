@@ -33,8 +33,15 @@ export class ServerDataSource {
     let payload = {};
     try { payload = await response.json(); } catch {}
     if (response.ok) return payload;
-    const error = new Error(payload?.error || `API_${response.status}`);
+
+    const mitigation = String(response.headers?.get?.('x-vercel-mitigated') || '').toLowerCase();
+    const code = response.status === 429 && mitigation === 'challenge'
+      ? 'VERCEL_SECURITY_CHALLENGE'
+      : payload?.error || `API_${response.status}`;
+    const error = new Error(code);
+    error.code = code;
     error.status = response.status;
+    error.mitigation = mitigation;
     throw error;
   }
 

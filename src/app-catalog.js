@@ -4,6 +4,8 @@ const sidebar = document.getElementById('sidebar');
 const mobileQuery = window.matchMedia('(max-width: 980px)');
 let catalogBrowser = null;
 let libraryBrowser = null;
+let catalogLoadError = '';
+let libraryLoadError = '';
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -19,6 +21,17 @@ function closeMobileMenu() { setMobileMenuOpen(false); }
 function setRoute(hash) {
   if (location.hash === hash) handleRoute();
   else location.hash = hash;
+}
+
+function dataSourceLoadErrorMessage(error, subject) {
+  if (error?.message === 'VERCEL_SECURITY_CHALLENGE') {
+    return `Vercel 安全檢查暫時阻擋${subject} API，請稍後再試或檢查 Firewall / Attack Mode。`;
+  }
+  if (error?.status === 429) return `${subject}服務暫時受到流量限制，請稍後再試。`;
+  if (dataSource.isLocalTest && String(error?.message || '').startsWith('TEST_FIXTURE_')) {
+    return `GitHub Test ${subject} fixture 載入失敗，請確認 Pages 使用 build:test-pages 或已發布 test-data/pages。`;
+  }
+  return `${subject}載入失敗，請稍後再試。`;
 }
 
 function showPage(page) {
@@ -237,7 +250,8 @@ function ensureSongBrowsers() {
 
 function renderCatalog() {
   ensureSongBrowsers();
-  catalogBrowser.setWorks(catalogWorks);
+  if (catalogLoadError) catalogBrowser.setError(catalogLoadError);
+  else catalogBrowser.setWorks(catalogWorks);
 }
 
 function renderLibraryGrid() {
@@ -246,19 +260,21 @@ function renderLibraryGrid() {
     libraryBrowser.setWorks([]);
     return;
   }
-  libraryBrowser.setWorks(worksFromSongs(songs));
+  if (libraryLoadError) libraryBrowser.setError(libraryLoadError);
+  else libraryBrowser.setWorks(worksFromSongs(songs));
 }
 
 async function loadCatalog() {
   try {
     const result = await dataSource.catalog();
     catalogWorks = Array.isArray(result.works) ? result.works : [];
+    catalogLoadError = '';
     renderCatalog();
   } catch (error) {
     console.error(error);
     catalogWorks = [];
+    catalogLoadError = dataSourceLoadErrorMessage(error, '公共曲譜');
     renderCatalog();
-    catalogCount.textContent = '';
   }
 }
 
@@ -267,6 +283,7 @@ async function loadUserLibrary() {
   if (!user) {
     songs = [];
     currentSongId = null;
+    libraryLoadError = '';
     renderSongList();
     renderLibraryGrid();
     return;
@@ -274,6 +291,7 @@ async function loadUserLibrary() {
   try {
     const result = await dataSource.library();
     songs = (Array.isArray(result.songs) ? result.songs : []).map(hydrateSong);
+    libraryLoadError = '';
     if (!songs.some(song => song.id === currentSongId)) currentSongId = songs[0]?.id || null;
     const hint = document.getElementById('libraryStorageHint');
     if (hint) {
@@ -289,6 +307,7 @@ async function loadUserLibrary() {
     console.error(error);
     songs = [];
     currentSongId = null;
+    libraryLoadError = dataSourceLoadErrorMessage(error, '個人曲譜');
     renderSongList();
     renderLibraryGrid();
   }
@@ -417,6 +436,7 @@ window.addEventListener('opentab:auth-changed', async event => {
     songs = [];
     currentSongId = null;
     previewSong = null;
+    libraryLoadError = '';
     renderSongList();
     renderLibraryGrid();
     renderCatalog();
