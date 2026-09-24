@@ -35,15 +35,21 @@
 
     <section class="page-view catalog-view" id="catalogView" aria-label="公共曲庫">
       <div class="catalog-hero">
-        <div><p class="eyebrow">OPEN TAB LIBRARY</p><h1>找到想彈的歌，直接開始看譜。</h1><p class="catalog-lead">公共曲譜以唯讀方式提供預覽，登入後可以加入自己的曲譜櫃。</p></div>
+        <div class="catalog-hero-copy"><p class="eyebrow">OPEN TAB LIBRARY</p><h1>找到想彈的歌，直接開始看譜。</h1><p class="catalog-lead">公共曲譜以唯讀方式提供預覽，登入後可以加入自己的曲譜櫃。</p></div>
         <label class="catalog-search"><span>⌕</span><input id="catalogSearchInput" type="search" placeholder="搜尋曲名或作者" autocomplete="off" /></label>
       </div>
-      <div class="catalog-section-head"><div><p class="eyebrow">PUBLIC CATALOG</p><h2>公共曲譜</h2></div><span class="catalog-count" id="catalogCount"></span></div>
+      <div class="catalog-section-head"><h2>公共曲譜</h2><span class="catalog-count" id="catalogCount"></span></div>
       <div class="song-card-grid" id="catalogGrid"></div>
     </section>
 
     <section class="page-view library-view" id="libraryView" hidden aria-label="個人曲譜櫃">
-      <div class="library-hero"><p class="eyebrow">YOUR LIBRARY</p><h1>個人曲譜櫃</h1><p id="libraryStorageHint">登入後從Google Drive載入你的曲譜。</p><button class="primary-action" id="libraryNewSongButton" type="button">＋ 新增曲譜</button></div>
+      <div class="library-hero">
+        <div class="library-hero-copy"><p class="eyebrow">YOUR LIBRARY</p><h1>個人曲譜櫃</h1><p id="libraryStorageHint">登入後從Google Drive載入你的曲譜。</p></div>
+        <div class="library-hero-controls">
+          <label class="catalog-search library-search"><span>⌕</span><input id="librarySearchInput" type="search" placeholder="搜尋曲名或作者" autocomplete="off" /></label>
+          <button class="primary-action" id="libraryNewSongButton" type="button">＋ 新增曲譜</button>
+        </div>
+      </div>
       <div class="song-card-grid" id="libraryGrid"></div>
     </section>
 
