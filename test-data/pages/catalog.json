@@ -1,0 +1,22 @@
+{
+  "songs": [
+    {
+      "id": "song-kikujirononatsu-20260922",
+      "name": "Summer",
+      "artist": "久石讓",
+      "album": "菊次郎の夏",
+      "source": "浪淘沙",
+      "playStyle": "fingerstyle",
+      "difficulty": 3,
+      "tempo": 90,
+      "capo": 2,
+      "beatsPerMeasure": 4,
+      "owner": "admin",
+      "uploadedBy": "admin",
+      "public": true,
+      "_driveFileId": "pages-summer",
+      "_driveFileName": "pages-summer.json",
+      "_driveModifiedTime": "static-test"
+    }
+  ]
+}

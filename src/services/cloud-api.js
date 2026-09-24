@@ -1,3 +1,5 @@
+import { isGitHubPagesPreview, pagesPreviewRequest } from './pages-preview-source.js';
+
 const CATALOG_CACHE_TTL_MS = 5_000;
 
 let catalogCacheValue = null;
@@ -15,6 +17,10 @@ function apiUrl(action, params = {}) {
 }
 
 async function request(action, { method = 'GET', body, params } = {}) {
+  if (isGitHubPagesPreview(window.location.hostname)) {
+    return pagesPreviewRequest(action, { method, params });
+  }
+
   const response = await fetch(apiUrl(action, params), {
     method,
     credentials: 'same-origin',
