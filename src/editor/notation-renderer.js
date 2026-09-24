@@ -229,6 +229,16 @@ export class NotationRenderer {
         const top = notePoints.length ? Math.min(...notePoints.map(point => point.y)) - 5 : anchor.y - 5;
         const bottom = notePoints.length ? Math.max(...notePoints.map(point => point.y)) + 5 : anchor.y + 5;
 
+        if (event.chord?.symbol) {
+          appendText(svg, {
+            x: anchor.x,
+            y: Math.max(14, top - 22),
+            text: String(event.chord.symbol),
+            className: 'notation-chord-symbol',
+            eventId: event.id
+          });
+        }
+
         for (const mark of event.marks || []) {
           if (mark.type === 'strum') {
             appendStraightSweep(svg, { x: anchor.x - 14, top, bottom, direction: mark.direction === 'up' ? 'up' : 'down', eventId: event.id });

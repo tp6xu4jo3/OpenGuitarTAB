@@ -1,15 +1,15 @@
+import {
+  CHORD_CATEGORIES,
+  CHORD_LIBRARY,
+  CHORD_ROOTS,
+  chordsForRoot,
+  voicingText
+} from './chord-library.js';
+
 export const RIBBON_SECTIONS = Object.freeze({
   TECHNIQUE: 'technique',
   CHORD: 'chord'
 });
-
-export const CHORD_CATEGORY_SHELLS = Object.freeze([
-  { id: 'major', label: '大調' },
-  { id: 'minor', label: '小調' },
-  { id: 'dominant', label: '屬和弦' },
-  { id: 'suspended', label: '掛留' },
-  { id: 'other', label: '其他' }
-]);
 
 const VALID_SECTIONS = new Set(Object.values(RIBBON_SECTIONS));
 
@@ -30,18 +30,23 @@ function button(className, label) {
 export class EditorRibbon {
   constructor({
     toolDefinitions = [],
+    chordLibrary = CHORD_LIBRARY,
     onToolSelect = null,
     onSectionChange = null
   } = {}) {
     this.toolDefinitions = [...toolDefinitions];
+    this.chordLibrary = [...chordLibrary];
     this.onToolSelect = onToolSelect;
     this.onSectionChange = onSectionChange;
     this.activeSection = null;
     this.activeToolId = null;
+    this.selectedChordRoot = CHORD_ROOTS[0]?.id || 'C';
     this.root = null;
     this.panel = null;
+    this.chordChoices = null;
     this.tabButtons = new Map();
     this.sections = new Map();
+    this.chordRootButtons = new Map();
     this.handleClick = this.handleClick.bind(this);
   }
 
@@ -86,8 +91,10 @@ export class EditorRibbon {
     this.root?.remove();
     this.root = null;
     this.panel = null;
+    this.chordChoices = null;
     this.tabButtons.clear();
     this.sections.clear();
+    this.chordRootButtons.clear();
   }
 
   createTab(section, label) {
@@ -139,19 +146,81 @@ export class EditorRibbon {
     section.setAttribute('role', 'tabpanel');
     section.hidden = true;
 
-    const categories = document.createElement('div');
-    categories.className = 'editor-chord-category-shells';
-    categories.setAttribute('aria-label', '和弦分類');
-    CHORD_CATEGORY_SHELLS.forEach(category => {
-      const item = document.createElement('span');
-      item.className = 'editor-chord-category-shell';
-      item.dataset.chordCategory = category.id;
-      item.textContent = category.label;
-      categories.appendChild(item);
+    const roots = document.createElement('div');
+    roots.className = 'editor-chord-roots';
+    roots.setAttribute('aria-label', '和弦根音');
+    CHORD_ROOTS.forEach(root => {
+      const rootButton = button('editor-chord-root', root.label);
+      rootButton.dataset.chordRoot = root.id;
+      rootButton.setAttribute('aria-pressed', String(root.id === this.selectedChordRoot));
+      this.chordRootButtons.set(root.id, rootButton);
+      roots.appendChild(rootButton);
     });
-    section.appendChild(categories);
+
+    const choices = document.createElement('div');
+    choices.className = 'editor-chord-choices';
+    choices.setAttribute('aria-label', '和弦庫');
+    this.chordChoices = choices;
+    section.append(roots, choices);
     this.sections.set(RIBBON_SECTIONS.CHORD, section);
+    this.renderChordChoices();
     return section;
+  }
+
+  renderChordChoices() {
+    if (!this.chordChoices) return;
+    const chords = this.chordLibrary === CHORD_LIBRARY
+      ? chordsForRoot(this.selectedChordRoot)
+      : this.chordLibrary.filter(chord => chord.root === this.selectedChordRoot);
+    const fragment = document.createDocumentFragment();
+
+    CHORD_CATEGORIES.forEach(category => {
+      const categoryChords = chords.filter(chord => chord.category === category.id);
+      if (!categoryChords.length) return;
+      const group = document.createElement('div');
+      group.className = 'editor-chord-category';
+      group.dataset.chordCategory = category.id;
+
+      const label = document.createElement('span');
+      label.className = 'editor-chord-category-label';
+      label.textContent = category.label;
+      group.appendChild(label);
+
+      const items = document.createElement('div');
+      items.className = 'editor-chord-items';
+      categoryChords.forEach(chord => {
+        const voicing = chord.voicings[0];
+        if (!voicing) return;
+        const chordButton = button('editor-chord-button', chord.symbol);
+        chordButton.draggable = true;
+        chordButton.dataset.chordId = chord.id;
+        chordButton.dataset.voicingId = voicing.id;
+        chordButton.title = `${chord.symbol} · ${voicingText(voicing.frets)}`;
+        chordButton.setAttribute('aria-label', `${chord.symbol}，指型 ${voicingText(voicing.frets)}，拖曳到譜面時間位置`);
+        items.appendChild(chordButton);
+      });
+      group.appendChild(items);
+      fragment.appendChild(group);
+    });
+
+    this.chordChoices.replaceChildren(fragment);
+    this.syncChordRoots();
+  }
+
+  syncChordRoots() {
+    this.chordRootButtons.forEach((rootButton, rootId) => {
+      const active = rootId === this.selectedChordRoot;
+      rootButton.classList.toggle('is-active', active);
+      rootButton.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  setChordRoot(rootId) {
+    const requested = CHORD_ROOTS.some(root => root.id === rootId) ? rootId : this.selectedChordRoot;
+    if (requested === this.selectedChordRoot) return this.selectedChordRoot;
+    this.selectedChordRoot = requested;
+    this.renderChordChoices();
+    return this.selectedChordRoot;
   }
 
   handleClick(event) {
@@ -159,6 +228,12 @@ export class EditorRibbon {
     if (tab && this.root?.contains(tab)) {
       event.preventDefault();
       this.toggle(tab.dataset.ribbonSection);
+      return;
+    }
+    const root = event.target.closest?.('[data-chord-root]');
+    if (root && this.root?.contains(root)) {
+      event.preventDefault();
+      this.setChordRoot(root.dataset.chordRoot);
       return;
     }
     const tool = event.target.closest?.('[data-editor-tool]');
@@ -205,7 +280,11 @@ export class EditorRibbon {
   }
 
   state() {
-    return { activeRibbon: this.activeSection, activeToolId: this.activeToolId };
+    return {
+      activeRibbon: this.activeSection,
+      activeToolId: this.activeToolId,
+      chordRoot: this.selectedChordRoot
+    };
   }
 
   sync() {
@@ -224,6 +303,7 @@ export class EditorRibbon {
     this.sections.forEach((panel, section) => {
       panel.hidden = section !== this.activeSection;
     });
+    this.syncChordRoots();
     this.setActiveTool(this.activeToolId);
   }
 }

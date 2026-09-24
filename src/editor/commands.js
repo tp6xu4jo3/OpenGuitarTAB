@@ -1,3 +1,4 @@
+import { getChordById, getChordVoicing, notesForVoicing } from './chord-library.js';
 import {
   ARTIFICIAL_HARMONIC_OFFSET,
   cloneValue,
@@ -147,23 +148,73 @@ function noteSet(document, command, idFactory) {
   if (eventIndex >= 0) {
     const event = { ...measure.events[eventIndex], notes: cloneValue(measure.events[eventIndex].notes || []) };
     const noteIndex = event.notes.findIndex(note => Number(note.string) === string);
+    let pitchChanged = false;
     if (fret === '') {
       if (noteIndex >= 0) {
         removedNotes.add(String(event.notes[noteIndex].id));
         event.notes.splice(noteIndex, 1);
+        pitchChanged = true;
       }
     } else if (noteIndex >= 0) {
+      if (String(event.notes[noteIndex].fret ?? '') !== fret || harmonicTechnique(event.notes[noteIndex])) pitchChanged = true;
       event.notes[noteIndex] = setExistingNoteFret(event.notes[noteIndex], fret);
     } else {
       event.notes.push({ id: idFactory('n'), string, fret, techniques: [] });
       event.notes.sort((left, right) => Number(left.string) - Number(right.string));
+      pitchChanged = true;
     }
 
+    if (pitchChanged) delete event.chord;
     if (event.notes.length) event.rhythmOnly = false;
     else if (event.rhythmAnchor) event.rhythmOnly = true;
 
     if (!event.notes.length && !(event.marks || []).length && !event.rhythmAnchor) measure.events.splice(eventIndex, 1);
     else measure.events[eventIndex] = event;
+  }
+
+  let next = withMeasure(document, measureIndex, measure);
+  const pruned = pruneRelationsForMissingNotes(next, removedNotes);
+  if (pruned.relations !== next.relations) next = { ...next, relations: pruned.relations };
+  return {
+    document: next,
+    changeSet: changedMeasure(measure.id, { relations: pruned.removedRelationIds })
+  };
+}
+
+function applyChord(document, command, idFactory) {
+  const chord = getChordById(command.chordId);
+  const voicing = chord ? getChordVoicing(chord.id, command.voicingId) : null;
+  if (!chord || !voicing) return { document, changeSet: createChangeSet() };
+  const measureIndex = findMeasureIndex(document, command.measureId);
+  if (measureIndex < 0) return { document, changeSet: createChangeSet() };
+
+  const measure = cloneValue(document.measures[measureIndex]);
+  const at = normalizeFraction(command.at, [0, 1]);
+  let eventIndex = eventAt(measure, at);
+  const removedNotes = new Set();
+  const notes = notesForVoicing(voicing).map(note => ({ ...note, id: idFactory('n') }));
+  if (!notes.length) return { document, changeSet: createChangeSet() };
+
+  if (eventIndex < 0) {
+    measure.events.push({
+      id: idFactory('e'),
+      at,
+      duration: normalizeFraction(command.duration, [1, 4]),
+      notes,
+      marks: [],
+      chord: { symbol: chord.symbol, voicingId: voicing.id }
+    });
+    sortEvents(measure.events);
+  } else {
+    const sourceEvent = measure.events[eventIndex];
+    for (const note of sourceEvent.notes || []) removedNotes.add(String(note.id));
+    measure.events[eventIndex] = {
+      ...sourceEvent,
+      duration: normalizeFraction(sourceEvent.duration, normalizeFraction(command.duration, [1, 4])),
+      notes,
+      chord: { symbol: chord.symbol, voicingId: voicing.id },
+      rhythmOnly: false
+    };
   }
 
   let next = withMeasure(document, measureIndex, measure);
@@ -216,6 +267,7 @@ function deleteNote(document, noteId) {
       const measure = cloneValue(sourceMeasure);
       const event = measure.events[eventIndex];
       event.notes.splice(noteIndex, 1);
+      delete event.chord;
       if (!event.notes.length && !(event.marks || []).length) measure.events.splice(eventIndex, 1);
       let next = withMeasure(document, measureIndex, measure);
       const pruned = pruneRelationsForMissingNotes(next, new Set([String(noteId)]));
@@ -470,6 +522,8 @@ export function applyCommand(inputDocument, command, { idFactory = createId } = 
       return noteSet(document, command, idFactory);
     case 'note/delete':
       return deleteNote(document, String(command.noteId || ''));
+    case 'chord/apply':
+      return applyChord(document, command, idFactory);
     case 'note/technique/add':
       return addTechnique(document, command, idFactory);
     case 'technique/delete':

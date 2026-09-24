@@ -9,6 +9,7 @@ import {
 } from './core/song-permissions.js';
 import { APP_CONFIG } from './config/app-config.js';
 import { installAudioEngine } from './editor/audio-engine.js';
+import { installChordDragController } from './editor/chord-drag-controller.js';
 import { installEditorV3 } from './editor/controller.js';
 import { ensureSongDocumentV3 } from './editor/migrate-v2.js';
 import { createBlankDocumentV3 } from './editor/model.js';
@@ -66,5 +67,6 @@ installPlaybackController();
 installEditorSongActions();
 installSongImport();
 installEditorV3();
+installChordDragController();
 installStructureController();
 await loadClassicScriptsInOrder(APP_SCRIPTS);

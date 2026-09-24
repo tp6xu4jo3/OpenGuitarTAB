@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { CHORD_CATEGORY_SHELLS, nextRibbonSection, RIBBON_SECTIONS } from '../src/editor/ribbon.js';
+import { CHORD_CATEGORIES, CHORD_LIBRARY, CHORD_ROOTS } from '../src/editor/chord-library.js';
+import { nextRibbonSection, RIBBON_SECTIONS } from '../src/editor/ribbon.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,17 +9,24 @@ assert.equal(nextRibbonSection(RIBBON_SECTIONS.TECHNIQUE, RIBBON_SECTIONS.TECHNI
 assert.equal(nextRibbonSection(RIBBON_SECTIONS.TECHNIQUE, RIBBON_SECTIONS.CHORD), RIBBON_SECTIONS.CHORD, 'clicking another section must switch directly');
 assert.equal(nextRibbonSection(RIBBON_SECTIONS.CHORD, RIBBON_SECTIONS.TECHNIQUE), RIBBON_SECTIONS.TECHNIQUE);
 assert.equal(nextRibbonSection(null, 'unknown'), null);
-assert.deepEqual(CHORD_CATEGORY_SHELLS.map(item => item.id), ['major', 'minor', 'dominant', 'suspended', 'other']);
+assert.deepEqual(CHORD_CATEGORIES.map(item => item.id), ['major', 'minor', 'dominant', 'suspended', 'other']);
+assert.equal(CHORD_ROOTS.length, 12);
+assert.equal(CHORD_LIBRARY.length, 216);
 
 const root = new URL('..', import.meta.url).pathname;
 const controller = readFileSync(join(root, 'src/editor/controller.js'), 'utf8');
+const ribbon = readFileSync(join(root, 'src/editor/ribbon.js'), 'utf8');
 const styles = readFileSync(join(root, 'styles/editor-tools.css'), 'utf8');
 
 assert.match(controller, /new EditorRibbon/);
 assert.match(controller, /RIBBON_SECTIONS\.TECHNIQUE/);
 assert.doesNotMatch(controller, /editor-toolbox|toolboxCollapsed|setToolboxCollapsed|ensureToolPalette|syncToolPalette/);
+assert.match(ribbon, /data\.chordId|dataset\.chordId/);
+assert.match(ribbon, /draggable\s*=\s*true/);
+assert.match(ribbon, /editor-chord-root/);
 assert.match(styles, /\.editor-ribbon-tab/);
 assert.match(styles, /\.editor-ribbon-panel/);
+assert.match(styles, /\.editor-chord-button/);
 assert.doesNotMatch(styles, /\.editor-toolbox|\.note-input/);
 
 console.log('editor ribbon tests passed');
