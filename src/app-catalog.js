@@ -1,4 +1,4 @@
-let catalogMenuOpenFor = null;
+let expandedCatalogWorkId = null;
 
 const mobileMenuButton = document.getElementById('mobileMenuButton');
 const mobileMenuBackdrop = document.getElementById('mobileMenuBackdrop');
@@ -72,6 +72,54 @@ function markCatalogAddButtonAdded(button, { animate = false } = {}) {
   }
 }
 
+function catalogArrangements() {
+  return catalogWorks.flatMap(work => Array.isArray(work?.arrangements) ? work.arrangements : []);
+}
+
+function findCatalogArrangement(id) {
+  const key = String(id || '');
+  return catalogArrangements().find(arrangement =>
+    String(arrangement.arrangementId || arrangement.id || '') === key ||
+    String(arrangement.songId || '') === key
+  ) || null;
+}
+
+function playStyleLabel(playStyle) {
+  if (playStyle === 'fingerstyle') return '指彈';
+  if (playStyle === 'chord') return '和弦';
+  return '未設定';
+}
+
+function createCoverArt(item) {
+  const art = document.createElement('div');
+  art.className = 'song-card-art';
+  const fallbackArt = document.createElement('span');
+  fallbackArt.className = 'song-card-art-fallback';
+  fallbackArt.textContent = (item?.name || 'TAB').trim().slice(0, 2).toUpperCase();
+  art.appendChild(fallbackArt);
+  if (item?.cover) {
+    const image = document.createElement('img');
+    image.className = 'song-card-art-image';
+    image.src = item.cover;
+    image.alt = item.album ? `${item.album} 封面` : `${item.name || '曲譜'} 封面`;
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    image.addEventListener('load', () => art.classList.add('has-image'));
+    image.addEventListener('error', () => image.remove());
+    art.appendChild(image);
+  }
+  return art;
+}
+
+function createPlayStyleBadge(playStyle) {
+  if (!['fingerstyle', 'chord'].includes(playStyle)) return null;
+  const badge = document.createElement('span');
+  badge.className = `work-card-play-style is-${playStyle}`;
+  badge.textContent = playStyleLabel(playStyle);
+  return badge;
+}
+
 async function editCatalogSong(song) {
   if (!catalogSongCanManage(song)) return;
   let local = songs.find(item => String(item?._driveFileId || '') === String(song?._driveFileId || ''));
@@ -83,7 +131,6 @@ async function editCatalogSong(song) {
     showToast('找不到可編輯的原始曲譜');
     return;
   }
-  catalogMenuOpenFor = null;
   setRoute(`#/editor/${encodeURIComponent(local.id)}`);
 }
 
@@ -91,7 +138,6 @@ async function unlistCatalogSong(song) {
   if (!catalogSongCanManage(song) || !song?._driveFileId) return;
   try {
     await cloudApi.setPublic(song._driveFileId, false);
-    catalogMenuOpenFor = null;
     await Promise.all([loadCatalog(), loadUserLibrary()]);
     showToast('已從公共曲庫下架');
   } catch (error) {
@@ -100,61 +146,15 @@ async function unlistCatalogSong(song) {
   }
 }
 
-function songCard(song, { publicSong = false } = {}) {
+function librarySongCard(song) {
   const card = document.createElement('article');
   card.className = 'song-card';
-  if (publicSong) card.dataset.catalogFileId = song._driveFileId || '';
-  const art = document.createElement('div');
-  art.className = 'song-card-art';
-  const fallbackArt = document.createElement('span');
-  fallbackArt.className = 'song-card-art-fallback';
-  fallbackArt.textContent = (song.name || 'TAB').trim().slice(0, 2).toUpperCase();
-  art.appendChild(fallbackArt);
-  if (song.cover) {
-    const image = document.createElement('img');
-    image.className = 'song-card-art-image';
-    image.src = song.cover;
-    image.alt = song.album ? `${song.album} 封面` : `${song.name || '曲譜'} 封面`;
-    image.loading = 'lazy';
-    image.decoding = 'async';
-    image.referrerPolicy = 'no-referrer';
-    image.addEventListener('load', () => art.classList.add('has-image'));
-    image.addEventListener('error', () => image.remove());
-    art.appendChild(image);
-  }
-
-  if (publicSong) {
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'catalog-card-more';
-    more.textContent = '⋯';
-    more.setAttribute('aria-label', `${song.name || '曲譜'} 管理選單`);
-    more.addEventListener('click', event => {
-      event.stopPropagation();
-      catalogMenuOpenFor = catalogMenuOpenFor === song._driveFileId ? null : song._driveFileId;
-      renderCatalog();
-    });
-    card.appendChild(more);
-    const menu = document.createElement('div');
-    menu.className = 'catalog-card-menu';
-    menu.hidden = catalogMenuOpenFor !== song._driveFileId;
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.textContent = '編輯';
-    edit.addEventListener('click', event => { event.stopPropagation(); editCatalogSong(song); });
-    const unlist = document.createElement('button');
-    unlist.type = 'button';
-    unlist.textContent = '下架';
-    unlist.addEventListener('click', event => { event.stopPropagation(); unlistCatalogSong(song); });
-    if (catalogSongCanManage(song)) menu.append(edit, unlist);
-    card.appendChild(menu);
-  }
-
+  const art = createCoverArt(song);
   const body = document.createElement('div');
   body.className = 'song-card-body';
   const title = document.createElement('h3');
   title.textContent = song.name || '未命名曲譜';
-  if (!publicSong && songWasPublished(song) && !songIsPublic(song)) {
+  if (songWasPublished(song) && !songIsPublic(song)) {
     const badge = document.createElement('span');
     badge.className = 'song-hidden-badge';
     badge.textContent = '已下架';
@@ -162,50 +162,233 @@ function songCard(song, { publicSong = false } = {}) {
   }
   const artist = document.createElement('p');
   artist.className = 'song-card-artist';
-  artist.textContent = song.artist || (publicSong ? 'OpenGuitarTAB 公共曲譜' : '我的曲譜');
+  artist.textContent = song.artist || '我的曲譜';
   if (song.album) artist.title = song.album;
   const meta = document.createElement('div');
   meta.className = 'song-card-meta';
-  const playStyle = song.playStyle === 'fingerstyle' ? '指彈' : song.playStyle === 'chord' ? '和弦' : '未設定';
   const difficulty = Number(song.difficulty);
   const difficultyText = Number.isFinite(difficulty) && difficulty >= 1 && difficulty <= 5 ? `難度 ${Math.round(difficulty)}` : '難度 -';
-  meta.innerHTML = `<span>${playStyle}</span><span>${difficultyText}</span>`;
+  meta.innerHTML = `<span>${playStyleLabel(song.playStyle)}</span><span>${difficultyText}</span>`;
   const actions = document.createElement('div');
   actions.className = 'song-card-actions';
   const open = document.createElement('button');
   open.className = 'card-primary-button';
   open.type = 'button';
-  open.textContent = publicSong ? '預覽' : '編輯';
-  open.addEventListener('click', () => publicSong ? setRoute(`#/preview/${encodeURIComponent(song.id)}`) : setRoute(`#/editor/${encodeURIComponent(song.id)}`));
+  open.textContent = '編輯';
+  open.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.id)}`));
   actions.appendChild(open);
-  if (publicSong && !catalogSongCanManage(song)) {
-    const add = document.createElement('button');
-    add.className = 'card-secondary-button';
-    add.type = 'button';
-    if (catalogSongIsAdded(song)) markCatalogAddButtonAdded(add);
-    else {
-      add.textContent = '＋ 加入';
-      add.addEventListener('click', () => addCatalogSong(song, add));
-    }
-    actions.appendChild(add);
-  }
-  body.append(title, artist);
-  body.append(meta, actions);
+  body.append(title, artist, meta, actions);
   card.append(art, body);
   return card;
 }
 
+function workCardPlayStyles(work) {
+  const styles = new Set((work?.arrangements || []).map(item => item?.playStyle).filter(Boolean));
+  return ['fingerstyle', 'chord'].filter(style => styles.has(style));
+}
+
+function arrangementDifficulty(arrangement) {
+  const difficulty = Number(arrangement?.difficulty);
+  return Number.isFinite(difficulty) && difficulty >= 1 && difficulty <= 5
+    ? `難度 ${Math.round(difficulty)}`
+    : '難度 -';
+}
+
+function arrangementRow(work, arrangement) {
+  const row = document.createElement('div');
+  row.className = 'work-card-arrangement';
+  row.dataset.arrangementId = arrangement.arrangementId || arrangement.id || '';
+
+  const details = document.createElement('div');
+  details.className = 'work-card-arrangement-details';
+  const heading = document.createElement('div');
+  heading.className = 'work-card-arrangement-heading';
+  const style = createPlayStyleBadge(arrangement.playStyle);
+  if (style) heading.appendChild(style);
+  const difficulty = document.createElement('span');
+  difficulty.className = 'work-card-arrangement-difficulty';
+  difficulty.textContent = arrangementDifficulty(arrangement);
+  heading.appendChild(difficulty);
+
+  const info = document.createElement('p');
+  info.className = 'work-card-arrangement-info';
+  const infoParts = [];
+  if (arrangement.source) infoParts.push(arrangement.source);
+  if (arrangement.uploadedBy) infoParts.push(`by ${arrangement.uploadedBy}`);
+  if (Number.isFinite(Number(arrangement.capo)) && Number(arrangement.capo) > 0) infoParts.push(`Capo ${arrangement.capo}`);
+  if (Number.isFinite(Number(arrangement.tempo))) infoParts.push(`${Math.round(Number(arrangement.tempo))} BPM`);
+  info.textContent = infoParts.join(' · ') || `${work.name || '曲譜'}版本`;
+  details.append(heading, info);
+
+  const actions = document.createElement('div');
+  actions.className = 'work-card-arrangement-actions';
+  const preview = document.createElement('button');
+  preview.type = 'button';
+  preview.className = 'work-card-action is-primary';
+  preview.textContent = '預覽';
+  preview.addEventListener('click', () => setRoute(`#/preview/${encodeURIComponent(arrangement.arrangementId || arrangement.id)}`));
+  actions.appendChild(preview);
+
+  if (catalogSongCanManage(arrangement)) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'work-card-action';
+    edit.textContent = '編輯';
+    edit.addEventListener('click', () => editCatalogSong(arrangement));
+    const unlist = document.createElement('button');
+    unlist.type = 'button';
+    unlist.className = 'work-card-action is-danger';
+    unlist.textContent = '下架';
+    unlist.addEventListener('click', () => unlistCatalogSong(arrangement));
+    actions.append(edit, unlist);
+  } else {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'work-card-action is-add';
+    if (catalogSongIsAdded(arrangement)) markCatalogAddButtonAdded(add);
+    else {
+      add.textContent = '＋ 加入';
+      add.addEventListener('click', () => addCatalogSong(arrangement, add));
+    }
+    actions.appendChild(add);
+  }
+
+  row.append(details, actions);
+  return row;
+}
+
+function setWorkCardExpanded(card, expanded, { animate = false } = {}) {
+  if (!card) return;
+  const summary = card.querySelector('.work-card-summary');
+  const panel = card.querySelector('.work-card-preview');
+  const art = card.querySelector('.song-card-art');
+  const copy = card.querySelector('.work-card-copy');
+  const beforeArt = animate && art ? art.getBoundingClientRect() : null;
+  const beforeCopy = animate && copy ? copy.getBoundingClientRect() : null;
+
+  card.classList.toggle('is-expanded', expanded);
+  if (panel) panel.hidden = !expanded;
+  summary?.setAttribute('aria-expanded', String(expanded));
+  const expandLabel = card.querySelector('.work-card-expand-label');
+  if (expandLabel) expandLabel.textContent = expanded ? '收合版本' : '查看版本';
+
+  if (!animate || typeof art?.animate !== 'function') return;
+  requestAnimationFrame(() => {
+    const afterArt = art.getBoundingClientRect();
+    if (beforeArt?.width && afterArt.width) {
+      const dx = beforeArt.left - afterArt.left;
+      const dy = beforeArt.top - afterArt.top;
+      const sx = beforeArt.width / afterArt.width;
+      const sy = beforeArt.height / afterArt.height;
+      art.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, transformOrigin: 'top left' },
+        { transform: 'none', transformOrigin: 'top left' }
+      ], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+    if (copy && beforeCopy) {
+      const afterCopy = copy.getBoundingClientRect();
+      copy.animate([
+        { transform: `translate(${beforeCopy.left - afterCopy.left}px, ${beforeCopy.top - afterCopy.top}px)` },
+        { transform: 'none' }
+      ], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+  });
+}
+
+function toggleWorkCard(workId, card) {
+  const next = expandedCatalogWorkId === workId ? null : workId;
+  document.querySelectorAll('.work-card.is-expanded').forEach(openCard => {
+    if (openCard !== card) setWorkCardExpanded(openCard, false, { animate: true });
+  });
+  expandedCatalogWorkId = next;
+  setWorkCardExpanded(card, next === workId, { animate: true });
+}
+
+function workCard(work) {
+  const card = document.createElement('article');
+  card.className = 'song-card work-card';
+  card.dataset.workId = work.workId || work.id || '';
+  const expanded = expandedCatalogWorkId === card.dataset.workId;
+  if (expanded) card.classList.add('is-expanded');
+
+  const summary = document.createElement('button');
+  summary.type = 'button';
+  summary.className = 'work-card-summary';
+  summary.setAttribute('aria-expanded', String(expanded));
+  summary.setAttribute('aria-label', `${work.name || '曲譜'}，${expanded ? '收合' : '查看'}版本`);
+  const art = createCoverArt(work);
+  const copy = document.createElement('div');
+  copy.className = 'song-card-body work-card-copy';
+  const title = document.createElement('h3');
+  title.textContent = work.name || '未命名曲譜';
+  const artist = document.createElement('p');
+  artist.className = 'song-card-artist';
+  artist.textContent = work.artist || 'OpenGuitarTAB 公共曲譜';
+  const album = document.createElement('p');
+  album.className = 'work-card-album';
+  album.textContent = work.album || '';
+  album.hidden = !work.album;
+  const badges = document.createElement('div');
+  badges.className = 'work-card-badges';
+  workCardPlayStyles(work).forEach(playStyle => {
+    const badge = createPlayStyleBadge(playStyle);
+    if (badge) badges.appendChild(badge);
+  });
+  const footer = document.createElement('div');
+  footer.className = 'work-card-summary-footer';
+  const count = document.createElement('span');
+  count.className = 'work-card-arrangement-count';
+  const arrangementCount = Array.isArray(work.arrangements) ? work.arrangements.length : 0;
+  count.textContent = `${arrangementCount} 個版本`;
+  const expandLabel = document.createElement('span');
+  expandLabel.className = 'work-card-expand-label';
+  expandLabel.textContent = expanded ? '收合版本' : '查看版本';
+  footer.append(count, expandLabel);
+  copy.append(title, artist, album, badges, footer);
+  summary.append(art, copy);
+  summary.addEventListener('click', () => toggleWorkCard(card.dataset.workId, card));
+
+  const preview = document.createElement('div');
+  preview.className = 'work-card-preview';
+  preview.hidden = !expanded;
+  const previewHead = document.createElement('div');
+  previewHead.className = 'work-card-preview-head';
+  const heading = document.createElement('strong');
+  heading.textContent = '版本';
+  const hint = document.createElement('span');
+  hint.textContent = '每個版本保留自己的難度、玩法與操作';
+  previewHead.append(heading, hint);
+  const list = document.createElement('div');
+  list.className = 'work-card-arrangements';
+  (work.arrangements || []).forEach(arrangement => list.appendChild(arrangementRow(work, arrangement)));
+  preview.append(previewHead, list);
+
+  card.append(summary, preview);
+  return card;
+}
+
+function workMatchesQuery(work, query) {
+  if (!query) return true;
+  const values = [work?.name, work?.artist, work?.album];
+  for (const arrangement of work?.arrangements || []) {
+    values.push(arrangement?.source, arrangement?.uploadedBy, playStyleLabel(arrangement?.playStyle));
+  }
+  return values.filter(Boolean).some(value => String(value).toLocaleLowerCase().includes(query));
+}
+
 function renderCatalog() {
   const query = catalogSearchInput.value.trim().toLocaleLowerCase();
-  const filtered = catalogSongs.filter(song => !query || [song.name, song.artist, song.album].filter(Boolean).some(value => String(value).toLocaleLowerCase().includes(query)));
-  if (catalogMenuOpenFor && !filtered.some(song => song._driveFileId === catalogMenuOpenFor)) catalogMenuOpenFor = null;
+  const filtered = catalogWorks.filter(work => workMatchesQuery(work, query));
+  if (expandedCatalogWorkId && !filtered.some(work => String(work.workId || work.id) === expandedCatalogWorkId)) {
+    expandedCatalogWorkId = null;
+  }
   catalogGrid.innerHTML = '';
-  filtered.forEach(song => catalogGrid.appendChild(songCard(song, { publicSong: true })));
-  catalogCount.textContent = `${filtered.length} 首`;
+  filtered.forEach(work => catalogGrid.appendChild(workCard(work)));
+  catalogCount.textContent = `${filtered.length} 首作品`;
   if (!filtered.length) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = '找不到符合條件的曲譜。';
+    empty.textContent = '找不到符合條件的作品。';
     catalogGrid.appendChild(empty);
   }
 }
@@ -221,7 +404,7 @@ function renderLibraryGrid() {
     libraryGrid.appendChild(login);
     return;
   }
-  songs.forEach(song => libraryGrid.appendChild(songCard(song)));
+  songs.forEach(song => libraryGrid.appendChild(librarySongCard(song)));
   if (!songs.length) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
@@ -233,11 +416,12 @@ function renderLibraryGrid() {
 async function loadCatalog() {
   try {
     const result = await cloudApi.catalog();
-    catalogSongs = Array.isArray(result.songs) ? result.songs : [];
+    catalogWorks = Array.isArray(result.works) ? result.works : [];
     renderCatalog();
   } catch (error) {
     console.error(error);
-    catalogSongs = [];
+    catalogWorks = [];
+    expandedCatalogWorkId = null;
     catalogGrid.innerHTML = '<p class="empty-state">公共曲庫目前無法載入，請確認Vercel後端與Google Drive設定。</p>';
     catalogCount.textContent = '';
   }
@@ -314,11 +498,12 @@ async function addCatalogSong(meta, button = null) {
 }
 
 async function openCatalogPreview(id) {
-  const meta = catalogSongs.find(song => song.id === id);
+  const meta = findCatalogArrangement(id);
   if (!meta) { setRoute('#/catalog'); return; }
   try {
     previewSong = await fetchCatalogSong(meta);
-    previewSong.id = `preview:${meta.id}`;
+    const previewId = meta.arrangementId || meta.id || meta.songId;
+    previewSong.id = `preview:${previewId}`;
     previewSong._catalogFileId = meta._driveFileId;
     currentSongId = previewSong.id;
     activeBeatsPerMeasure = normalizeBeatsPerMeasure(previewSong.beatsPerMeasure);
@@ -418,21 +603,16 @@ libraryNewSongButton.addEventListener('click', () => {
 editorBackButton.addEventListener('click', () => setRoute(previousNonEditorRoute));
 addPreviewSongButton.addEventListener('click', () => {
   const fileId = previewSong?._catalogFileId || previewSong?._driveFileId;
-  const meta = catalogSongs.find(song => song._driveFileId === fileId) || catalogSongs.find(song => `preview:${song.id}` === currentSongId);
+  const meta = catalogArrangements().find(song => String(song._driveFileId || '') === String(fileId || ''))
+    || catalogArrangements().find(song => `preview:${song.arrangementId || song.id}` === currentSongId);
   if (meta) addCatalogSong(meta);
 });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMobileMenu(); });
 mobileQuery.addEventListener('change', event => { if (!event.matches) closeMobileMenu(); });
-document.addEventListener('click', event => {
-  if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {
-    catalogMenuOpenFor = null;
-    if (!catalogView.hidden) renderCatalog();
-  }
-});
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
   const pendingRoute = event.detail?.pendingRoute;
-  catalogMenuOpenFor = null;
+  expandedCatalogWorkId = null;
   if (!event.detail?.user) {
     songs = [];
     currentSongId = null;

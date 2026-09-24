@@ -55,7 +55,7 @@
     let menuPosition = null;
     let renameTargetId = null;
     let deleteTargetId = null;
-    let catalogSongs = [];
+    let catalogWorks = [];
     let previewSong = null;
     let previousNonEditorRoute = '#/catalog';
 
