@@ -59,6 +59,10 @@
     let previewSong = null;
     let previousNonEditorRoute = '#/catalog';
 
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
     function normalizeBeatsPerMeasure(value) {
       return Number(value) === 3 ? 3 : 4;
     }

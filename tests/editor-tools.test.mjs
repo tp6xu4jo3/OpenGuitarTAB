@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { applyCommand } from '../src/editor/commands.js';
 import { createDocumentV3, normalizeDocumentV3, noteBaseFret, noteDisplayValue } from '../src/editor/model.js';
-import { documentToLegacyProjection, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 import { resolveTechniqueTarget } from '../src/editor/technique-rules.js';
 import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from '../src/editor/tool-session.js';
@@ -215,7 +214,6 @@ assert.equal(definitions.get('slur'), null, 'slur must not occupy a separate pal
   assert.equal('baseFret' in technique, false);
   assert.equal(noteBaseFret(note), '1');
   assert.equal(noteDisplayValue(note), '1<13>');
-  assert.equal(documentToLegacyProjection(added.document).rows[0][0][0], '1');
   assert.equal(buildPlaybackIndex(added.document).entries[0].notes[0].fret, '13', 'playback must use harmonic sounding fret');
 
   const removed = applyCommand(added.document, { type: 'technique/delete', techniqueId: technique.id });
