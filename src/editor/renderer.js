@@ -8,6 +8,7 @@ import {
   timeFromPointerX
 } from './layout.js';
 import {
+  addFractions,
   cloneValue,
   compareFractions,
   fractionKey,
@@ -63,6 +64,16 @@ export function editableTimesForMeasure(measure) {
   for (const event of measure?.events || []) add(event.at, event.duration || BASE_GRID_STEP);
 
   return [...map.values()].sort((left, right) => compareFractions(left.at, right.at));
+}
+
+function visualPercentageForTime(at, duration, measure) {
+  return percentageForTime(addFractions(at, duration || BASE_GRID_STEP), measure);
+}
+
+function visualPercentageForAt(measure, at) {
+  const key = fractionKey(at);
+  const time = editableTimesForMeasure(measure).find(item => fractionKey(item.at) === key);
+  return visualPercentageForTime(at, time?.duration || BASE_GRID_STEP, measure);
 }
 
 function layoutAvailableWidth(root) {
@@ -269,12 +280,15 @@ export class SparseScoreRenderer {
     }
 
     const times = editableTimesForMeasure(measure);
+    const visualTimeByKey = new Map(times.map(time => [fractionKey(time.at), time]));
     times.forEach((time, index) => {
-      const current = percentageForTime(time.at, measure);
-      const previous = index > 0 ? percentageForTime(times[index - 1].at, measure) : 0;
-      const next = index + 1 < times.length ? percentageForTime(times[index + 1].at, measure) : 100;
+      const current = visualPercentageForTime(time.at, time.duration, measure);
+      const previous = index > 0 ? visualPercentageForTime(times[index - 1].at, times[index - 1].duration, measure) : 0;
+      const next = index + 1 < times.length ? visualPercentageForTime(times[index + 1].at, times[index + 1].duration, measure) : 100;
       const left = index === 0 ? 0 : (previous + current) / 2;
       const right = index === times.length - 1 ? 100 : (current + next) / 2;
+      const width = Math.max(0.2, right - left);
+      const anchor = Math.max(0, Math.min(100, (current - left) / width * 100));
       const event = eventAt(measure, time.at);
       const target = div('v3-column-target');
       target.dataset.measureId = String(measure.id);
@@ -282,7 +296,8 @@ export class SparseScoreRenderer {
       target.dataset.duration = fractionKey(time.duration || BASE_GRID_STEP);
       if (event?.id) target.dataset.eventId = String(event.id);
       target.style.left = `${left}%`;
-      target.style.width = `${Math.max(0.2, right - left)}%`;
+      target.style.width = `${width}%`;
+      target.style.setProperty('--v3-anchor-x', `${anchor}%`);
       target.setAttribute('aria-label', `時間位置 ${target.dataset.at}`);
       staff.appendChild(target);
     });
@@ -292,7 +307,8 @@ export class SparseScoreRenderer {
       eventNode.dataset.eventId = String(event.id);
       eventNode.dataset.measureId = String(measure.id);
       eventNode.dataset.at = fractionKey(event.at);
-      eventNode.style.left = `${percentageForTime(event.at, measure)}%`;
+      const visualTime = visualTimeByKey.get(fractionKey(event.at));
+      eventNode.style.left = `${visualPercentageForTime(event.at, visualTime?.duration || BASE_GRID_STEP, measure)}%`;
       for (const note of event.notes || []) {
         const noteNode = document.createElement('button');
         noteNode.type = 'button';
@@ -446,7 +462,7 @@ export class SparseScoreRenderer {
     input.dataset.duration = fractionKey(duration || BASE_GRID_STEP);
     Object.assign(input.style, {
       position: 'absolute',
-      left: `${percentageForTime(at, measure)}%`,
+      left: `${visualPercentageForAt(measure, at)}%`,
       top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`,
       transform: 'translate(-50%, -50%)'
     });

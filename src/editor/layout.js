@@ -41,26 +41,15 @@ function relationCountsByMeasure(document) {
   return counts;
 }
 
-function rhythmicComplexity(event) {
-  const duration = fractionToNumber(event?.duration || [1, 1]);
-  if (!Number.isFinite(duration) || duration <= 0 || duration >= 0.25) return 0;
-  return Math.min(1.2, (0.25 / duration - 1) * 0.55);
-}
-
 function complexityForMeasure(measure, relationCount = 0) {
   let score = 1;
   for (const event of measure?.events || []) {
-    const notes = event.notes || [];
-    score += 0.52 + rhythmicComplexity(event);
-    if (notes.length > 1) score += (notes.length - 1) * 0.18;
-    score += (event.marks || []).length * 0.85;
-    for (const note of notes) {
-      if (/^\d{2,}$/.test(String(note.fret ?? ''))) score += 0.24;
-      score += (note.techniques || []).length * 0.72;
-    }
+    score += (event.marks || []).length * 2.5;
+    if (event.rhythmAnchor) score += 2.25;
+    for (const note of event.notes || []) score += (note.techniques || []).length * 2.5;
   }
-  score += (measure?.groups || []).length * 1.15;
-  score += relationCount * 0.95;
+  score += (measure?.groups || []).length * 3;
+  score += relationCount * 2.75;
   return Math.max(1, score);
 }
 
@@ -72,7 +61,7 @@ export function measureComplexity(documentModel, measure) {
 }
 
 function minimumWidthForComplexity(complexity, minMeasureWidth) {
-  return Math.round(minMeasureWidth + Math.min(155, Math.max(0, complexity - 1) * 18));
+  return Math.round(minMeasureWidth + Math.min(155, Math.max(0, complexity - 1) * 23));
 }
 
 export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = MIN_MEASURE_WIDTH } = {}) {

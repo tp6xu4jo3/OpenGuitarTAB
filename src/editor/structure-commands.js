@@ -152,30 +152,14 @@ export function deleteMeasureAt(inputDocument, systemIndex, measureIndex) {
   };
 }
 
-function measureHasContent(measure) {
-  return (measure?.events || []).length > 0 || (measure?.groups || []).length > 0;
-}
-
-function cascadeInsert(systems, systemIndex, boundary, measure, idFactory) {
-  while (systems.length <= systemIndex) systems.push([]);
-  const system = systems[systemIndex];
-  if (system.length === 1 && !measureHasContent(system[0]) && boundary === 0) {
-    system[0] = measure;
-    return;
-  }
-  const safe = Math.max(0, Math.min(system.length, boundary));
-  system.splice(safe, 0, measure);
-  if (system.length <= 4) return;
-  const overflow = system.pop();
-  if (!systems[systemIndex + 1]) systems.push([blankMeasure(measure, idFactory)]);
-  cascadeInsert(systems, systemIndex + 1, 0, overflow, idFactory);
-}
-
-export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureIndex, targetSystemIndex, targetBoundary, { idFactory = createId } = {}) {
+export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureIndex, targetSystemIndex, targetBoundary) {
   const document = normalizeDocumentV3(inputDocument);
   const systems = normalizeSystems(document);
   const source = systems[sourceSystemIndex];
-  if (!source || sourceMeasureIndex < 0 || sourceMeasureIndex >= source.length) return { document, changeSet: createChangeSet() };
+  const targetSystem = systems[targetSystemIndex];
+  if (!source || !targetSystem || sourceMeasureIndex < 0 || sourceMeasureIndex >= source.length) {
+    return { document, changeSet: createChangeSet() };
+  }
 
   if (sourceSystemIndex === targetSystemIndex) {
     const [moved] = source.splice(sourceMeasureIndex, 1);
@@ -191,16 +175,30 @@ export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureInd
     };
   }
 
+  const beforeSource = cloneValue(source);
+  const beforeTarget = cloneValue(targetSystem);
   const [moved] = source.splice(sourceMeasureIndex, 1);
-  if (!source.length) source.push(blankMeasure(moved, idFactory));
-  const beforeTarget = cloneValue(systems[targetSystemIndex] || []);
-  cascadeInsert(systems, targetSystemIndex, Math.trunc(Number(targetBoundary) || 0), moved, idFactory);
+  const requestedBoundary = Math.max(0, Math.min(targetSystem.length, Math.trunc(Number(targetBoundary) || 0)));
+
+  if (sourceSystemIndex < targetSystemIndex) {
+    const exchanged = targetSystem.shift();
+    const adjustedBoundary = Math.max(0, Math.min(targetSystem.length, requestedBoundary > 0 ? requestedBoundary - 1 : 0));
+    targetSystem.splice(adjustedBoundary, 0, moved);
+    if (exchanged) source.push(exchanged);
+  } else {
+    const exchanged = targetSystem.pop();
+    const adjustedBoundary = Math.max(0, Math.min(targetSystem.length, requestedBoundary));
+    targetSystem.splice(adjustedBoundary, 0, moved);
+    if (exchanged) source.unshift(exchanged);
+  }
+
   const next = flattenSystems(document, systems);
+  const changed = affectedMeasureIds(beforeSource, beforeTarget, source, targetSystem);
   return {
     document: next,
     changeSet: createChangeSet({
-      measures: affectedMeasureIds(source, beforeTarget, systems[targetSystemIndex] || [], [moved]),
-      playback: affectedMeasureIds(source, beforeTarget, systems[targetSystemIndex] || [], [moved]),
+      measures: changed,
+      playback: changed,
       layoutFrom: source[0]?.id || moved.id
     })
   };
