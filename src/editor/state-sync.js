@@ -1,7 +1,3 @@
-import { renderRhythmNotation, renderRows } from './grid-renderer.js';
-import { projectDocumentToLegacySong } from './legacy-grid-compat.js';
-import { scheduleGridFit, syncInputBackground } from './presentation.js';
-
 function currentSongDefault() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
 }
@@ -31,58 +27,8 @@ export class EditorStateSync {
     return song;
   }
 
-  hydrateProjectedRow(rowIndex, { measureIndex = null } = {}) {
-    const song = this.currentSong();
-    const row = song?.rows?.[rowIndex];
-    if (!row) return;
-
-    const width = (Number(song.beatsPerMeasure) === 3 ? 3 : 4) * 4;
-    const start = measureIndex == null ? 0 : measureIndex * width;
-    const end = measureIndex == null ? row[0]?.length || 0 : start + width;
-
-    document.querySelectorAll(`.note-input[data-row="${rowIndex}"]`).forEach(input => {
-      const position = Number(input.dataset.position);
-      if (position < start || position >= end) return;
-      const string = Number(input.dataset.string);
-      const value = String(row?.[string]?.[position] ?? '');
-      input.value = value;
-      input.classList.toggle('has-value', value.length > 0);
-      syncInputBackground(input);
-    });
-
-    renderRhythmNotation(rowIndex);
-    const grid = document.querySelector(`.tab-grid[data-row="${rowIndex}"]`);
-    if (grid) scheduleGridFit(grid, true);
-    window.editorPlayback?.invalidate?.();
-    window.updateProgressRange?.();
-  }
-
-  projectStoreToView(store, target = null, previousCounts = null) {
-    const song = store?.getSong();
-    if (!song) return false;
-    const { ok, projection } = projectDocumentToLegacySong(song, store.getDocument());
-    if (!ok) return false;
-
-    const sameShape = Array.isArray(previousCounts)
-      && previousCounts.length === projection.rowMeasureCounts.length
-      && previousCounts.every((count, index) => Number(count) === Number(projection.rowMeasureCounts[index]));
-
-    if (target?.type === 'measure' && sameShape) {
-      this.hydrateProjectedRow(target.rowIndex, { measureIndex: target.measureIndex });
-      return true;
-    }
-    if (target?.type === 'row' && sameShape) {
-      this.hydrateProjectedRow(target.rowIndex);
-      return true;
-    }
-
-    renderRows(song.rows);
-    return true;
-  }
-
   reconcileCurrentSong() {
     const store = this.ensureStore();
-    if (!store) return null;
-    return { document: store.getDocument(), changeSet: null };
+    return store ? { document: store.getDocument(), changeSet: null } : null;
   }
 }

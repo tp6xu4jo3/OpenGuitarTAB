@@ -1,9 +1,5 @@
-    const STRINGS = 6;
-    const MEASURES = 4;
-    const SLOTS_PER_BEAT = 4;
-    const INITIAL_ROWS = 4;
-    const STORAGE_KEY = 'guitar-tab-maker:songs:v2';
-    const CURRENT_ID_KEY = 'guitar-tab-maker:current-song-id:v2';
+    const STORAGE_KEY = 'guitar-tab-maker:songs:v3';
+    const CURRENT_ID_KEY = 'guitar-tab-maker:current-song-id:v3';
 
     const addRowButton = document.getElementById('addRow');
     const removeRowButton = document.getElementById('removeRow');
@@ -67,14 +63,6 @@
       return Number(value) === 3 ? 3 : 4;
     }
 
-    function slotsPerMeasure(beats = activeBeatsPerMeasure) {
-      return normalizeBeatsPerMeasure(beats) * SLOTS_PER_BEAT;
-    }
-
-    function positionsPerRow(beats = activeBeatsPerMeasure) {
-      return MEASURES * slotsPerMeasure(beats);
-    }
-
     function makeDiv(className) {
       const div = document.createElement('div');
       div.className = className;
@@ -89,72 +77,14 @@
       return JSON.parse(JSON.stringify(value));
     }
 
-    function blankRow(beats = activeBeatsPerMeasure) {
-      return Array.from({ length: STRINGS }, () => Array(positionsPerRow(beats)).fill(''));
-    }
-
-    function blankRows(count = INITIAL_ROWS, beats = activeBeatsPerMeasure) {
-      return Array.from({ length: count }, () => blankRow(beats));
-    }
-
-    function normalizeTabValue(value) {
-      const text = String(value ?? '').trim();
-      if (/^x$/i.test(text)) return 'x';
-      return text.replace(/\D/g, '').slice(0, 2);
-    }
-
-    function normalizeRows(rows, beats = activeBeatsPerMeasure) {
-      const positions = positionsPerRow(beats);
-      if (!Array.isArray(rows) || rows.length === 0) return blankRows(INITIAL_ROWS, beats);
-      return rows.map(row => {
-        const normalizedRow = [];
-        for (let string = 0; string < STRINGS; string++) {
-          const source = Array.isArray(row?.[string]) ? row[string] : [];
-          const values = Array(positions).fill('');
-          for (let position = 0; position < Math.min(positions, source.length); position++) {
-            values[position] = normalizeTabValue(source[position]);
-          }
-          normalizedRow.push(values);
-        }
-        return normalizedRow;
-      });
-    }
-
-    function normalizeRhythmRows(rhythmRows, beats = activeBeatsPerMeasure) {
-      if (!Array.isArray(rhythmRows)) return undefined;
-      const positions = positionsPerRow(beats);
-      const measureSlots = slotsPerMeasure(beats);
-      return rhythmRows.map(row => {
-        const normalized = {};
-        for (const [rawPosition, rawDuration] of Object.entries(row || {})) {
-          const position = Number(rawPosition);
-          const duration = Number(rawDuration);
-          if (!Number.isInteger(position) || position < 0 || position >= positions) continue;
-          if (!Number.isInteger(duration) || duration < 1 || duration > measureSlots) continue;
-          normalized[position] = duration;
-        }
-        return normalized;
-      });
-    }
-
-    function normalizeMeasureCount(value) {
-      const count = Number(value);
-      return Number.isInteger(count) ? Math.max(1, Math.min(MEASURES, count)) : MEASURES;
-    }
-
-    function normalizeRowMeasureCounts(rawCounts, rowCount) {
-      return Array.from({ length: rowCount }, (_, index) => normalizeMeasureCount(rawCounts?.[index]));
-    }
-
     function seedSongs() {
       return [{
-        id: 'seed-blank-song-v1',
+        id: 'seed-blank-song-v3',
         name: '空白曲譜',
         tempo: 120,
         capo: 0,
         beatsPerMeasure: 4,
-        rows: blankRows(INITIAL_ROWS, 4),
-        rowMeasureCounts: Array(INITIAL_ROWS).fill(MEASURES),
+        document: createBlankDocumentV3({ beats: 4, systems: 4, measuresPerSystem: 4 }),
         createdAt: Date.now(),
         updatedAt: Date.now()
       }];
@@ -179,17 +109,13 @@
 
     function normalizeSongRecord(song) {
       const beatsPerMeasure = normalizeBeatsPerMeasure(song?.beatsPerMeasure);
-      const rows = normalizeRows(song?.rows, beatsPerMeasure);
       const normalized = {
         ...song,
         tempo: clamp(Number(song?.tempo) || 120, 30, 300),
         capo: clamp(Math.round(Number(song?.capo) || 0), 0, 12),
-        beatsPerMeasure,
-        rows,
-        rowMeasureCounts: normalizeRowMeasureCounts(song?.rowMeasureCounts, rows.length)
+        beatsPerMeasure
       };
-      const rhythmRows = normalizeRhythmRows(song?.rhythmRows, beatsPerMeasure);
-      if (rhythmRows) normalized.rhythmRows = rhythmRows;
+      ensureSongDocumentV3(normalized);
       return normalized;
     }
 
@@ -206,4 +132,3 @@
       currentSongId = id == null ? null : String(id);
       return currentSongId;
     }
-

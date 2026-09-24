@@ -10,9 +10,9 @@ import {
 import { APP_CONFIG } from './config/app-config.js';
 import { installAudioEngine } from './editor/audio-engine.js';
 import { installEditorV3 } from './editor/controller.js';
-import { installGridRenderer } from './editor/grid-renderer.js';
+import { ensureSongDocumentV3 } from './editor/migrate-v2.js';
+import { createBlankDocumentV3 } from './editor/model.js';
 import { installPlaybackController } from './editor/playback-controller.js';
-import { installEditorPresentation } from './editor/presentation.js';
 import { installEditorSongActions } from './editor/song-actions.js';
 import { installStructureController } from './editor/structure-controller.js';
 import { installViewState } from './editor/view-state.js';
@@ -29,7 +29,9 @@ Object.assign(window, {
   canUnlistSong,
   canDeleteSong,
   cloudApi,
-  APP_CONFIG
+  APP_CONFIG,
+  createBlankDocumentV3,
+  ensureSongDocumentV3
 });
 
 const RUNTIME_SCRIPTS = [
@@ -58,11 +60,9 @@ function loadClassicScriptsInOrder(sources) {
 void cloudApi.catalog().catch(() => null);
 
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
-installGridRenderer();
 installViewState();
 installAudioEngine();
 installPlaybackController();
-installEditorPresentation();
 installEditorSongActions();
 installSongImport();
 installEditorV3();

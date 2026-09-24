@@ -1,102 +1,24 @@
-.v3-system {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(var(--v3-measure-count, 4), minmax(0, 1fr));
-  min-height: 210px;
-  margin: 12px 0 20px;
-  color: #111;
-}
-
-.v3-measure {
-  min-width: 0;
-  min-height: 210px;
-  border-left: 1.5px solid currentColor;
-}
-
-.v3-measure:last-of-type { border-right: 1.5px solid currentColor; }
-
-.v3-staff {
-  position: absolute;
-  inset: 26px 0 26px;
-}
-
-.v3-string-line,
-.v3-beat-guide {
-  position: absolute;
-  pointer-events: none;
-}
-
-.v3-string-line {
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: rgba(0,0,0,.62);
-}
-
-.v3-beat-guide {
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(0,0,0,.09);
-}
-
-.v3-event {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0;
-}
-
-.v3-note {
-  position: absolute;
-  left: 0;
-  transform: translate(-50%, -50%);
-  min-width: 22px;
-  height: 22px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  background: #f7f6f2;
-  color: #111;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 750;
-  line-height: 22px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.v3-note:focus-visible {
-  outline: 2px solid #22c55e;
-  outline-offset: 2px;
-}
-
-.v3-event-mark {
-  position: absolute;
-  left: 7px;
-  top: -18px;
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.v3-note-editor {
-  z-index: 4;
-  width: 32px;
-  height: 28px;
-  border: 2px solid #22c55e;
-  border-radius: 7px;
-  background: #fff;
-  color: #111;
-  text-align: center;
-  font: inherit;
-  font-weight: 800;
-  outline: none;
-}
-
-.notation-overlay {
-  z-index: 3;
-  color: #111;
-}
-
-.notation-relation { opacity: .9; }
+.v3-system{position:relative;min-width:0}
+.v3-grid{box-sizing:border-box;align-items:stretch;min-width:0;min-height:var(--system-height,190px);overflow:visible;border-radius:10px;background:#fff}
+.v3-measure{box-sizing:border-box;min-width:0;min-height:var(--system-height,190px);border-left:1px solid #b8b8b8}
+.v3-measure:last-child{border-right:1px solid #b8b8b8}
+.v3-staff{position:absolute;inset:34px 0 34px;min-height:112px;overflow:visible;user-select:none}
+.v3-string-line{position:absolute;left:0;right:0;height:1px;background:#8b8b8b;transform:translateY(-.5px);pointer-events:none}
+.v3-beat-guide{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.075);pointer-events:none}
+.v3-column-target{position:absolute;top:0;bottom:0;z-index:1;cursor:text;background:transparent;border:0}
+.v3-column-target::after{content:'';position:absolute;left:50%;top:4px;bottom:4px;width:1px;background:transparent;transform:translateX(-.5px);transition:background .1s ease}
+.content.edit-view .v3-column-target:hover::after{background:rgba(30,215,96,.22)}
+.v3-column-target.tool-range-source::after,.v3-column-target.is-playing-column::after{background:#1ed760}
+.v3-event{position:absolute;top:0;bottom:0;z-index:5;width:0;pointer-events:none}
+.v3-note{position:absolute;left:0;z-index:7;box-sizing:border-box;min-width:22px;height:26px;padding:0 3px;border:0;border-radius:5px;background:#fff;color:#101010;font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center;transform:translate(-50%,-50%);cursor:text;pointer-events:auto;white-space:nowrap}
+.v3-note:hover,.v3-note:focus-visible{outline:1px solid #b6b6b6;background:#fafafa}
+.v3-note.tool-link-source{outline:2px solid #1ed760;background:#e8faee}
+.v3-note.is-playing{background:#dff7e7;outline:1px solid #1ed760}
+.v3-note-editor{z-index:12;box-sizing:border-box;width:30px;height:28px;padding:0 3px;border:1px solid #1ed760;border-radius:5px;background:#fff;color:#111;font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center;outline:0;box-shadow:0 0 0 3px rgba(30,215,96,.12)}
+.content.score-view .v3-column-target{cursor:default}
+.content.score-view .v3-column-target:hover::after{background:transparent}
+.content.score-view .v3-note{cursor:default;font-size:var(--score-note-font-size,16px)}
+.score-density-line .v3-system{min-width:0;flex:var(--score-density-weight,1) 1 0}
+.score-density-line .v3-grid{height:100%}
+.notation-harmonic-label{paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}
+@media(max-width:900px){.v3-grid{min-height:170px}.v3-staff{inset-block:30px}.v3-note,.v3-note-editor{font-size:16px}}

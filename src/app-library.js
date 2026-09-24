@@ -31,6 +31,7 @@
 
     async function persistSongToCloud(song) {
       if (!currentAuthUser()) throw new Error('AUTH_REQUIRED');
+      ensureSongDocumentV3(song);
       const result = await cloudApi.saveSong(compactSong(song));
       return replaceSongRecord(result.song);
     }
@@ -81,7 +82,6 @@
       songs.forEach(song => {
         const item = makeDiv('song-item');
         if (song.id === currentSongId) item.classList.add('active');
-
         const loadButton = document.createElement('button');
         loadButton.type = 'button';
         loadButton.className = 'song-load-button';
@@ -128,7 +128,6 @@
           rename.addEventListener('click', event => { event.stopPropagation(); renameSong(song.id); });
           menu.appendChild(rename);
         }
-
         if (permissions.visibility) {
           const visibility = document.createElement('button');
           visibility.type = 'button';
@@ -137,7 +136,6 @@
           visibility.addEventListener('click', event => { event.stopPropagation(); toggleSongPublic(song); });
           menu.appendChild(visibility);
         }
-
         if (permissions.delete) {
           const del = document.createElement('button');
           del.type = 'button';
@@ -146,7 +144,6 @@
           del.addEventListener('click', event => { event.stopPropagation(); deleteSong(song.id); });
           menu.appendChild(del);
         }
-
         item.append(loadButton, moreButton, menu);
         songList.appendChild(item);
       });
@@ -169,7 +166,7 @@
       menuPosition = null;
       tempoInput.value = clamp(Number(song.tempo) || 120, 30, 300);
       capoInput.value = clamp(Math.round(Number(song.capo) || 0), 0, 12);
-      renderRows(song.rows);
+      window.editorV3?.renderCurrentSong?.();
       window.editorPlayback?.setIndex?.(0, { highlight: false });
       renderSongList();
     }
@@ -302,7 +299,7 @@
         tempo: 120,
         capo: 0,
         beatsPerMeasure: beats,
-        rows: blankRows(INITIAL_ROWS, beats),
+        document: createBlankDocumentV3({ beats, systems: 4, measuresPerSystem: 4 }),
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -315,7 +312,7 @@
         closeNewSongModal();
         tempoInput.value = saved.tempo;
         capoInput.value = saved.capo;
-        renderRows(saved.rows);
+        window.editorV3?.renderCurrentSong?.();
         window.editorPlayback?.setIndex?.(0, { highlight: false });
         renderSongList();
         meterBadge.textContent = `每小節 ${beats} 拍`;

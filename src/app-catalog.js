@@ -104,7 +104,6 @@ function songCard(song, { publicSong = false } = {}) {
   const card = document.createElement('article');
   card.className = 'song-card';
   if (publicSong) card.dataset.catalogFileId = song._driveFileId || '';
-
   const art = document.createElement('div');
   art.className = 'song-card-art';
   const fallbackArt = document.createElement('span');
@@ -136,21 +135,17 @@ function songCard(song, { publicSong = false } = {}) {
       renderCatalog();
     });
     card.appendChild(more);
-
     const menu = document.createElement('div');
     menu.className = 'catalog-card-menu';
     menu.hidden = catalogMenuOpenFor !== song._driveFileId;
-
     const edit = document.createElement('button');
     edit.type = 'button';
     edit.textContent = '編輯';
     edit.addEventListener('click', event => { event.stopPropagation(); editCatalogSong(song); });
-
     const unlist = document.createElement('button');
     unlist.type = 'button';
     unlist.textContent = '下架';
     unlist.addEventListener('click', event => { event.stopPropagation(); unlistCatalogSong(song); });
-
     if (catalogSongCanManage(song)) menu.append(edit, unlist);
     card.appendChild(menu);
   }
@@ -183,20 +178,17 @@ function songCard(song, { publicSong = false } = {}) {
   open.textContent = publicSong ? '預覽' : '編輯';
   open.addEventListener('click', () => publicSong ? setRoute(`#/preview/${encodeURIComponent(song.id)}`) : setRoute(`#/editor/${encodeURIComponent(song.id)}`));
   actions.appendChild(open);
-
   if (publicSong && !catalogSongCanManage(song)) {
     const add = document.createElement('button');
     add.className = 'card-secondary-button';
     add.type = 'button';
-    if (catalogSongIsAdded(song)) {
-      markCatalogAddButtonAdded(add);
-    } else {
+    if (catalogSongIsAdded(song)) markCatalogAddButtonAdded(add);
+    else {
       add.textContent = '＋ 加入';
       add.addEventListener('click', () => addCatalogSong(song, add));
     }
     actions.appendChild(add);
   }
-
   body.append(title, artist);
   body.append(meta, actions);
   card.append(art, body);
@@ -342,7 +334,7 @@ async function openCatalogPreview(id) {
     setScoreViewEnabled(true);
     if (rhythmToggleButton.isConnected) rhythmToggleButton.remove();
     showPage('editor');
-    renderRows(previewSong.rows);
+    window.editorV3?.renderCurrentSong?.();
   } catch (error) {
     console.error(error);
     showToast('曲譜預覽載入失敗');
@@ -410,14 +402,9 @@ async function initializeApp() {
   handleRoute();
 }
 
-mobileMenuButton?.addEventListener('click', () => {
-  setMobileMenuOpen(!sidebar?.classList.contains('mobile-open'));
-});
+mobileMenuButton?.addEventListener('click', () => setMobileMenuOpen(!sidebar?.classList.contains('mobile-open')));
 mobileMenuBackdrop?.addEventListener('click', closeMobileMenu);
-catalogNavButton.addEventListener('click', () => {
-  closeMobileMenu();
-  setRoute('#/catalog');
-});
+catalogNavButton.addEventListener('click', () => { closeMobileMenu(); setRoute('#/catalog'); });
 libraryNavButton.addEventListener('click', () => {
   closeMobileMenu();
   if (!window.authState?.user) openLoginModal('#/library');
@@ -434,12 +421,8 @@ addPreviewSongButton.addEventListener('click', () => {
   const meta = catalogSongs.find(song => song._driveFileId === fileId) || catalogSongs.find(song => `preview:${song.id}` === currentSongId);
   if (meta) addCatalogSong(meta);
 });
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeMobileMenu();
-});
-mobileQuery.addEventListener('change', event => {
-  if (!event.matches) closeMobileMenu();
-});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMobileMenu(); });
+mobileQuery.addEventListener('change', event => { if (!event.matches) closeMobileMenu(); });
 document.addEventListener('click', event => {
   if (catalogMenuOpenFor && !event.target.closest('.catalog-card-more') && !event.target.closest('.catalog-card-menu')) {
     catalogMenuOpenFor = null;
