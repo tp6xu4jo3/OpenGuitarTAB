@@ -110,9 +110,7 @@ export function noteSoundingFret(note) {
 }
 
 export function noteDisplayValue(note) {
-  const harmonic = harmonicTechnique(note);
-  if (!harmonic) return String(note?.fret ?? '');
-  return `${noteBaseFret(note)}<${Math.trunc(Number(harmonic.touchFret))}>`;
+  return String(noteBaseFret(note));
 }
 
 function normalizeNote(note, idFactory) {
