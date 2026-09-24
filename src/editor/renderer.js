@@ -19,7 +19,7 @@ import {
   noteDisplayValue,
   STRING_COUNT
 } from './model.js';
-import { fractionalGridTimes } from './rhythm-grid.js';
+import { fractionalGridTimes, isTimeReplacedByFractionalGrid } from './rhythm-grid.js';
 import { isPreviewActive, isScoreViewActive, scoreDensityMode } from './view-state.js';
 
 const EDITOR_RAIL_WIDTH = 102;
@@ -57,7 +57,10 @@ export function editableTimesForMeasure(measure) {
     const key = fractionKey(normalized);
     if (!map.has(key)) map.set(key, { at: normalized, duration: normalizeFraction(durationValue, BASE_GRID_STEP) });
   };
-  for (let value = 0; value < duration - 1e-9; value += 0.25) add([Math.round(value * 4), 4]);
+  for (let value = 0; value < duration - 1e-9; value += 0.25) {
+    const at = [Math.round(value * 4), 4];
+    if (!isTimeReplacedByFractionalGrid(measure, at)) add(at);
+  }
   for (const time of fractionalGridTimes(measure)) add(time.at, time.duration || BASE_GRID_STEP);
   for (const event of measure?.events || []) add(event.at, event.duration || BASE_GRID_STEP);
   return [...map.values()].sort((left, right) => compareFractions(left.at, right.at));
