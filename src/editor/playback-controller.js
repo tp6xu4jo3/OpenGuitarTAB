@@ -1,10 +1,8 @@
 import { getAudioEngine } from './audio-engine.js';
-import { measureWidthsForGrid } from './grid-geometry.js';
-import { LEGACY_SLOTS_PER_BEAT } from './legacy-grid-compat.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
-import { buildPlaybackIndex, legacyPositionForEntry, nearestPlaybackIndex } from './playback-index.js';
-let installed = false;
+import { buildPlaybackIndex } from './playback-index.js';
 
+let installed = false;
 const state = {
   playing: false,
   timer: null,
@@ -13,11 +11,9 @@ const state = {
   document: null,
   dirty: true,
   currentNodes: [],
-  currentLine: null,
+  currentColumn: null,
   lastCenteredKey: null
 };
-
-const rowInputCache = new Map();
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -27,16 +23,15 @@ function currentSongSafe() {
   return typeof window.currentSong === 'function' ? window.currentSong() : null;
 }
 
-function currentDocument({ reconcile = false } = {}) {
-  if (reconcile) window.editorV3?.reconcileCurrentSong?.();
+function currentDocument() {
   const storeDocument = window.editorV3?.getStore?.()?.getDocument?.();
   if (storeDocument) return storeDocument;
   const song = currentSongSafe();
   return song ? ensureSongDocumentV3(song) : null;
 }
 
-function ensureIndex({ force = false, reconcile = false } = {}) {
-  const documentModel = currentDocument({ reconcile });
+function ensureIndex({ force = false } = {}) {
+  const documentModel = currentDocument();
   if (!documentModel) {
     state.playbackIndex = { document: null, entries: [], totalBeats: 0 };
     state.document = null;
@@ -51,64 +46,11 @@ function ensureIndex({ force = false, reconcile = false } = {}) {
   return state.playbackIndex;
 }
 
-function inputIndexForRow(row) {
-  const safeRow = Math.max(0, Number(row) || 0);
-  let index = rowInputCache.get(safeRow);
-  if (index) return index;
-  index = new Map();
-  document.querySelectorAll(`.note-input[data-row="${safeRow}"]`).forEach(input => {
-    const position = Number(input.dataset.position);
-    if (!Number.isInteger(position)) return;
-    if (!index.has(position)) index.set(position, []);
-    index.get(position).push(input);
-  });
-  rowInputCache.set(safeRow, index);
-  return index;
-}
-
-function getInputsAt(row, position) {
-  const inputs = inputIndexForRow(row).get(Number(position));
-  return inputs ? inputs.slice() : [];
-}
-
-function getFilledInputsAt(row, position) {
-  return getInputsAt(row, position).filter(input => String(input.value || '').trim() !== '');
-}
-
 function clearPlayhead() {
   state.currentNodes.forEach(node => node.classList?.remove('is-playing'));
   state.currentNodes = [];
-  state.currentLine?.remove();
-  state.currentLine = null;
-  document.querySelectorAll('.playhead-column').forEach(node => node.remove());
-}
-
-function scoreViewActive() {
-  return Boolean(document.getElementById('editorView')?.classList.contains('score-view'));
-}
-
-function gridForEntry(entry) {
-  const grids = [...document.querySelectorAll(`.tab-grid[data-row="${entry.rowIndex}"]`)];
-  return grids.find(grid => {
-    const start = Number(grid.dataset.measureStart) || 0;
-    const count = Number(grid.dataset.measureCount) || 1;
-    return entry.measureIndexInSystem >= start && entry.measureIndexInSystem < start + count;
-  }) || grids[0] || null;
-}
-
-function playheadGeometry(entry, grid) {
-  const startMeasure = Number(grid.dataset.measureStart) || 0;
-  const widths = measureWidthsForGrid(grid);
-  const localMeasure = Math.max(0, Math.min(widths.length - 1, entry.measureIndexInSystem - startMeasure));
-  const withinMeasure = entry.measureDurationBeats > 0
-    ? clamp(entry.atBeats / entry.measureDurationBeats, 0, 1)
-    : 0;
-  const measureLeft = widths.slice(0, localMeasure).reduce((sum, value) => sum + value, 0);
-  const measureWidth = widths[localMeasure] || 100 / widths.length;
-  return {
-    left: measureLeft + measureWidth * withinMeasure,
-    width: Math.max(0.8, measureWidth / Math.max(16, entry.measureDurationBeats * LEGACY_SLOTS_PER_BEAT))
-  };
+  state.currentColumn?.classList?.remove('is-playing-column');
+  state.currentColumn = null;
 }
 
 function followPlaybackLine(node, key) {
@@ -117,52 +59,36 @@ function followPlaybackLine(node, key) {
   if (!sheet || sheet.clientHeight <= 0) return;
   const sheetRect = sheet.getBoundingClientRect();
   const nodeRect = node.getBoundingClientRect();
-  const sheetCenter = sheetRect.top + sheet.clientHeight / 2;
   const nodeCenter = nodeRect.top + nodeRect.height / 2;
-  if (nodeCenter <= sheetCenter + 1 && nodeRect.bottom >= sheetRect.top) return;
   const centerInContent = sheet.scrollTop + (nodeCenter - sheetRect.top);
   const maxScrollTop = Math.max(0, sheet.scrollHeight - sheet.clientHeight);
-  sheet.scrollTo({ top: clamp(centerInContent - sheet.clientHeight / 2, 0, maxScrollTop), behavior: 'smooth' });
+  if (nodeRect.top < sheetRect.top || nodeRect.bottom > sheetRect.bottom) {
+    sheet.scrollTo({ top: clamp(centerInContent - sheet.clientHeight / 2, 0, maxScrollTop), behavior: 'smooth' });
+  }
   state.lastCenteredKey = key;
+}
+
+function entryColumn(entry) {
+  const eventId = CSS.escape(String(entry.eventId || ''));
+  const byEvent = document.querySelector(`.v3-column-target[data-event-id="${eventId}"]`);
+  if (byEvent) return byEvent;
+  const measureId = CSS.escape(String(entry.measureId || ''));
+  const at = CSS.escape(`${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}`);
+  return document.querySelector(`.v3-column-target[data-measure-id="${measureId}"][data-at="${at}"]`);
 }
 
 function highlightEntry(entry) {
   clearPlayhead();
   if (!entry) return;
-
-  const v3Event = document.querySelector(`.v3-event[data-event-id="${CSS.escape(String(entry.eventId))}"]`);
-  if (v3Event) {
-    state.currentNodes = [...v3Event.querySelectorAll('.v3-note')];
-    state.currentNodes.forEach(node => node.classList.add('is-playing'));
-    followPlaybackLine(v3Event.closest('.v3-system') || v3Event, `v3:${entry.measureId}`);
-    return;
+  const eventNode = document.querySelector(`.v3-event[data-event-id="${CSS.escape(String(entry.eventId))}"]`);
+  state.currentNodes = eventNode ? [...eventNode.querySelectorAll('.v3-note')] : [];
+  state.currentNodes.forEach(node => node.classList.add('is-playing'));
+  const column = entryColumn(entry);
+  if (column) {
+    column.classList.add('is-playing-column');
+    state.currentColumn = column;
   }
-
-  const fractionalInputs = [...document.querySelectorAll(`.note-input[data-event-id="${CSS.escape(String(entry.eventId))}"]`)];
-  if (fractionalInputs.length) {
-    state.currentNodes = fractionalInputs;
-    state.currentNodes.forEach(node => node.classList.add('is-playing'));
-  }
-
-  const legacyPosition = legacyPositionForEntry(entry, LEGACY_SLOTS_PER_BEAT);
-  if (Number.isInteger(legacyPosition)) {
-    state.currentNodes = getInputsAt(entry.rowIndex, legacyPosition);
-    state.currentNodes.forEach(node => node.classList.add('is-playing'));
-  }
-
-  const grid = gridForEntry(entry);
-  if (!grid) return;
-  followPlaybackLine(grid, `row:${entry.rowIndex}:measure:${entry.measureIndexInSystem}`);
-  if (!state.playing || !scoreViewActive()) return;
-
-  const geometry = playheadGeometry(entry, grid);
-  const line = document.createElement('div');
-  line.className = 'playhead-column';
-  line.style.left = `${geometry.left}%`;
-  line.style.width = `${geometry.width}%`;
-  line.setAttribute('aria-hidden', 'true');
-  grid.appendChild(line);
-  state.currentLine = line;
+  followPlaybackLine(eventNode?.closest('.tab-system') || column?.closest('.tab-system') || eventNode || column, `event:${entry.eventId}`);
 }
 
 function entryForIndex(index) {
@@ -177,14 +103,15 @@ function formatBeat(entry) {
 }
 
 function visualLocationForEntry(entry) {
-  const grid = gridForEntry(entry);
-  const system = grid?.closest?.('.tab-system');
-  const line = system?.closest?.('.score-density-line');
-  const visualRow = Number(line?.dataset.visualRow ?? system?.dataset.visualRow);
-  const startMeasure = Number(grid?.dataset.measureStart) || 0;
+  const column = entryColumn(entry);
+  const system = column?.closest?.('.tab-system');
+  const visualRow = Number(system?.dataset.visualRow);
+  const grid = column?.closest?.('.v3-grid');
+  const ids = String(grid?.dataset.measureIds || '').split(',').filter(Boolean);
+  const localMeasure = ids.indexOf(String(entry.measureId));
   return {
     rowIndex: Number.isInteger(visualRow) ? visualRow : entry.rowIndex,
-    measureIndex: Math.max(0, entry.measureIndexInSystem - startMeasure)
+    measureIndex: localMeasure >= 0 ? localMeasure : entry.measureIndexInSystem
   };
 }
 
@@ -204,19 +131,6 @@ function totalSlots() {
   return Math.max(1, ensureIndex().entries.length);
 }
 
-function indexToSlot(index) {
-  const entry = entryForIndex(index);
-  if (!entry) return { row: 0, position: 0 };
-  return {
-    row: entry.rowIndex,
-    position: Math.max(0, Math.round(legacyPositionForEntry(entry, LEGACY_SLOTS_PER_BEAT)))
-  };
-}
-
-function slotToIndex(row, position) {
-  return nearestPlaybackIndex(ensureIndex(), row, position, LEGACY_SLOTS_PER_BEAT);
-}
-
 function setProgressIndex(index, updateSlider = true, highlight = true) {
   const playback = ensureIndex();
   state.currentIndex = clamp(Number(index) || 0, 0, Math.max(0, playback.entries.length - 1));
@@ -227,7 +141,7 @@ function setProgressIndex(index, updateSlider = true, highlight = true) {
 }
 
 function updateProgressRange() {
-  const playback = ensureIndex({ force: true });
+  const playback = ensureIndex();
   const slider = document.getElementById('playProgress');
   if (slider) {
     slider.min = '0';
@@ -238,27 +152,16 @@ function updateProgressRange() {
   setProgressIndex(state.currentIndex, true, false);
 }
 
-function jumpToInput(input, highlight = true) {
-  if (!input) return;
-  const measureId = String(input.dataset.measureId || '');
-  const at = String(input.dataset.at || '');
-  if (measureId && at) {
-    const playback = ensureIndex();
-    const exact = playback.entries.find(entry =>
-      String(entry.measureId) === measureId
-      && `${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}` === at
-    );
-    if (exact) {
-      setProgressIndex(exact.index, true, highlight);
-      return;
-    }
-  }
-  setProgressIndex(slotToIndex(Number(input.dataset.row), Number(input.dataset.position)), true, highlight);
-}
-
-function highlightPlayhead(row, position) {
+function jumpToTarget(target, highlight = true) {
+  if (!target) return;
+  const measureId = String(target.dataset?.measureId || '');
+  const at = String(target.dataset?.at || '');
+  if (!measureId || !at) return;
   const playback = ensureIndex();
-  highlightEntry(playback.entries[nearestPlaybackIndex(playback, row, position, LEGACY_SLOTS_PER_BEAT)] || null);
+  const exact = playback.entries.find(entry =>
+    String(entry.measureId) === measureId && `${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}` === at
+  );
+  if (exact) setProgressIndex(exact.index, true, highlight);
 }
 
 function updatePlayButton(playing) {
@@ -286,30 +189,26 @@ async function startPlayback() {
   const audio = getAudioEngine();
   if (!audio || !await audio.ensureReady()) return;
   stopPlayback(false, true);
-  const playback = ensureIndex({ force: true, reconcile: true });
+  const playback = ensureIndex();
   if (!playback.entries.length) {
     window.showToast?.('目前沒有可播放的音符');
     updateProgressRange();
     return;
   }
-
   const slider = document.getElementById('playProgress');
   state.currentIndex = clamp(Number(slider?.value) || state.currentIndex, 0, playback.entries.length - 1);
   state.playing = true;
   state.lastCenteredKey = null;
   updatePlayButton(true);
-
   if (state.currentIndex === 0) {
     const sheet = document.getElementById('editorView')?.querySelector('.sheet');
     if (sheet) sheet.scrollTop = 0;
   }
-
   const tempo = typeof window.getTempo === 'function' ? window.getTempo() : 120;
   const beatMs = 60000 / tempo;
   const first = playback.entries[state.currentIndex];
   const anchorBeat = first.absoluteBeat;
   const anchorTime = performance.now();
-
   const tick = index => {
     if (!state.playing) return;
     const entry = playback.entries[index];
@@ -320,14 +219,12 @@ async function startPlayback() {
     playEntry(entry);
     const next = playback.entries[index + 1];
     if (!next) {
-      const tailMs = Math.max(0.25, entry.durationBeats || 0.25) * beatMs;
-      state.timer = window.setTimeout(() => stopPlayback(true, false), tailMs);
+      state.timer = window.setTimeout(() => stopPlayback(true, false), Math.max(0.25, entry.durationBeats || 0.25) * beatMs);
       return;
     }
     const targetTime = anchorTime + (next.absoluteBeat - anchorBeat) * beatMs;
     state.timer = window.setTimeout(() => tick(index + 1), Math.max(0, targetTime - performance.now()));
   };
-
   tick(state.currentIndex);
 }
 
@@ -345,43 +242,25 @@ function stopPlayback(resetButton = true, stopVoices = true) {
 
 function invalidatePlaybackIndex() {
   state.dirty = true;
-  rowInputCache.clear();
-}
-
-function installPlayButton() {
-  const button = document.getElementById('playButton');
-  if (!button) return;
-  button.addEventListener('click', event => {
-    event.preventDefault();
-    if (state.playing) stopPlayback();
-    else void startPlayback();
-  });
 }
 
 export function installPlaybackController() {
   if (typeof window === 'undefined') return null;
   if (installed) return window.editorPlayback || null;
   installed = true;
-
   Object.assign(window, {
     totalSlots,
-    slotToIndex,
-    indexToSlot,
     updateProgressRange,
     updateProgressLabel,
-    jumpToInput,
+    jumpToInput: jumpToTarget,
     setProgressIndex,
-    getInputsAt,
-    getFilledInputsAt,
-    highlightPlayhead,
     clearPlayhead,
     startPlayback,
     stopPlayback,
     invalidateRowPlaybackLayout: invalidatePlaybackIndex
   });
-
   const api = {
-    rebuild: () => ensureIndex({ force: true, reconcile: true }),
+    rebuild: () => ensureIndex({ force: true }),
     invalidate: invalidatePlaybackIndex,
     start: startPlayback,
     stop: stopPlayback,
@@ -391,13 +270,11 @@ export function installPlaybackController() {
     get isPlaying() { return state.playing; }
   };
   window.editorPlayback = api;
-
-  installPlayButton();
-  const tabArea = document.getElementById('tabArea');
-  tabArea?.addEventListener('input', invalidatePlaybackIndex, true);
-  if (tabArea && typeof MutationObserver === 'function') {
-    new MutationObserver(() => rowInputCache.clear()).observe(tabArea, { childList: true, subtree: true });
-  }
+  document.getElementById('playButton')?.addEventListener('click', event => {
+    event.preventDefault();
+    if (state.playing) stopPlayback();
+    else void startPlayback();
+  });
   updateProgressRange();
   return api;
 }

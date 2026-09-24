@@ -1,11 +1,10 @@
 import { EditorClipboard } from './clipboard.js';
 import { createChangeSet } from './commands.js';
-import { applyLayoutChange, scheduleLayoutRender } from './grid-renderer.js';
-import { installEditorInputController } from './input-controller.js';
 import { buildSystems } from './layout.js';
 import { compareFractions, fractionKey, normalizeFraction } from './model.js';
 import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
+import { EditorRibbon, RIBBON_SECTIONS } from './ribbon.js';
 import { EditorStateSync } from './state-sync.js';
 import { StoreRegistry } from './store.js';
 import { resolveTechniqueTarget } from './technique-rules.js';
@@ -22,8 +21,8 @@ const boundStores = new WeakSet();
 
 let installed = false;
 let notationRenderer = null;
-let toolPalette = null;
-let toolboxCollapsed = false;
+let scoreRenderer = null;
+let editorRibbon = null;
 let selectedTechniqueRef = null;
 let techniqueContextMenu = null;
 
@@ -39,13 +38,15 @@ function escapeSelector(value) {
 function bindStore(store) {
   if (!store || boundStores.has(store)) return store;
   boundStores.add(store);
-  store.subscribe((documentModel, changeSet) => notationRenderer?.schedule(documentModel, changeSet));
-  notationRenderer?.schedule(store.getDocument(), { document: true });
+  store.subscribe((documentModel, changeSet) => {
+    scoreRenderer?.render(documentModel, changeSet);
+    notationRenderer?.schedule(documentModel, changeSet);
+  });
   return store;
 }
 
-function ensureStore(options) {
-  return bindStore(stateSync.ensureStore(options));
+function ensureStore() {
+  return bindStore(stateSync.ensureStore());
 }
 
 function editingBlocked() {
@@ -57,8 +58,6 @@ function dispatchCommand(command) {
   if (!store) return { document: null, changeSet: createChangeSet() };
   const result = store.dispatch(command);
   stateSync.markCurrent(store);
-  if (result.changeSet.document) scheduleLayoutRender();
-  else if (result.changeSet.layoutFrom) applyLayoutChange(result.document, result.changeSet);
   return result;
 }
 
@@ -70,7 +69,6 @@ function copyModule(target) {
   if (!target || editingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
-
   if (target.type === 'measure') {
     const measure = systemMeasures(store, target.rowIndex)?.[target.measureIndex];
     if (!measure) return false;
@@ -78,7 +76,6 @@ function copyModule(target) {
     toast(`已複製第 ${target.rowIndex + 1} 列第 ${target.measureIndex + 1} 小節`);
     return true;
   }
-
   if (target.type === 'row') {
     const measures = systemMeasures(store, target.rowIndex);
     if (!measures.length) return false;
@@ -86,7 +83,6 @@ function copyModule(target) {
     toast(`已複製第 ${target.rowIndex + 1} 列`);
     return true;
   }
-
   return false;
 }
 
@@ -94,10 +90,6 @@ function pasteModule(target) {
   if (!target || editingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
-
-  const song = store.getSong();
-  const previousCounts = [...(song.rowMeasureCounts || [])];
-
   if (target.type === 'measure') {
     if (!clipboardState.has('measure')) {
       toast('目前沒有可貼上的小節');
@@ -108,11 +100,9 @@ function pasteModule(target) {
     const result = clipboardState.pasteMeasure(store.getDocument(), measure.id);
     if (!result) return false;
     store.commit(result.document, result.changeSet);
-    stateSync.projectStoreToView(store, target, previousCounts);
     toast(`已貼到第 ${target.rowIndex + 1} 列第 ${target.measureIndex + 1} 小節`);
     return true;
   }
-
   if (target.type === 'row') {
     if (!clipboardState.has('system')) {
       toast('目前沒有可貼上的列');
@@ -123,38 +113,33 @@ function pasteModule(target) {
     const result = clipboardState.pasteSystem(store.getDocument(), measures.map(measure => measure.id));
     if (!result) return false;
     store.commit(result.document, result.changeSet);
-    stateSync.projectStoreToView(store, target, previousCounts);
     toast(`已貼到第 ${target.rowIndex + 1} 列`);
     return true;
   }
-
   return false;
 }
 
-function atFromNode(node) {
-  const input = node?.closest?.('.note-input[data-measure-id][data-at]');
-  if (!input) return null;
-  const [numerator, denominator] = String(input.dataset.at || '').split('/').map(Number);
+function fractionFromDataset(value) {
+  const [numerator, denominator] = String(value || '').split('/').map(Number);
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return null;
-  return {
-    measureId: String(input.dataset.measureId || ''),
-    at: normalizeFraction([numerator, denominator])
-  };
+  return normalizeFraction([numerator, denominator]);
+}
+
+function atFromNode(node) {
+  const target = node?.closest?.('.v3-column-target[data-measure-id][data-at],.v3-note[data-measure-id][data-at],.v3-note-editor[data-measure-id][data-at]');
+  const at = fractionFromDataset(target?.dataset?.at);
+  if (!target || !at) return null;
+  return { measureId: String(target.dataset.measureId || ''), at };
 }
 
 function toolTargetFromNode(definition, node) {
   if (!definition || !node) return null;
   const kind = toolTargetKind(definition);
-
   if (kind === TOOL_TARGET_KINDS.NOTE || kind === TOOL_TARGET_KINDS.NOTE_PAIR) {
-    const noteId = node.closest?.('[data-note-id]')?.dataset.noteId;
+    const noteId = node.closest?.('.v3-note[data-note-id]')?.dataset.noteId;
     return noteId ? { noteId: String(noteId) } : null;
   }
-
-  if (kind === TOOL_TARGET_KINDS.COLUMN || kind === TOOL_TARGET_KINDS.RANGE) {
-    return atFromNode(node);
-  }
-
+  if (kind === TOOL_TARGET_KINDS.COLUMN || kind === TOOL_TARGET_KINDS.RANGE) return atFromNode(node);
   return null;
 }
 
@@ -174,14 +159,11 @@ function eventsInRange(documentModel, target) {
 }
 
 function commandTarget(definition, target, documentModel) {
-  if (definition.target === 'note') return target;
-  if (definition.target === 'notePair') return target;
-
+  if (definition.target === 'note' || definition.target === 'notePair') return target;
   if (definition.target === 'event') {
     const event = eventAtColumn(documentModel, target);
     return event ? { eventId: event.id, measureId: target.measureId, at: target.at } : null;
   }
-
   if (definition.target === 'eventRange') {
     const events = eventsInRange(documentModel, target);
     return {
@@ -191,53 +173,43 @@ function commandTarget(definition, target, documentModel) {
       eventIds: events.map(event => event.id)
     };
   }
-
   return target;
 }
 
 function clearToolSource() {
-  document.querySelectorAll('.note-input.tool-link-source,.note-input.tool-range-source').forEach(node => {
+  document.querySelectorAll('.v3-note.tool-link-source,.v3-column-target.tool-range-source').forEach(node => {
     node.classList.remove('tool-link-source', 'tool-range-source');
   });
 }
 
 function markToolSource(kind, target) {
   clearToolSource();
-
   if (kind === TOOL_TARGET_KINDS.NOTE_PAIR && target?.noteId) {
-    document.querySelectorAll(`[data-note-id="${escapeSelector(target.noteId)}"]`).forEach(node => {
-      node.classList.add('tool-link-source');
-    });
+    document.querySelectorAll(`.v3-note[data-note-id="${escapeSelector(target.noteId)}"]`).forEach(node => node.classList.add('tool-link-source'));
     return;
   }
-
   if (kind === TOOL_TARGET_KINDS.RANGE && target?.measureId && Array.isArray(target.at)) {
     const measureId = escapeSelector(target.measureId);
     const at = escapeSelector(fractionKey(target.at));
-    document.querySelectorAll(`.note-input[data-measure-id="${measureId}"][data-at="${at}"]`).forEach(node => {
-      node.classList.add('tool-range-source');
-    });
+    document.querySelectorAll(`.v3-column-target[data-measure-id="${measureId}"][data-at="${at}"]`).forEach(node => node.classList.add('tool-range-source'));
   }
 }
 
 function dispatchTool(toolId, target, options = {}) {
   const definition = toolRegistry.get(toolId);
   if (!definition || editingBlocked()) return false;
-  const store = ensureStore({ reconcile: false });
+  const store = ensureStore();
   if (!store) return false;
-
   const resolved = commandTarget(definition, target, store.getDocument());
   if (!resolved) {
     toast('這個時間位置沒有可套用技巧的目標');
     return false;
   }
-
   const validation = resolveTechniqueTarget(toolId, resolved, store.getDocument());
   if (!validation.ok) {
     toast(validation.message || '這個目標無法套用此技巧');
     return false;
   }
-
   dispatchCommand(toolRegistry.createCommand(toolId, validation.target, options));
   return true;
 }
@@ -257,7 +229,6 @@ function ensureTechniqueContextMenu() {
   menu.className = 'technique-context-menu';
   menu.hidden = true;
   menu.setAttribute('role', 'menu');
-
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.dataset.deleteTechnique = 'true';
@@ -308,32 +279,26 @@ function showTechniqueContextMenu(marker, event) {
 }
 
 function syncToolButtons() {
-  const activeToolId = toolSession.snapshot().toolId;
-  toolPalette?.querySelectorAll('[data-editor-tool]').forEach(button => {
-    const active = button.dataset.editorTool === activeToolId;
-    button.classList.toggle('is-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+  editorRibbon?.setActiveTool(toolSession.snapshot().toolId);
 }
 
-function setToolboxCollapsed(collapsed) {
-  toolboxCollapsed = Boolean(collapsed);
-  const palette = toolPalette;
-  if (!palette) return toolboxCollapsed;
-  palette.classList.toggle('is-collapsed', toolboxCollapsed);
-  const toggle = palette.querySelector('[data-editor-toolbox-toggle]');
-  if (toggle) {
-    toggle.textContent = toolboxCollapsed ? '技巧 ›' : '‹';
-    toggle.title = toolboxCollapsed ? '展開技巧' : '收合技巧';
-    toggle.setAttribute('aria-expanded', String(!toolboxCollapsed));
-  }
-  return toolboxCollapsed;
+function cancelActiveTool() {
+  if (!toolSession.active) return false;
+  toolSession.cancel();
+  notationRenderer?.clearPreview();
+  clearToolSource();
+  syncToolButtons();
+  return true;
 }
 
 function setActiveTool(toolId) {
   const definition = toolRegistry.get(toolId);
-  if (!definition) toolSession.cancel();
-  else toolSession.activate(definition.id, toolTargetKind(definition));
+  if (!definition) {
+    cancelActiveTool();
+    return null;
+  }
+  editorRibbon?.open(RIBBON_SECTIONS.TECHNIQUE);
+  toolSession.activate(definition.id, toolTargetKind(definition));
   notationRenderer?.clearPreview();
   clearToolSource();
   clearTechniqueSelection();
@@ -342,65 +307,29 @@ function setActiveTool(toolId) {
   return toolSession.snapshot().toolId;
 }
 
-function ensureToolPalette() {
-  if (toolPalette?.isConnected) return toolPalette;
+function ensureEditorRibbon() {
+  if (editorRibbon?.root?.isConnected) return editorRibbon;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return null;
-
-  const palette = document.createElement('div');
-  palette.className = 'editor-toolbox';
-  palette.id = 'editorToolbox';
-  palette.setAttribute('aria-label', '吉他技巧工具');
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'editor-toolbox-toggle';
-  toggle.dataset.editorToolboxToggle = 'true';
-  palette.appendChild(toggle);
-
-  const label = document.createElement('span');
-  label.className = 'editor-toolbox-label';
-  label.textContent = '技巧';
-  palette.appendChild(label);
-
-  toolRegistry.list().forEach(definition => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'editor-tool-button';
-    button.dataset.editorTool = definition.id;
-    button.title = definition.hint || definition.label || definition.id;
-    button.setAttribute('aria-pressed', 'false');
-
-    const glyph = document.createElement('span');
-    glyph.className = 'editor-tool-glyph';
-    glyph.textContent = definition.glyph || definition.label || definition.id;
-    glyph.setAttribute('aria-hidden', 'true');
-
-    const name = document.createElement('span');
-    name.className = 'editor-tool-name';
-    name.textContent = definition.label || definition.id;
-    button.append(glyph, name);
-    palette.appendChild(button);
+  editorRibbon = new EditorRibbon({
+    toolDefinitions: toolRegistry.list(),
+    onToolSelect: toolId => setActiveTool(toolId),
+    onSectionChange: section => {
+      if (section !== RIBBON_SECTIONS.TECHNIQUE) cancelActiveTool();
+    }
   });
-
-  tabArea.before(palette);
-  toolPalette = palette;
-  setToolboxCollapsed(toolboxCollapsed);
+  editorRibbon.mountBefore(tabArea);
   syncToolButtons();
-  return palette;
+  return editorRibbon;
 }
 
-function syncToolPalette() {
-  const palette = ensureToolPalette();
-  if (!palette) return;
+function syncEditorRibbon() {
+  const ribbon = ensureEditorRibbon();
+  if (!ribbon) return;
   const editorView = document.getElementById('editorView');
   const hidden = Boolean(editorView?.hidden || editingBlocked());
-  palette.hidden = hidden;
-  if (hidden && toolSession.active) {
-    toolSession.cancel();
-    clearToolSource();
-    syncToolButtons();
-  }
+  ribbon.setHidden(hidden);
+  if (hidden) cancelActiveTool();
 }
 
 function invalidSelectionMessage(reason) {
@@ -414,12 +343,10 @@ function handleToolSelection(target) {
   const snapshot = toolSession.snapshot();
   if (!snapshot.toolId) return false;
   const result = toolSession.select(target);
-
   if (result.status === 'invalid') {
     toast(invalidSelectionMessage(result.reason));
     return true;
   }
-
   if (result.status === 'pending') {
     markToolSource(snapshot.targetKind, result.source);
     toast(snapshot.targetKind === TOOL_TARGET_KINDS.NOTE_PAIR
@@ -427,7 +354,6 @@ function handleToolSelection(target) {
       : '已選擇範圍起點，請選擇終點');
     return true;
   }
-
   if (result.status === 'complete') {
     const committed = dispatchTool(snapshot.toolId, result.target);
     if (committed) {
@@ -438,7 +364,6 @@ function handleToolSelection(target) {
     }
     return true;
   }
-
   return false;
 }
 
@@ -450,50 +375,28 @@ function installToolInteractions() {
       deleteSelectedTechnique();
       return;
     }
-
     const techniqueMarker = event.target?.closest?.('.technique-marker');
     if (techniqueMarker) {
       event.preventDefault();
-      toolSession.cancel();
-      notationRenderer?.clearPreview();
-      clearToolSource();
-      syncToolButtons();
+      cancelActiveTool();
       selectTechniqueMarker(techniqueMarker);
       hideTechniqueContextMenu();
       return;
     }
-
     if (!event.target?.closest?.('.technique-context-menu')) {
       clearTechniqueSelection();
       hideTechniqueContextMenu();
     }
-
-    const collapseButton = event.target?.closest?.('[data-editor-toolbox-toggle]');
-    if (collapseButton) {
-      event.preventDefault();
-      setToolboxCollapsed(!toolboxCollapsed);
-      return;
-    }
-
-    const toolButton = event.target?.closest?.('[data-editor-tool]');
-    if (toolButton) {
-      event.preventDefault();
-      setActiveTool(toolButton.dataset.editorTool);
-      return;
-    }
-
     const snapshot = toolSession.snapshot();
     if (!snapshot.toolId || editingBlocked()) return;
     const definition = toolRegistry.get(snapshot.toolId);
     if (!definition) return;
-
     const target = toolTargetFromNode(definition, event.target);
     const inScore = Boolean(event.target?.closest?.('#tabArea'));
     if (!target) {
       if (inScore) toast('請點選有效的譜面目標');
       return;
     }
-
     event.preventDefault();
     handleToolSelection(target);
   });
@@ -502,10 +405,7 @@ function installToolInteractions() {
     const marker = event.target?.closest?.('.technique-marker');
     if (!marker) return;
     event.preventDefault();
-    toolSession.cancel();
-    notationRenderer?.clearPreview();
-    clearToolSource();
-    syncToolButtons();
+    cancelActiveTool();
     showTechniqueContextMenu(marker, event);
   });
 
@@ -527,56 +427,49 @@ function installToolInteractions() {
     const editable = event.target instanceof HTMLInputElement
       || event.target instanceof HTMLTextAreaElement
       || event.target?.isContentEditable;
-
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedTechniqueRef && !editable) {
       event.preventDefault();
       deleteSelectedTechnique();
       return;
     }
-
     if (event.key !== 'Escape') return;
     if (!toolSession.active && !selectedTechniqueRef && techniqueContextMenu?.hidden !== false) return;
     event.preventDefault();
-    toolSession.cancel();
-    notationRenderer?.clearPreview();
-    clearToolSource();
+    cancelActiveTool();
     clearTechniqueSelection();
     hideTechniqueContextMenu();
-    syncToolButtons();
   });
 }
 
-function installNotationSync() {
+function installRenderers() {
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
   notationRenderer = new NotationRenderer(tabArea);
-
-  const gridObserver = new MutationObserver(mutations => {
-    const hasGridMutation = mutations.some(mutation => {
-      const target = mutation.target;
-      return !(target instanceof Element && target.closest('.notation-overlay,.technique-marker-layer'));
-    });
-    if (!hasGridMutation) return;
-    const store = ensureStore({ reconcile: false });
-    if (store) notationRenderer.schedule(store.getDocument(), { document: true });
+  scoreRenderer = new SparseScoreRenderer(tabArea, {
+    onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload })
   });
-  gridObserver.observe(tabArea, { childList: true, subtree: true });
-
   const editorView = document.getElementById('editorView');
   const previewBadge = document.getElementById('previewBadge');
-  const modeObserver = new MutationObserver(() => syncToolPalette());
+  const modeObserver = new MutationObserver(() => syncEditorRibbon());
   if (editorView) modeObserver.observe(editorView, { attributes: true, attributeFilter: ['class', 'hidden'] });
   if (previewBadge) modeObserver.observe(previewBadge, { attributes: true, attributeFilter: ['hidden'] });
+}
+
+function renderCurrentSong() {
+  const store = ensureStore();
+  if (!store) return false;
+  scoreRenderer?.render(store.getDocument(), { document: true });
+  notationRenderer?.schedule(store.getDocument(), { document: true });
+  return true;
 }
 
 export function installEditorV3() {
   if (typeof window === 'undefined') return null;
   if (installed) return window.editorV3 || null;
   installed = true;
-
   installViewState();
-  ensureToolPalette();
-  installNotationSync();
+  ensureEditorRibbon();
+  installRenderers();
   installToolInteractions();
 
   const api = {
@@ -584,12 +477,13 @@ export function installEditorV3() {
     stores: registry,
     tools: toolRegistry,
     toolSession,
-    getStore: options => ensureStore(options),
+    getStore: () => ensureStore(),
+    getRenderer: () => scoreRenderer,
+    renderCurrentSong,
     reconcileCurrentSong: () => stateSync.reconcileCurrentSong(),
     sync: {
       markCurrent: store => stateSync.markCurrent(store),
-      prepareForPersistence: store => stateSync.prepareForPersistence(store),
-      projectStoreToView: (store, target, previousCounts) => stateSync.projectStoreToView(store, target, previousCounts)
+      prepareForPersistence: store => stateSync.prepareForPersistence(store)
     },
     clipboard: {
       copyModule,
@@ -597,36 +491,35 @@ export function installEditorV3() {
       clear: () => clipboardState.clear(),
       state: clipboardState
     },
+    ribbon: {
+      getState: () => editorRibbon?.state() || { activeRibbon: null, activeToolId: null },
+      open: section => editorRibbon?.open(section) || null,
+      toggle: section => editorRibbon?.toggle(section) || null,
+      close: () => editorRibbon?.close() || null
+    },
     dispatch: dispatchCommand,
     dispatchTool,
     setActiveTool,
     refreshNotation(changeSet = { document: true }) {
-      const store = ensureStore({ reconcile: false });
+      const store = ensureStore();
       if (store) notationRenderer?.schedule(store.getDocument(), changeSet);
     },
     createSparseRenderer(root, options = {}) {
-      const renderer = new SparseScoreRenderer(root, {
+      return new SparseScoreRenderer(root, {
         ...options,
-        onCommitNote: payload => {
-          const result = dispatchCommand({ type: 'note/set', ...payload });
-          const store = ensureStore({ reconcile: false });
-          if (store) renderer.render(store.getDocument(), result.changeSet);
-        }
+        onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload })
       });
-      return renderer;
     }
   };
 
   window.editorV3 = api;
+  window.renderRows = () => renderCurrentSong();
   ensureStore();
-  installEditorInputController({
-    getStore: () => ensureStore({ reconcile: false }),
-    markStoreCurrent: store => stateSync.markCurrent(store)
-  });
-
+  renderCurrentSong();
+  syncEditorRibbon();
   window.addEventListener('hashchange', () => queueMicrotask(() => {
     ensureStore();
-    syncToolPalette();
+    syncEditorRibbon();
   }));
   return api;
 }

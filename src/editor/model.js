@@ -78,7 +78,6 @@ function normalizeOwnedEntity(value, prefix, idFactory) {
 function normalizeTechnique(technique, idFactory, fallbackFret = '') {
   const normalized = normalizeOwnedEntity(technique, 't', idFactory);
   if (normalized.type !== 'harmonic') return normalized;
-
   let touchFret = Number(normalized.touchFret);
   if (!Number.isFinite(touchFret)) {
     const baseFret = Number(fallbackFret);
@@ -122,9 +121,7 @@ function normalizeNote(note, idFactory) {
   const techniques = Array.isArray(note?.techniques)
     ? note.techniques.map(technique => normalizeTechnique(technique, idFactory, sourceFret))
     : [];
-  const harmonic = techniques.find(technique =>
-    technique.type === 'harmonic' && Number.isFinite(Number(technique.touchFret))
-  );
+  const harmonic = techniques.find(technique => technique.type === 'harmonic' && Number.isFinite(Number(technique.touchFret)));
   const canonicalFret = sourceFret !== ''
     ? sourceFret
     : harmonic
@@ -158,9 +155,7 @@ function normalizeGroup(group, idFactory) {
 }
 
 function normalizeMeasure(measure, idFactory) {
-  const events = Array.isArray(measure?.events)
-    ? measure.events.map(event => normalizeEvent(event, idFactory))
-    : [];
+  const events = Array.isArray(measure?.events) ? measure.events.map(event => normalizeEvent(event, idFactory)) : [];
   events.sort((left, right) => compareFractions(left.at, right.at) || String(left.id).localeCompare(String(right.id)));
   return {
     ...(measure && typeof measure === 'object' ? cloneValue(measure) : {}),
@@ -183,25 +178,36 @@ export function createDocumentV3({ measures = [], relations = [], layout = {}, i
   const sourceMeasures = measures.length
     ? measures
     : [{ id: idFactory('m'), timeSignature: { numerator: 4, denominator: 4 }, events: [], groups: [] }];
-  return normalizeDocumentV3({
-    version: DOCUMENT_VERSION,
-    measures: sourceMeasures,
-    relations,
-    layout
-  }, { idFactory });
+  return normalizeDocumentV3({ version: DOCUMENT_VERSION, measures: sourceMeasures, relations, layout }, { idFactory });
+}
+
+export function createBlankDocumentV3({ beats = 4, systems = 4, measuresPerSystem = 4, idFactory = createId } = {}) {
+  const numerator = Number(beats) === 3 ? 3 : 4;
+  const systemCount = Math.max(1, Math.trunc(Number(systems) || 4));
+  const measureCount = Math.max(1, Math.min(4, Math.trunc(Number(measuresPerSystem) || 4)));
+  const measures = [];
+  const systemBreakAfter = [];
+  for (let systemIndex = 0; systemIndex < systemCount; systemIndex++) {
+    for (let measureIndex = 0; measureIndex < measureCount; measureIndex++) {
+      measures.push({
+        id: idFactory('m'),
+        timeSignature: { numerator, denominator: 4 },
+        events: [],
+        groups: []
+      });
+    }
+    systemBreakAfter.push(measures.at(-1).id);
+  }
+  return createDocumentV3({ measures, layout: { systemBreakAfter }, idFactory });
 }
 
 export function normalizeDocumentV3(document, { idFactory = createId } = {}) {
   const source = document && typeof document === 'object' ? cloneValue(document) : {};
-  const measures = Array.isArray(source.measures)
-    ? source.measures.map(measure => normalizeMeasure(measure, idFactory))
-    : [];
+  const measures = Array.isArray(source.measures) ? source.measures.map(measure => normalizeMeasure(measure, idFactory)) : [];
   if (!measures.length) measures.push(normalizeMeasure({}, idFactory));
-
   const measureIds = new Set(measures.map(measure => measure.id));
   const rawBreaks = Array.isArray(source.layout?.systemBreakAfter) ? source.layout.systemBreakAfter : [];
   const systemBreakAfter = [...new Set(rawBreaks.map(String).filter(id => measureIds.has(id)))];
-
   return {
     ...source,
     version: DOCUMENT_VERSION,
@@ -232,7 +238,6 @@ export function indexDocument(document) {
   const relationById = new Map();
   const eventLocation = new Map();
   const noteLocation = new Map();
-
   for (let measureIndex = 0; measureIndex < (document?.measures?.length || 0); measureIndex++) {
     const measure = document.measures[measureIndex];
     measureById.set(measure.id, { measure, measureIndex });
@@ -247,31 +252,11 @@ export function indexDocument(document) {
         noteById.set(note.id, note);
         noteLocation.set(note.id, { measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteIndex });
         for (const technique of note.techniques || []) {
-          techniqueById.set(technique.id, {
-            technique,
-            measureId: measure.id,
-            measureIndex,
-            eventId: event.id,
-            eventIndex,
-            noteId: note.id,
-            noteIndex
-          });
+          techniqueById.set(technique.id, { technique, measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteId: note.id, noteIndex });
         }
       }
     }
   }
-
   for (const relation of document?.relations || []) relationById.set(relation.id, relation);
-
-  return {
-    measureById,
-    eventById,
-    noteById,
-    techniqueById,
-    markById,
-    groupById,
-    relationById,
-    eventLocation,
-    noteLocation
-  };
+  return { measureById, eventById, noteById, techniqueById, markById, groupById, relationById, eventLocation, noteLocation };
 }

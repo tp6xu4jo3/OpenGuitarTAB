@@ -1,5 +1,3 @@
-import { measureBoundaryPercentForGrid } from './grid-geometry.js';
-import { projectDocumentToLegacySong } from './legacy-grid-compat.js';
 import { buildSystems } from './layout.js';
 import {
   deleteMeasureAt,
@@ -63,28 +61,14 @@ function ensureMenu() {
   return menu;
 }
 
-function projectAndRender(store, message = '') {
-  const song = store?.getSong();
-  if (!store || !song) return false;
-  const { ok } = projectDocumentToLegacySong(song, store.getDocument());
-  if (!ok) {
-    toast('此曲譜包含無法投影到相容網格的節奏');
-    return false;
-  }
-  window.renderRows?.(song.rows);
-  window.invalidateRowPlaybackLayout?.();
-  window.updateProgressRange?.();
-  if (message) toast(message);
-  return true;
-}
-
 function commitResult(result, message, nextSelection = null) {
   const store = currentStore();
   if (!store || !result || result.document === store.getDocument()) return false;
   store.commit(result.document, result.changeSet);
-  const ok = projectAndRender(store, message);
-  if (ok && nextSelection) requestAnimationFrame(() => setSelected(nextSelection));
-  return ok;
+  window.editorPlayback?.invalidate?.();
+  if (message) toast(message);
+  if (nextSelection) requestAnimationFrame(() => setSelected(nextSelection));
+  return true;
 }
 
 function copyTarget(target) {
@@ -112,11 +96,11 @@ function structuralAction(target, action) {
   if (target.type === 'measure') {
     const system = buildSystems(documentModel)[target.rowIndex] || [];
     if (action.startsWith('insert') && system.length >= 4) {
-      toast('每列最多 4 個小節');
+      toast('每列最多4個小節');
       return false;
     }
     if (action === 'delete' && system.length <= 1) {
-      toast('每列至少保留 1 個小節');
+      toast('每列至少保留1個小節');
       return false;
     }
     if (action === 'insert-before') return commitResult(insertMeasureAt(documentModel, target.rowIndex, target.measureIndex), '已在左方新增小節', target);
@@ -201,24 +185,33 @@ function makeVisualRowLabel(visualRowIndex) {
   return label;
 }
 
+function measureWidths(grid) {
+  const count = Math.max(1, Number(grid?.dataset?.measureCount) || 1);
+  const raw = String(grid?.dataset?.measureWidths || '').split(',').map(Number);
+  if (raw.length === count && raw.every(value => Number.isFinite(value) && value > 0)) {
+    const total = raw.reduce((sum, value) => sum + value, 0) || 100;
+    return raw.map(value => value / total * 100);
+  }
+  return Array.from({ length: count }, () => 100 / count);
+}
+
 function boundaryPercent(grid, localBoundary) {
-  return measureBoundaryPercentForGrid(grid, localBoundary);
+  const widths = measureWidths(grid);
+  const safe = Math.max(0, Math.min(widths.length, Number(localBoundary) || 0));
+  return widths.slice(0, safe).reduce((sum, value) => sum + value, 0);
 }
 
 function addMeasureUi(grid, rowIndex) {
   grid.querySelectorAll('.measure-module-hitbox,.measure-insert-boundary').forEach(node => node.remove());
   const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
   const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-
   for (let localBoundary = 0; localBoundary <= count; localBoundary++) {
-    const absoluteBoundary = start + localBoundary;
     const line = document.createElement('div');
     line.className = 'measure-insert-boundary';
-    line.dataset.boundary = String(absoluteBoundary);
+    line.dataset.boundary = String(start + localBoundary);
     line.style.left = `${boundaryPercent(grid, localBoundary)}%`;
     grid.appendChild(line);
   }
-
   for (let localMeasure = 0; localMeasure < count; localMeasure++) {
     const measureIndex = start + localMeasure;
     const left = boundaryPercent(grid, localMeasure);
@@ -265,20 +258,18 @@ function decorateEditor() {
   tabArea.querySelectorAll('.row-insert-zone').forEach(node => node.remove());
   const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
   let logicalRowCount = 0;
-
   systems.forEach((system, visualRowIndex) => {
     const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
     const sourceStart = system.dataset.sourceStart !== 'false';
     if (!Number.isInteger(rowIndex)) return;
     logicalRowCount = Math.max(logicalRowCount, rowIndex + 1);
-
     system.classList.add('editor-row-module');
     system.dataset.row = String(rowIndex);
     system.dataset.visualRow = String(visualRowIndex);
     system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
     system.querySelector('.layout-rail-placeholder')?.remove();
     system.prepend(sourceStart ? makeRowHandle(rowIndex, visualRowIndex) : makeVisualRowLabel(visualRowIndex));
-    system.querySelectorAll('.tab-grid').forEach(grid => addMeasureUi(grid, rowIndex));
+    system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
     if (sourceStart) tabArea.insertBefore(makeInsertZone(rowIndex), system);
   });
   tabArea.appendChild(makeInsertZone(logicalRowCount));
@@ -298,17 +289,17 @@ function rowBoundaryFromPoint(y) {
 
 function measureBoundaryFromPoint(x, y) {
   const pointed = document.elementFromPoint(x, y);
-  const grid = pointed?.closest?.('.tab-grid[data-row]');
+  const grid = pointed?.closest?.('.v3-grid[data-row]');
   if (!grid) return null;
   const rect = grid.getBoundingClientRect();
   const rowIndex = Number(grid.dataset.row);
   const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
   const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-  const ratioPercent = Math.max(0, Math.min(100, ((x - rect.left) / Math.max(1, rect.width)) * 100));
+  const ratio = Math.max(0, Math.min(100, ((x - rect.left) / Math.max(1, rect.width)) * 100));
   let bestLocal = 0;
   let bestDistance = Infinity;
   for (let localBoundary = 0; localBoundary <= count; localBoundary++) {
-    const distance = Math.abs(ratioPercent - boundaryPercent(grid, localBoundary));
+    const distance = Math.abs(ratio - boundaryPercent(grid, localBoundary));
     if (distance < bestDistance) { bestDistance = distance; bestLocal = localBoundary; }
   }
   return { rowIndex, boundary: start + bestLocal, grid };
@@ -347,16 +338,13 @@ function commitDrop() {
 }
 
 function installDragHandlers() {
-  window.addEventListener('dragover', event => {
-    if (!dragState) return;
-    const target = dragState.type === 'row' ? rowBoundaryFromPoint(event.clientY) : measureBoundaryFromPoint(event.clientX, event.clientY);
-    if (!target) return;
+  document.addEventListener('dragover', event => {
+    if (!dragState || editingBlocked()) return;
     event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     updateDropUi(event);
   }, true);
-  window.addEventListener('drop', event => {
-    if (!dragState) return;
+  document.addEventListener('drop', event => {
+    if (!dragState || editingBlocked()) return;
     event.preventDefault();
     event.stopPropagation();
     updateDropUi(event);
@@ -401,5 +389,5 @@ export function installStructureController() {
   installDragHandlers();
   window.addEventListener('opentab:editor-rendered', decorateEditor);
   decorateEditor();
-  window.editorV3.structure = { decorate: decorateEditor, selected: () => selected };
+  if (window.editorV3) window.editorV3.structure = { decorate: decorateEditor, selected: () => selected };
 }
