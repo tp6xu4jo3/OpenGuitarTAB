@@ -347,7 +347,7 @@ function deleteGroup(document, groupId) {
   measure.groups = (measure.groups || []).filter(group => group.id !== groupId);
   return {
     document: withMeasure(document, location.measureIndex, measure),
-    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id })
+    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id, layoutKind: LAYOUT_INVALIDATION.GRID })
   };
 }
 
