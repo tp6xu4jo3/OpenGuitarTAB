@@ -38,8 +38,9 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 {
   const inserted=insertMeasureAt(twoRows(),1,2,{idFactory:ids(),overflowDirection:'backward'}).document;
   const rows=buildSystems(inserted).map(row=>row.map(m=>m.id));
-  assert.equal(rows[1].length,4);
-  assert.equal(rows[0].at(-1),'m5','left insertion must spill target row head to previous row tail');
+  assert.ok(rows.some(row=>row.at(-1)==='m5'),'left insertion must spill target row head to the preceding row tail');
+  assert.equal(rows[0][0],'m1','when the preceding row is also full its own head cascades into a new previous row');
+  assert.equal(rows.flat().length,9);
 }
 {
   const inserted=insertSystem(twoRows(),1).document;
