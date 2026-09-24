@@ -28,6 +28,7 @@ const appLibrary = read('src/app-library.js');
 const appRuntime = read('src/app-runtime.js');
 const editorScroll = read('styles/editor-scroll.css');
 const editorTools = read('styles/editor-tools.css');
+const vercelConfig = JSON.parse(read('vercel.json'));
 
 for (const removed of [
   'legacy-ui-bridge',
@@ -180,6 +181,9 @@ assert.equal(notationRenderer.includes("String(grid.dataset.measureIds || '')"),
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');
+assert.equal(vercelConfig.git?.deploymentEnabled?.['*'], false, 'feature branches must not auto-deploy to Vercel');
+assert.equal(vercelConfig.git?.deploymentEnabled?.main, true, 'main must remain the only automatic Vercel deployment branch');
+
 assert.equal(bootstrap.includes("'./src/app-editor"), false, 'bootstrap must not load classic editor scripts');
 
 console.log('editor architecture tests passed');
