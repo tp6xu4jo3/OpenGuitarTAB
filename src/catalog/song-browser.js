@@ -67,6 +67,7 @@ export class SongBrowser {
     this.emptyText = emptyText;
     this.renderArrangementActions = renderArrangementActions;
     this.works = [];
+    this.errorText = '';
     this.activeArtist = '';
     this.expandedWorkId = null;
 
@@ -80,8 +81,17 @@ export class SongBrowser {
 
   setWorks(works = []) {
     this.works = Array.isArray(works) ? works : [];
+    this.errorText = '';
     if (this.activeArtist && !collectArtists(this.works).includes(this.activeArtist)) this.activeArtist = '';
     if (this.expandedWorkId && !this.works.some(work => work.workId === this.expandedWorkId)) this.expandedWorkId = null;
+    this.render();
+  }
+
+  setError(message) {
+    this.works = [];
+    this.errorText = String(message || '曲譜載入失敗。');
+    this.activeArtist = '';
+    this.expandedWorkId = null;
     this.render();
   }
 
@@ -96,6 +106,8 @@ export class SongBrowser {
 
   renderArtistRail() {
     this.artistRail.innerHTML = '';
+    this.artistRail.hidden = Boolean(this.errorText);
+    if (this.errorText) return;
     const artists = collectArtists(this.works);
     const options = [{ value: '', label: '全部', initial: '全' }, ...artists.map(artist => ({ value: artist, label: artist, initial: artistInitial(artist) }))];
     for (const option of options) {
@@ -183,8 +195,13 @@ export class SongBrowser {
 
   render() {
     this.renderArtistRail();
-    const works = this.selectedWorks();
     this.container.innerHTML = '';
+    if (this.errorText) {
+      this.container.appendChild(createElement('p', 'empty-state song-browser-error', this.errorText));
+      if (this.countElement) this.countElement.textContent = '';
+      return;
+    }
+    const works = this.selectedWorks();
     works.forEach(work => this.container.appendChild(this.createWorkCard(work)));
     if (!works.length) this.container.appendChild(createElement('p', 'empty-state', this.emptyText));
     if (this.countElement) this.countElement.textContent = `${works.length} 首`;

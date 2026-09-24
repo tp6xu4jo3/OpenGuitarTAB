@@ -15,6 +15,15 @@
     return user?.role === 'admin' ? '管理員' : '測試帳號';
   }
 
+  function loginErrorMessage(error) {
+    if (error?.message === 'INVALID_CREDENTIALS') return '帳號或密碼錯誤';
+    if (error?.message === 'VERCEL_SECURITY_CHALLENGE') {
+      return 'Vercel 安全檢查暫時阻擋登入，請稍後再試或檢查 Firewall / Attack Mode。';
+    }
+    if (error?.status === 429) return '登入服務暫時受到流量限制，請稍後再試。';
+    return '登入失敗，請確認後端設定。';
+  }
+
   function updateSessionUi() {
     if (!sidebarSession) return;
     sidebarSession.innerHTML = '';
@@ -37,7 +46,7 @@
   }
 
   function openLoginModal(route = null) {
-    if (state.user?.localTest) return;
+    if (dataSource.isLocalTest || state.user?.localTest) return;
     if (route) state.pendingRoute = route;
     loginError.textContent = '';
     loginPassword.value = '';
@@ -80,7 +89,7 @@
       window.dispatchEvent(new CustomEvent('opentab:auth-changed', { detail: { user: state.user, pendingRoute } }));
     } catch (error) {
       console.error(error);
-      loginError.textContent = error?.message === 'INVALID_CREDENTIALS' ? '帳號或密碼錯誤' : '登入失敗，請確認後端設定。';
+      loginError.textContent = loginErrorMessage(error);
       loginPassword.select();
     } finally {
       submit.disabled = false;

@@ -7,6 +7,13 @@ const outputDir = path.join(projectRoot, 'dist');
 const stylesDir = path.join(projectRoot, 'styles');
 const outputStylesDir = path.join(outputDir, 'styles');
 const cssImportPattern = /^@import\s+['"](.+?)['"]\s*;\s*$/gm;
+const targetArgument = process.argv.find(argument => argument.startsWith('--target='));
+const buildTarget = targetArgument?.slice('--target='.length) || 'production';
+const BUILD_TARGETS = new Set(['production', 'test-pages']);
+
+if (!BUILD_TARGETS.has(buildTarget)) {
+  throw new Error(`Unknown build target: ${buildTarget}`);
+}
 
 async function bundleLocalCss(filePath, stack = new Set()) {
   const normalizedPath = path.resolve(filePath);
@@ -44,8 +51,19 @@ await Promise.all([
   cp(path.join(projectRoot, 'src'), path.join(outputDir, 'src'), { recursive: true })
 ]);
 
+if (buildTarget === 'test-pages') {
+  await cp(path.join(projectRoot, 'test-data', 'pages'), path.join(outputDir, 'test-data', 'pages'), { recursive: true });
+}
+
+const runtimeTarget = buildTarget === 'test-pages' ? 'local-test' : 'server';
+await writeFile(
+  path.join(outputDir, 'src', 'data', 'runtime-target.js'),
+  `export const DATA_SOURCE_TARGET = '${runtimeTarget}';\n`,
+  'utf8'
+);
+
 await mkdir(outputStylesDir, { recursive: true });
 const bundledCss = await bundleLocalCss(path.join(stylesDir, 'main.css'));
 await writeFile(path.join(outputStylesDir, 'main.css'), bundledCss, 'utf8');
 
-console.log(`Static site built at ${outputDir}`);
+console.log(`Static site built for ${buildTarget} at ${outputDir}`);

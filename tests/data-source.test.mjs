@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { LocalTestDataSource, LOCAL_TEST_STORAGE_KEY } from '../src/data/local-test-data-source.js';
 import { ServerDataSource } from '../src/data/server-data-source.js';
-import { createDataSource, isGitHubPagesTest } from '../src/data/data-source.js';
+import { createDataSource } from '../src/data/data-source.js';
+import { DATA_SOURCE_TARGET } from '../src/data/runtime-target.js';
 
 class MemoryStorage {
   constructor() { this.values = new Map(); }
@@ -31,10 +32,11 @@ const fetchImpl = async input => {
 const storage = new MemoryStorage();
 const now = () => new Date('2026-09-24T15:00:00.000Z');
 
-assert.equal(isGitHubPagesTest('tp6xu4jo3.github.io'), true);
-assert.equal(isGitHubPagesTest('openguitartab.vercel.app'), false);
-assert.equal(createDataSource({ hostname: 'tp6xu4jo3.github.io', fetchImpl, storage, baseHref, now }).isLocalTest, true);
-assert.equal(createDataSource({ hostname: 'openguitartab.vercel.app', fetchImpl, origin: 'https://openguitartab.vercel.app' }).isLocalTest, false);
+assert.equal(DATA_SOURCE_TARGET, 'local-test', 'repository source should default to the GitHub/local test target');
+assert.equal(createDataSource({ target: 'local-test', fetchImpl, storage, baseHref, now }).isLocalTest, true);
+assert.equal(createDataSource({ target: 'local-test', fetchImpl, storage, baseHref: 'https://tabs.example.com/', now }).isLocalTest, true, 'custom-domain test builds must not depend on hostname detection');
+assert.equal(createDataSource({ target: 'server', fetchImpl, origin: 'https://openguitartab.vercel.app' }).isLocalTest, false);
+assert.throws(() => createDataSource({ target: 'invalid-target' }), /INVALID_DATA_SOURCE_TARGET/);
 
 const local = new LocalTestDataSource({ fetchImpl, storage, baseHref, now });
 const session = await local.session();
@@ -73,5 +75,20 @@ const server = new ServerDataSource({
 await server.saveSong({ id: 'server-song' });
 assert.match(serverCalls[0].url, /^https:\/\/openguitartab\.vercel\.app\/api\?action=save$/);
 assert.equal(serverCalls[0].options.method, 'POST');
+
+const challenged = new ServerDataSource({
+  origin: 'https://openguitartab.vercel.app',
+  fetchImpl: async () => ({
+    ok: false,
+    status: 429,
+    headers: { get: name => name.toLowerCase() === 'x-vercel-mitigated' ? 'challenge' : null },
+    json: async () => { throw new Error('HTML response'); }
+  })
+});
+await assert.rejects(
+  challenged.catalog(),
+  error => error.message === 'VERCEL_SECURITY_CHALLENGE' && error.status === 429 && error.mitigation === 'challenge',
+  'Vercel edge challenges should be distinguishable from an empty catalog or bad credentials'
+);
 
 console.log('Data source tests passed');

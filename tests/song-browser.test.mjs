@@ -25,6 +25,10 @@ const css = await readFile(new URL('../styles/catalog.css', import.meta.url), 'u
 assert.match(appSource, /catalogBrowser = new SongBrowser/);
 assert.match(appSource, /libraryBrowser = new SongBrowser/);
 assert.match(appSource, /libraryBrowser\.setWorks\(worksFromSongs\(songs\)\)/);
+assert.match(appSource, /catalogBrowser\.setError\(catalogLoadError\)/, 'catalog failures must render an explicit error instead of a fake empty catalog');
+assert.match(appSource, /libraryBrowser\.setError\(libraryLoadError\)/, 'library failures must render an explicit error instead of a fake empty library');
+assert.match(browserSource, /setError\(message\)/);
+assert.match(browserSource, /song-browser-error/);
 assert.match(browserSource, /filterWorks\(this\.works/);
 assert.match(browserSource, /song-browser-artist-rail/);
 assert.match(css, /\.song-browser-rail\s*\{[^}]*grid-template-rows:repeat\(2,/s, 'song rail must stay two rows tall');

@@ -1,16 +1,17 @@
 import { LocalTestDataSource } from './local-test-data-source.js';
+import { DATA_SOURCE_TARGET } from './runtime-target.js';
 import { ServerDataSource } from './server-data-source.js';
 
-const GITHUB_PAGES_HOST = /(^|\.)github\.io$/i;
-
-export function isGitHubPagesTest(hostname = '') {
-  return GITHUB_PAGES_HOST.test(String(hostname));
-}
+const DATA_SOURCE_TARGETS = new Set(['server', 'local-test']);
 
 export function createDataSource(runtime = {}) {
-  const hostname = runtime.hostname ?? globalThis.location?.hostname ?? '';
-  if (isGitHubPagesTest(hostname)) return new LocalTestDataSource(runtime);
-  return new ServerDataSource(runtime);
+  const target = runtime.target ?? DATA_SOURCE_TARGET;
+  if (!DATA_SOURCE_TARGETS.has(target)) throw new Error(`INVALID_DATA_SOURCE_TARGET:${target}`);
+  const options = { ...runtime };
+  delete options.target;
+  return target === 'local-test'
+    ? new LocalTestDataSource(options)
+    : new ServerDataSource(options);
 }
 
 export const dataSource = createDataSource();
