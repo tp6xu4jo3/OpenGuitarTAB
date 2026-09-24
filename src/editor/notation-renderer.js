@@ -1,4 +1,4 @@
-import { fractionToNumber, indexDocument, noteDisplayValue } from './model.js';
+import { indexDocument } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -54,12 +54,13 @@ function representativeTimeNode(systemElement, measureId, at) {
   return systemElement.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(measureId)}"][data-at="${escapeSelector(key)}"]`);
 }
 
-function appendText(svg, { x, y, text, className, eventId = '', noteId = '' }) {
+function appendText(svg, { x, y, text, className, eventId = '', noteId = '', groupId = '' }) {
   const node = svgNode('text', { x, y, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'aria-hidden': 'true' });
   node.textContent = text;
   node.classList.add('notation-symbol', className);
   if (eventId) node.dataset.eventId = eventId;
   if (noteId) node.dataset.noteId = noteId;
+  if (groupId) node.dataset.groupId = groupId;
   svg.appendChild(node);
   return node;
 }
@@ -87,7 +88,7 @@ function wavePath(x, top, bottom) {
     const y0 = top + index * step;
     const y1 = y0 + step;
     const direction = index % 2 === 0 ? 1 : -1;
-    path += ` C ${x + 4 * direction} ${y0 + step * 0.25}, ${x + 4 * direction} ${y0 + step * 0.75}, ${x} ${y1}`;
+    path += ` C ${x + 4 * direction} ${y0 + step * .25}, ${x + 4 * direction} ${y0 + step * .75}, ${x} ${y1}`;
   }
   return path;
 }
@@ -115,18 +116,18 @@ function ensureMarkerLayer(systemElement) {
   return layer;
 }
 
-function markerYForNode(node, systemElement) {
-  const grid = node?.closest?.('.v3-grid');
-  if (!grid) return Math.max(0, systemElement.getBoundingClientRect().height - 12);
-  const gridRect = grid.getBoundingClientRect();
+function staffBottomInSystem(node, systemElement) {
+  const staff = node?.closest?.('.v3-staff');
   const base = systemElement.getBoundingClientRect();
-  return gridRect.bottom - base.top - 12;
+  if (!staff) return Math.max(18, base.height - 18);
+  const rect = staff.getBoundingClientRect();
+  return Math.min(base.height - 8, rect.bottom - base.top + 15);
 }
 
 function appendTechniqueMarker(layer, markerOffsets, { node, systemElement, kind, id, label, title }) {
   if (!node || !id) return;
   const point = centerIn(node, systemElement);
-  const y = markerYForNode(node, systemElement);
+  const y = staffBottomInSystem(node, systemElement);
   const key = `${Math.round(point.x / 4)}:${Math.round(y / 4)}`;
   const offset = markerOffsets.get(key) || 0;
   markerOffsets.set(key, offset + 1);
@@ -148,6 +149,26 @@ function relationMarkerLabel(type) {
   if (type === 'tie') return 'T';
   if (type === 'slur') return 'L';
   return '↔';
+}
+
+function groupBottomY(node, systemElement) {
+  return staffBottomInSystem(node, systemElement) + 4;
+}
+
+function appendRhythmBracket(svg, systemElement, measureId, group, label) {
+  const firstSlot = group.slots?.[0];
+  const lastSlot = group.slots?.at(-1);
+  const firstNode = firstSlot ? representativeTimeNode(systemElement, measureId, firstSlot) : representativeEventNode(systemElement, group.eventIds?.[0]);
+  const lastNode = lastSlot ? representativeTimeNode(systemElement, measureId, lastSlot) : representativeEventNode(systemElement, group.eventIds?.at(-1));
+  if (!firstNode || !lastNode) return null;
+  const first = centerIn(firstNode, systemElement);
+  const last = centerIn(lastNode, systemElement);
+  const y = groupBottomY(firstNode, systemElement);
+  const path = svgNode('path', { d: `M ${first.x} ${y + 5} L ${first.x} ${y} L ${last.x} ${y} L ${last.x} ${y + 5}`, fill: 'none', 'vector-effect': 'non-scaling-stroke', 'data-group-id': group.id || '' });
+  path.classList.add('notation-symbol', 'notation-rhythm-bracket');
+  svg.appendChild(path);
+  appendText(svg, { x: (first.x + last.x) / 2, y: y - 7, text: label, className: 'notation-rhythm-label', groupId: group.id || '' });
+  return firstNode;
 }
 
 export class NotationRenderer {
@@ -230,13 +251,7 @@ export class NotationRenderer {
         const bottom = notePoints.length ? Math.max(...notePoints.map(point => point.y)) + 5 : anchor.y + 5;
 
         if (event.chord?.symbol) {
-          appendText(svg, {
-            x: anchor.x,
-            y: Math.max(14, top - 22),
-            text: String(event.chord.symbol),
-            className: 'notation-chord-symbol',
-            eventId: event.id
-          });
+          appendText(svg, { x: anchor.x, y: Math.max(14, top - 22), text: String(event.chord.symbol), className: 'notation-chord-symbol', eventId: event.id });
         }
 
         for (const mark of event.marks || []) {
@@ -250,37 +265,27 @@ export class NotationRenderer {
           }
         }
 
-        if (fractionToNumber(event.duration) === 1 / 8) {
-          appendText(svg, { x: anchor.x + 13, y: bottom + 8, text: '32', className: 'notation-duration-32', eventId: event.id });
-        }
-
         for (const note of event.notes || []) {
           const harmonic = (note.techniques || []).find(technique => technique.type === 'harmonic');
           if (!harmonic) continue;
           for (const node of noteNodes(systemElement, note.id)) {
             const point = centerIn(node, systemElement);
-            appendText(svg, { x: point.x, y: point.y, text: noteDisplayValue(note), className: 'notation-harmonic-label', noteId: note.id });
-            appendTechniqueMarker(markerLayer, markerOffsets, { node, systemElement, kind: 'technique', id: harmonic.id, label: 'H', title: '人工泛音' });
+            const y = staffBottomInSystem(node, systemElement);
+            appendText(svg, { x: point.x, y, text: 'H', className: 'notation-harmonic-indicator', noteId: note.id });
+            appendTechniqueMarker(markerLayer, markerOffsets, { node, systemElement, kind: 'technique', id: harmonic.id, label: 'H', title: '泛音' });
           }
         }
       }
 
       for (const group of measure.groups || []) {
-        if (group.type !== 'tuplet') continue;
-        const firstSlot = group.slots?.[0];
-        const lastSlot = group.slots?.at(-1);
-        const firstNode = firstSlot ? representativeTimeNode(systemElement, measure.id, firstSlot) : representativeEventNode(systemElement, group.eventIds?.[0]);
-        const lastNode = lastSlot ? representativeTimeNode(systemElement, measure.id, lastSlot) : representativeEventNode(systemElement, group.eventIds?.at(-1));
-        if (!firstNode || !lastNode) continue;
-        const first = centerIn(firstNode, systemElement);
-        const last = centerIn(lastNode, systemElement);
-        const base = systemElement.getBoundingClientRect();
-        const y = Math.min(base.height - 8, Math.max(first.bottom, last.bottom) + 28);
-        const path = svgNode('path', { d: `M ${first.x} ${y + 5} L ${first.x} ${y} L ${last.x} ${y} L ${last.x} ${y + 5}`, fill: 'none', 'vector-effect': 'non-scaling-stroke', 'data-group-id': group.id || '' });
-        path.classList.add('notation-symbol', 'notation-tuplet-bracket');
-        svg.appendChild(path);
-        appendText(svg, { x: (first.x + last.x) / 2, y: y - 6, text: String(group.ratio?.[0] || 3), className: 'notation-tuplet-number' });
-        appendTechniqueMarker(markerLayer, markerOffsets, { node: firstNode, systemElement, kind: 'group', id: group.id, label: String(group.ratio?.[0] || 3), title: '三連音' });
+        if (group.type === 'tuplet') {
+          const firstNode = appendRhythmBracket(svg, systemElement, measure.id, group, '3');
+          if (firstNode) appendTechniqueMarker(markerLayer, markerOffsets, { node: firstNode, systemElement, kind: 'group', id: group.id, label: group.beamCount === 2 ? '3Ⅱ' : '3', title: group.beamCount === 2 ? '十六分三連音' : '八分三連音' });
+        }
+        if (group.type === 'subdivision' && group.subdivision === 'thirty-second') {
+          const firstNode = appendRhythmBracket(svg, systemElement, measure.id, group, '32');
+          if (firstNode) appendTechniqueMarker(markerLayer, markerOffsets, { node: firstNode, systemElement, kind: 'group', id: group.id, label: '32', title: '32分音' });
+        }
       }
     }
 
