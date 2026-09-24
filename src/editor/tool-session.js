@@ -8,6 +8,7 @@ export const TOOL_TARGET_KINDS = Object.freeze({
 const TARGET_KIND_BY_TOOL_TARGET = Object.freeze({
   note: TOOL_TARGET_KINDS.NOTE,
   event: TOOL_TARGET_KINDS.COLUMN,
+  column: TOOL_TARGET_KINDS.COLUMN,
   notePair: TOOL_TARGET_KINDS.NOTE_PAIR,
   eventRange: TOOL_TARGET_KINDS.RANGE,
   NoteTarget: TOOL_TARGET_KINDS.NOTE,
@@ -81,8 +82,10 @@ export class ToolSession {
     return this.snapshot?.() || { state: 'idle', toolId: null, targetKind: null, firstTarget: null };
   }
 
-  commitSuccess() {
-    return this.cancel();
+  commitSuccess({ keepActive = false } = {}) {
+    if (!keepActive) return this.cancel();
+    this.firstTarget = null;
+    return this.snapshot();
   }
 
   select(target) {
