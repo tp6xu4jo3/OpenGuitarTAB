@@ -13,6 +13,7 @@ import {
   compareFractions,
   fractionKey,
   fractionToNumber,
+  isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
   noteDisplayValue,
@@ -56,13 +57,9 @@ export function editableTimesForMeasure(measure) {
     const key = fractionKey(normalized);
     if (!map.has(key)) map.set(key, { at: normalized, duration: normalizeFraction(durationValue, BASE_GRID_STEP) });
   };
-
-  for (let value = 0; value < duration - 1e-9; value += 0.25) {
-    add([Math.round(value * 4), 4]);
-  }
+  for (let value = 0; value < duration - 1e-9; value += 0.25) add([Math.round(value * 4), 4]);
   for (const time of fractionalGridTimes(measure)) add(time.at, time.duration || BASE_GRID_STEP);
   for (const event of measure?.events || []) add(event.at, event.duration || BASE_GRID_STEP);
-
   return [...map.values()].sort((left, right) => compareFractions(left.at, right.at));
 }
 
@@ -98,12 +95,7 @@ function segmentSignature(segment) {
 }
 
 export class SparseScoreRenderer {
-  constructor(root, {
-    stringCount = STRING_COUNT,
-    onCommitNote = null,
-    onRendered = null,
-    snap = BASE_GRID_STEP
-  } = {}) {
+  constructor(root, { stringCount = STRING_COUNT, onCommitNote = null, onRendered = null, snap = BASE_GRID_STEP } = {}) {
     this.root = root;
     this.stringCount = stringCount;
     this.onCommitNote = onCommitNote;
@@ -160,19 +152,17 @@ export class SparseScoreRenderer {
   }
 
   render(documentModel, changeSet = null) {
-    this.document = normalizeDocumentV3(documentModel);
+    this.document = isDocumentV3(documentModel) ? documentModel : normalizeDocumentV3(documentModel);
     if (!this.root) return;
     const full = !this.root.querySelector('.v3-grid') || !changeSet || changeSet.document;
-    if (full) {
+    if (full || changeSet?.layoutKind === 'structure') {
       this.renderAll();
       return;
     }
-
     if (changeSet.layoutFrom) {
       if (!this.applyLayoutChange(changeSet)) this.renderAll();
       return;
     }
-
     for (const measureId of changeSet.measures || []) this.renderMeasure(measureId);
     if ((changeSet.measures || []).length || (changeSet.playback || []).length) this.publishRendered({ partial: true });
   }
@@ -191,7 +181,6 @@ export class SparseScoreRenderer {
     const { mode, plan } = this.currentLayout();
     this.layoutPlan = plan;
     const fragment = document.createDocumentFragment();
-
     if (mode === 'compact') {
       plan.rows.forEach((visualRow, visualIndex) => {
         const line = div('score-density-line');
@@ -209,9 +198,8 @@ export class SparseScoreRenderer {
     } else {
       plan.systems.forEach((segment, visualIndex) => fragment.appendChild(this.createSystem(segment, visualIndex)));
     }
-
     this.root.replaceChildren(fragment);
-    this.publishRendered({ layout: plan });
+    this.publishRendered({ layout: plan, full: true });
   }
 
   createSystem(segment, visualIndex) {
@@ -224,11 +212,9 @@ export class SparseScoreRenderer {
     system.dataset.sourceStart = String(Number(segment.startMeasure || 0) === 0);
     system.dataset.sourceEnd = String((Number(segment.startMeasure || 0) + segment.measures.length) >= logical.length);
     system.dataset.centerKey = `row-${rowIndex}`;
-
     const placeholder = div('system-label layout-rail-placeholder');
     placeholder.setAttribute('aria-hidden', 'true');
     system.appendChild(placeholder);
-
     const stack = div('adaptive-layout-stack');
     stack.appendChild(this.createGrid(segment));
     system.appendChild(stack);
@@ -261,7 +247,6 @@ export class SparseScoreRenderer {
     node.dataset.measureIndex = String(localMeasureIndex);
     node.style.position = 'relative';
     node.style.setProperty('--v3-strings', String(this.stringCount));
-
     const staff = div('v3-staff');
     staff.dataset.measureId = String(measure.id);
     staff.setAttribute('aria-label', 'TAB measure');
@@ -271,14 +256,12 @@ export class SparseScoreRenderer {
       line.style.top = `${((string + 0.5) / this.stringCount) * 100}%`;
       staff.appendChild(line);
     }
-
     const beats = measureDurationInBeats(measure);
     for (let beat = 1; beat < Math.ceil(beats); beat++) {
       const guide = div('v3-beat-guide');
       guide.style.left = `${beat / beats * 100}%`;
       staff.appendChild(guide);
     }
-
     const times = editableTimesForMeasure(measure);
     const visualTimeByKey = new Map(times.map(time => [fractionKey(time.at), time]));
     times.forEach((time, index) => {
@@ -310,6 +293,9 @@ export class SparseScoreRenderer {
       const visualTime = visualTimeByKey.get(fractionKey(event.at));
       eventNode.style.left = `${visualPercentageForTime(event.at, visualTime?.duration || BASE_GRID_STEP, measure)}%`;
       for (const note of event.notes || []) {
+        const top = `${((Number(note.string) + 0.5) / this.stringCount) * 100}%`;
+        const backdrop = div('v3-note-backdrop');
+        backdrop.style.top = top;
         const noteNode = document.createElement('button');
         noteNode.type = 'button';
         noteNode.className = 'v3-note';
@@ -319,14 +305,13 @@ export class SparseScoreRenderer {
         noteNode.dataset.at = fractionKey(event.at);
         noteNode.dataset.duration = fractionKey(event.duration || BASE_GRID_STEP);
         noteNode.dataset.string = String(note.string);
-        noteNode.style.top = `${((Number(note.string) + 0.5) / this.stringCount) * 100}%`;
+        noteNode.style.top = top;
         noteNode.textContent = noteDisplayValue(note);
         noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${noteDisplayValue(note)} 品`);
-        eventNode.appendChild(noteNode);
+        eventNode.append(backdrop, noteNode);
       }
       staff.appendChild(eventNode);
     }
-
     node.appendChild(staff);
     return node;
   }
@@ -349,14 +334,13 @@ export class SparseScoreRenderer {
     const nextSegments = nextPlan.systems.filter(segment => segment.sourceSystemIndex === sourceSystemIndex);
     const existing = [...this.root.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
     if (!existing.length || !nextSegments.length) return false;
-
     const metricsOnly = changeSet.layoutKind === 'metrics';
     const sameShape = existing.length === nextSegments.length && existing.every((system, index) => {
       const grid = system.querySelector(':scope .v3-grid');
       return String(grid?.dataset.measureIds || '') === segmentSignature(nextSegments[index]);
     });
-
     if (metricsOnly && sameShape) {
+      for (const measureId of changeSet.measures || []) this.renderMeasure(measureId);
       existing.forEach((system, index) => this.updateGridWidths(system.querySelector(':scope .v3-grid'), nextSegments[index]));
     } else {
       const first = existing[0];
@@ -364,9 +348,7 @@ export class SparseScoreRenderer {
       nextSegments.forEach((segment, index) => fragment.appendChild(this.createSystem(segment, index)));
       first.before(fragment);
       existing.forEach(node => node.remove());
-      [...this.root.querySelectorAll(':scope > .tab-system')].forEach((system, visualIndex) => {
-        system.dataset.visualRow = String(visualIndex);
-      });
+      [...this.root.querySelectorAll(':scope > .tab-system')].forEach((system, visualIndex) => { system.dataset.visualRow = String(visualIndex); });
     }
     this.layoutPlan = nextPlan;
     this.publishRendered({ layout: nextPlan, partial: true, sourceSystemIndex });
@@ -391,21 +373,14 @@ export class SparseScoreRenderer {
   }
 
   handlePointerDown(event) {
-    if (isPreviewActive() || isScoreViewActive() || window.editorV3?.toolSession?.active) return;
+    if (isPreviewActive() || isScoreViewActive() || window.editorV3?.toolSession?.active || window.editorV3?.chordPlacement?.active) return;
     if (event.target.closest?.('.technique-marker,.editor-module-menu,.measure-module-hitbox')) return;
     const note = event.target.closest?.('.v3-note');
     if (note) {
       event.preventDefault();
-      this.showCursor({
-        measureId: note.dataset.measureId,
-        string: Number(note.dataset.string),
-        at: parseFraction(note.dataset.at),
-        duration: parseFraction(note.dataset.duration) || BASE_GRID_STEP,
-        initialValue: note.textContent?.split('<')[0] || ''
-      });
+      this.showCursor({ measureId: note.dataset.measureId, string: Number(note.dataset.string), at: parseFraction(note.dataset.at), duration: parseFraction(note.dataset.duration) || BASE_GRID_STEP, initialValue: note.textContent || '' });
       return;
     }
-
     const target = event.target.closest?.('.v3-column-target');
     const staff = event.target.closest?.('.v3-staff');
     const measureNode = staff?.closest?.('.v3-measure');
@@ -449,7 +424,6 @@ export class SparseScoreRenderer {
     const staff = measureNode?.querySelector('.v3-staff');
     if (!measure || !measureNode || !staff || !Array.isArray(at)) return null;
     this.hideCursor();
-
     const input = document.createElement('input');
     input.className = 'v3-note-editor';
     input.type = 'text';
@@ -460,44 +434,21 @@ export class SparseScoreRenderer {
     input.dataset.string = String(string);
     input.dataset.at = fractionKey(at);
     input.dataset.duration = fractionKey(duration || BASE_GRID_STEP);
-    Object.assign(input.style, {
-      position: 'absolute',
-      left: `${visualPercentageForAt(measure, at)}%`,
-      top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`,
-      transform: 'translate(-50%, -50%)'
-    });
-
+    Object.assign(input.style, { position: 'absolute', left: `${visualPercentageForAt(measure, at)}%`, top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`, transform: 'translate(-50%, -50%)' });
     let cancelled = false;
     let committed = false;
     const commit = () => {
       if (committed || cancelled) return;
       committed = true;
-      this.onCommitNote?.({
-        measureId: String(measureId),
-        string: Number(string),
-        at: cloneValue(at),
-        duration: cloneValue(duration || BASE_GRID_STEP),
-        fret: normalizeFret(input.value)
-      });
+      this.onCommitNote?.({ measureId: String(measureId), string: Number(string), at: cloneValue(at), duration: cloneValue(duration || BASE_GRID_STEP), fret: normalizeFret(input.value) });
     };
-
     input.addEventListener('input', () => {
       const normalized = normalizeFret(input.value);
       if (input.value !== normalized) input.value = normalized;
     });
     input.addEventListener('keydown', event => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        cancelled = true;
-        this.hideCursor();
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        commit();
-        this.hideCursor();
-        return;
-      }
+      if (event.key === 'Escape') { event.preventDefault(); cancelled = true; this.hideCursor(); return; }
+      if (event.key === 'Enter') { event.preventDefault(); commit(); this.hideCursor(); return; }
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const direction = event.key.replace('Arrow', '').toLowerCase();
@@ -511,13 +462,9 @@ export class SparseScoreRenderer {
       if (this.cursor === input) this.cursor = null;
       input.remove();
     }, { once: true });
-
     staff.appendChild(input);
     this.cursor = input;
-    requestAnimationFrame(() => {
-      input.focus();
-      input.select();
-    });
+    requestAnimationFrame(() => { input.focus(); input.select(); });
     return input;
   }
 }
