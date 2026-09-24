@@ -8,6 +8,22 @@ function normalizeBeats(value) {
   return Number(value) === 3 ? 3 : 4;
 }
 
+function legacyTimeSignature(song) {
+  const beats = normalizeBeats(song?.beatsPerMeasure);
+  const fallback = { numerator: beats, denominator: 4 };
+  const match = String(song?.meter || '').trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!match) return fallback;
+
+  const numerator = Number(match[1]);
+  const denominator = Number(match[2]);
+  const validDenominators = new Set([1, 2, 4, 8, 16, 32, 64]);
+  if (!Number.isInteger(numerator) || numerator <= 0 || !validDenominators.has(denominator)) return fallback;
+
+  const quarterNoteBeats = (numerator * 4) / denominator;
+  if (Math.abs(quarterNoteBeats - beats) > 1e-9) return fallback;
+  return { numerator, denominator };
+}
+
 function clampMeasureCount(value) {
   const count = Number(value);
   return Number.isInteger(count)
@@ -81,7 +97,7 @@ export function legacyMeasureToV3(song, rowIndex, measureIndex, { measureId } = 
 
   return {
     id: String(measureId || deterministicMeasureId(rowIndex, measureIndex)),
-    timeSignature: { numerator: beats, denominator: 4 },
+    timeSignature: legacyTimeSignature(song),
     events,
     groups: []
   };

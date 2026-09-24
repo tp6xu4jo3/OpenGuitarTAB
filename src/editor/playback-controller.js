@@ -51,7 +51,6 @@ function clearPlayhead() {
   state.currentNodes = [];
   state.currentColumn?.classList?.remove('is-playing-column');
   state.currentColumn = null;
-  document.querySelectorAll('.playhead-column').forEach(node => node.remove());
 }
 
 function followPlaybackLine(node, key) {
@@ -142,7 +141,7 @@ function setProgressIndex(index, updateSlider = true, highlight = true) {
 }
 
 function updateProgressRange() {
-  const playback = ensureIndex({ force: true });
+  const playback = ensureIndex();
   const slider = document.getElementById('playProgress');
   if (slider) {
     slider.min = '0';
@@ -190,7 +189,7 @@ async function startPlayback() {
   const audio = getAudioEngine();
   if (!audio || !await audio.ensureReady()) return;
   stopPlayback(false, true);
-  const playback = ensureIndex({ force: true });
+  const playback = ensureIndex();
   if (!playback.entries.length) {
     window.showToast?.('目前沒有可播放的音符');
     updateProgressRange();

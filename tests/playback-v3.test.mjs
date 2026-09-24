@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { frequencyForTab } from '../src/editor/audio-engine.js';
+import { migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
 import { buildPlaybackIndex, legacyPositionForEntry, nearestPlaybackIndex } from '../src/editor/playback-index.js';
 
 const documentModel = {
@@ -65,5 +67,38 @@ const octaveLowE = frequencyForTab(5, 12, 0);
 const capoLowE = frequencyForTab(5, 0, 12);
 assert.ok(Math.abs(octaveLowE - openLowE * 2) < 0.000001);
 assert.ok(Math.abs(capoLowE - octaveLowE) < 0.000001);
+
+const compoundRow = Array.from({ length: 6 }, () => Array(48).fill(''));
+compoundRow[0][0] = '0';
+const compoundSong = {
+  id: 'legacy-six-eight',
+  beatsPerMeasure: 3,
+  meter: '6/8',
+  rows: [compoundRow],
+  rowMeasureCounts: [1],
+  rhythmRows: [{}]
+};
+const compoundDocument = migrateSongToDocumentV3(compoundSong);
+assert.deepEqual(compoundDocument.measures[0].timeSignature, { numerator: 6, denominator: 8 });
+assert.equal(buildPlaybackIndex(compoundDocument).totalBeats, 3, '6/8 must keep the legacy three-quarter-note measure duration');
+
+const inconsistentMeter = migrateSongToDocumentV3({ ...compoundSong, meter: '4/4' });
+assert.deepEqual(
+  inconsistentMeter.measures[0].timeSignature,
+  { numerator: 3, denominator: 4 },
+  'inconsistent legacy meter metadata must fall back to beatsPerMeasure'
+);
+
+const playbackControllerSource = await readFile(new URL('../src/editor/playback-controller.js', import.meta.url), 'utf8');
+assert.equal(
+  (playbackControllerSource.match(/ensureIndex\(\{ force: true \}\)/g) || []).length,
+  1,
+  'only the explicit rebuild API may force a full playback index rebuild'
+);
+assert.equal(
+  playbackControllerSource.includes("querySelectorAll('.playhead-column')"),
+  false,
+  'clearing the sparse playback cursor must not scan the whole document for legacy playhead nodes'
+);
 
 console.log('editor v3 playback tests passed');
