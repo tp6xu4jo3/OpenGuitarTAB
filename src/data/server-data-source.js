@@ -1,7 +1,11 @@
 const CATALOG_CACHE_TTL_MS = 5_000;
 
+function defaultFetch(...args) {
+  return globalThis.fetch(...args);
+}
+
 export class ServerDataSource {
-  constructor({ fetchImpl = globalThis.fetch, origin = globalThis.location?.origin || 'http://localhost' } = {}) {
+  constructor({ fetchImpl = defaultFetch, origin = globalThis.location?.origin || 'http://localhost' } = {}) {
     this.fetchImpl = fetchImpl;
     this.origin = origin;
     this.kind = 'server';
