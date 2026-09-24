@@ -1,42 +1,26 @@
-.editor-toolbox {
+.editor-ribbon {
   position: sticky;
   top: 0;
   z-index: 18;
+  margin: 0 0 18px;
+}
+
+.editor-ribbon[hidden] {
+  display: none;
+}
+
+.editor-ribbon-tabs {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 18px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.editor-toolbox[hidden] {
-  display: none;
-}
-
-.editor-toolbox.is-collapsed {
+  gap: 6px;
   width: max-content;
   max-width: 100%;
-  padding: 6px;
-  overflow: visible;
+  padding: 0 2px 7px;
 }
 
-.editor-toolbox.is-collapsed .editor-toolbox-label,
-.editor-toolbox.is-collapsed .editor-tool-button {
-  display: none;
-}
-
-.editor-toolbox-toggle {
-  display: inline-grid;
-  flex: 0 0 auto;
-  place-items: center;
-  min-width: 32px;
-  min-height: 32px;
-  padding: 5px 8px;
+.editor-ribbon-tab {
+  min-height: 34px;
+  padding: 6px 13px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: #fff;
@@ -48,18 +32,43 @@
   white-space: nowrap;
 }
 
-.editor-toolbox-toggle:hover,
-.editor-toolbox-toggle:focus-visible {
+.editor-ribbon-tab:hover,
+.editor-ribbon-tab:focus-visible {
   border-color: var(--focus);
   outline: none;
 }
 
-.editor-toolbox-label {
-  flex: 0 0 auto;
-  margin-right: 2px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+.editor-ribbon-tab.is-active {
+  border-color: #9d9d9d;
+  background: #e9e9e9;
+  color: #222;
+  box-shadow: inset 0 0 0 1px #d0d0d0;
+}
+
+.editor-ribbon-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 22px rgba(0,0,0,.05);
+}
+
+.editor-ribbon-panel[hidden] {
+  display: none;
+}
+
+.editor-ribbon-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.editor-ribbon-section[hidden] {
+  display: none;
 }
 
 .editor-tool-button {
@@ -102,16 +111,26 @@
   white-space: nowrap;
 }
 
-.note-input[data-note-id],
-.note-input[data-event-id] {
-  position: relative;
-  z-index: 2;
+.editor-chord-category-shells {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: max-content;
 }
 
-.note-input.tool-link-source,
-.note-input.tool-range-source {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+.editor-chord-category-shell {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #d8d8d8;
+  border-radius: 9px;
+  background: #f7f7f7;
+  color: #6a6a6a;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .notation-overlay {
@@ -130,16 +149,6 @@
   font-size: 13px;
   font-weight: 800;
   letter-spacing: -0.04em;
-}
-
-.content.edit-view .note-input.notation-harmonic-target:not(:focus),
-.content.score-view .note-input.notation-harmonic-target {
-  color: transparent !important;
-  caret-color: transparent;
-}
-
-.content.edit-view .tab-system:has(.note-input.notation-harmonic-target:focus) .notation-harmonic-label {
-  visibility: hidden;
 }
 
 .notation-strum,
@@ -166,7 +175,6 @@
   font-size: 11px;
   font-weight: 800;
 }
-
 
 .notation-relation,
 .notation-relation-preview {
@@ -256,21 +264,25 @@
 }
 
 @media (max-width: 720px) {
-  .editor-toolbox {
+  .editor-ribbon {
     margin-bottom: 12px;
-    padding: 8px;
   }
 
-  .editor-toolbox-label {
-    display: none;
+  .editor-ribbon-tabs {
+    padding-bottom: 6px;
+  }
+
+  .editor-ribbon-tab {
+    min-height: 32px;
+    padding: 5px 11px;
+  }
+
+  .editor-ribbon-section {
+    padding: 8px;
   }
 
   .editor-tool-button {
     min-height: 34px;
     padding: 5px 8px;
-  }
-
-  .editor-toolbox.is-collapsed {
-    padding: 5px;
   }
 }

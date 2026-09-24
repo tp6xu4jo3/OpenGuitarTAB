@@ -4,6 +4,7 @@ import { buildSystems } from './layout.js';
 import { compareFractions, fractionKey, normalizeFraction } from './model.js';
 import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
+import { EditorRibbon, RIBBON_SECTIONS } from './ribbon.js';
 import { EditorStateSync } from './state-sync.js';
 import { StoreRegistry } from './store.js';
 import { resolveTechniqueTarget } from './technique-rules.js';
@@ -21,8 +22,7 @@ const boundStores = new WeakSet();
 let installed = false;
 let notationRenderer = null;
 let scoreRenderer = null;
-let toolPalette = null;
-let toolboxCollapsed = false;
+let editorRibbon = null;
 let selectedTechniqueRef = null;
 let techniqueContextMenu = null;
 
@@ -279,32 +279,26 @@ function showTechniqueContextMenu(marker, event) {
 }
 
 function syncToolButtons() {
-  const activeToolId = toolSession.snapshot().toolId;
-  toolPalette?.querySelectorAll('[data-editor-tool]').forEach(button => {
-    const active = button.dataset.editorTool === activeToolId;
-    button.classList.toggle('is-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+  editorRibbon?.setActiveTool(toolSession.snapshot().toolId);
 }
 
-function setToolboxCollapsed(collapsed) {
-  toolboxCollapsed = Boolean(collapsed);
-  const palette = toolPalette;
-  if (!palette) return toolboxCollapsed;
-  palette.classList.toggle('is-collapsed', toolboxCollapsed);
-  const toggle = palette.querySelector('[data-editor-toolbox-toggle]');
-  if (toggle) {
-    toggle.textContent = toolboxCollapsed ? '技巧 ›' : '‹';
-    toggle.title = toolboxCollapsed ? '展開技巧' : '收合技巧';
-    toggle.setAttribute('aria-expanded', String(!toolboxCollapsed));
-  }
-  return toolboxCollapsed;
+function cancelActiveTool() {
+  if (!toolSession.active) return false;
+  toolSession.cancel();
+  notationRenderer?.clearPreview();
+  clearToolSource();
+  syncToolButtons();
+  return true;
 }
 
 function setActiveTool(toolId) {
   const definition = toolRegistry.get(toolId);
-  if (!definition) toolSession.cancel();
-  else toolSession.activate(definition.id, toolTargetKind(definition));
+  if (!definition) {
+    cancelActiveTool();
+    return null;
+  }
+  editorRibbon?.open(RIBBON_SECTIONS.TECHNIQUE);
+  toolSession.activate(definition.id, toolTargetKind(definition));
   notationRenderer?.clearPreview();
   clearToolSource();
   clearTechniqueSelection();
@@ -313,58 +307,29 @@ function setActiveTool(toolId) {
   return toolSession.snapshot().toolId;
 }
 
-function ensureToolPalette() {
-  if (toolPalette?.isConnected) return toolPalette;
+function ensureEditorRibbon() {
+  if (editorRibbon?.root?.isConnected) return editorRibbon;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return null;
-  const palette = document.createElement('div');
-  palette.className = 'editor-toolbox';
-  palette.id = 'editorToolbox';
-  palette.setAttribute('aria-label', '吉他技巧工具');
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'editor-toolbox-toggle';
-  toggle.dataset.editorToolboxToggle = 'true';
-  palette.appendChild(toggle);
-  const label = document.createElement('span');
-  label.className = 'editor-toolbox-label';
-  label.textContent = '技巧';
-  palette.appendChild(label);
-  toolRegistry.list().forEach(definition => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'editor-tool-button';
-    button.dataset.editorTool = definition.id;
-    button.title = definition.hint || definition.label || definition.id;
-    button.setAttribute('aria-pressed', 'false');
-    const glyph = document.createElement('span');
-    glyph.className = 'editor-tool-glyph';
-    glyph.textContent = definition.glyph || definition.label || definition.id;
-    glyph.setAttribute('aria-hidden', 'true');
-    const name = document.createElement('span');
-    name.className = 'editor-tool-name';
-    name.textContent = definition.label || definition.id;
-    button.append(glyph, name);
-    palette.appendChild(button);
+  editorRibbon = new EditorRibbon({
+    toolDefinitions: toolRegistry.list(),
+    onToolSelect: toolId => setActiveTool(toolId),
+    onSectionChange: section => {
+      if (section !== RIBBON_SECTIONS.TECHNIQUE) cancelActiveTool();
+    }
   });
-  tabArea.before(palette);
-  toolPalette = palette;
-  setToolboxCollapsed(toolboxCollapsed);
+  editorRibbon.mountBefore(tabArea);
   syncToolButtons();
-  return palette;
+  return editorRibbon;
 }
 
-function syncToolPalette() {
-  const palette = ensureToolPalette();
-  if (!palette) return;
+function syncEditorRibbon() {
+  const ribbon = ensureEditorRibbon();
+  if (!ribbon) return;
   const editorView = document.getElementById('editorView');
   const hidden = Boolean(editorView?.hidden || editingBlocked());
-  palette.hidden = hidden;
-  if (hidden && toolSession.active) {
-    toolSession.cancel();
-    clearToolSource();
-    syncToolButtons();
-  }
+  ribbon.setHidden(hidden);
+  if (hidden) cancelActiveTool();
 }
 
 function invalidSelectionMessage(reason) {
@@ -413,10 +378,7 @@ function installToolInteractions() {
     const techniqueMarker = event.target?.closest?.('.technique-marker');
     if (techniqueMarker) {
       event.preventDefault();
-      toolSession.cancel();
-      notationRenderer?.clearPreview();
-      clearToolSource();
-      syncToolButtons();
+      cancelActiveTool();
       selectTechniqueMarker(techniqueMarker);
       hideTechniqueContextMenu();
       return;
@@ -424,18 +386,6 @@ function installToolInteractions() {
     if (!event.target?.closest?.('.technique-context-menu')) {
       clearTechniqueSelection();
       hideTechniqueContextMenu();
-    }
-    const collapseButton = event.target?.closest?.('[data-editor-toolbox-toggle]');
-    if (collapseButton) {
-      event.preventDefault();
-      setToolboxCollapsed(!toolboxCollapsed);
-      return;
-    }
-    const toolButton = event.target?.closest?.('[data-editor-tool]');
-    if (toolButton) {
-      event.preventDefault();
-      setActiveTool(toolButton.dataset.editorTool);
-      return;
     }
     const snapshot = toolSession.snapshot();
     if (!snapshot.toolId || editingBlocked()) return;
@@ -455,10 +405,7 @@ function installToolInteractions() {
     const marker = event.target?.closest?.('.technique-marker');
     if (!marker) return;
     event.preventDefault();
-    toolSession.cancel();
-    notationRenderer?.clearPreview();
-    clearToolSource();
-    syncToolButtons();
+    cancelActiveTool();
     showTechniqueContextMenu(marker, event);
   });
 
@@ -488,12 +435,9 @@ function installToolInteractions() {
     if (event.key !== 'Escape') return;
     if (!toolSession.active && !selectedTechniqueRef && techniqueContextMenu?.hidden !== false) return;
     event.preventDefault();
-    toolSession.cancel();
-    notationRenderer?.clearPreview();
-    clearToolSource();
+    cancelActiveTool();
     clearTechniqueSelection();
     hideTechniqueContextMenu();
-    syncToolButtons();
   });
 }
 
@@ -506,7 +450,7 @@ function installRenderers() {
   });
   const editorView = document.getElementById('editorView');
   const previewBadge = document.getElementById('previewBadge');
-  const modeObserver = new MutationObserver(() => syncToolPalette());
+  const modeObserver = new MutationObserver(() => syncEditorRibbon());
   if (editorView) modeObserver.observe(editorView, { attributes: true, attributeFilter: ['class', 'hidden'] });
   if (previewBadge) modeObserver.observe(previewBadge, { attributes: true, attributeFilter: ['hidden'] });
 }
@@ -524,7 +468,7 @@ export function installEditorV3() {
   if (installed) return window.editorV3 || null;
   installed = true;
   installViewState();
-  ensureToolPalette();
+  ensureEditorRibbon();
   installRenderers();
   installToolInteractions();
 
@@ -547,6 +491,12 @@ export function installEditorV3() {
       clear: () => clipboardState.clear(),
       state: clipboardState
     },
+    ribbon: {
+      getState: () => editorRibbon?.state() || { activeRibbon: null, activeToolId: null },
+      open: section => editorRibbon?.open(section) || null,
+      toggle: section => editorRibbon?.toggle(section) || null,
+      close: () => editorRibbon?.close() || null
+    },
     dispatch: dispatchCommand,
     dispatchTool,
     setActiveTool,
@@ -566,9 +516,10 @@ export function installEditorV3() {
   window.renderRows = () => renderCurrentSong();
   ensureStore();
   renderCurrentSong();
+  syncEditorRibbon();
   window.addEventListener('hashchange', () => queueMicrotask(() => {
     ensureStore();
-    syncToolPalette();
+    syncEditorRibbon();
   }));
   return api;
 }
