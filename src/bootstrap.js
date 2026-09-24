@@ -1,3 +1,4 @@
+import { SongBrowser, worksFromSongs } from './catalog/song-browser.js';
 import { compactSong, deserializeSong } from './core/song-codec.js';
 import {
   songOwner,
@@ -8,6 +9,7 @@ import {
   canDeleteSong
 } from './core/song-permissions.js';
 import { APP_CONFIG } from './config/app-config.js';
+import { dataSource } from './data/data-source.js';
 import { installAudioEngine } from './editor/audio-engine.js';
 import { installChordDragController } from './editor/chord-drag-controller.js';
 import { installEditorV3 } from './editor/controller.js';
@@ -18,7 +20,6 @@ import { installEditorSongActions } from './editor/song-actions.js';
 import { installStructureController } from './editor/structure-controller.js';
 import { installViewState } from './editor/view-state.js';
 import { installSongImport } from './library/song-import.js';
-import { cloudApi } from './services/cloud-api.js';
 
 Object.assign(window, {
   compactSong,
@@ -29,22 +30,16 @@ Object.assign(window, {
   canEditSong,
   canUnlistSong,
   canDeleteSong,
-  cloudApi,
+  dataSource,
+  SongBrowser,
+  worksFromSongs,
   APP_CONFIG,
   createBlankDocumentV3,
   ensureSongDocumentV3
 });
 
-const RUNTIME_SCRIPTS = [
-  './src/app-runtime.js',
-  './src/app-auth.js'
-];
-
-const APP_SCRIPTS = [
-  './src/app-library.js',
-  './src/app-catalog.js',
-  './src/app-source-ui.js'
-];
+const RUNTIME_SCRIPTS = ['./src/app-runtime.js', './src/app-auth.js'];
+const APP_SCRIPTS = ['./src/app-library.js', './src/app-catalog.js', './src/app-source-ui.js'];
 
 function loadClassicScriptsInOrder(sources) {
   const loads = sources.map(src => new Promise((resolve, reject) => {
@@ -58,8 +53,7 @@ function loadClassicScriptsInOrder(sources) {
   return Promise.all(loads);
 }
 
-void cloudApi.catalog().catch(() => null);
-
+void dataSource.catalog().catch(() => null);
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
 installViewState();
 installAudioEngine();
