@@ -1,15 +1,12 @@
     const STRINGS = 6;
     const MEASURES = 4;
-    const STEPS_PER_BEAT = 2;
     const SLOTS_PER_BEAT = 4;
     const INITIAL_ROWS = 4;
     const STORAGE_KEY = 'guitar-tab-maker:songs:v2';
     const CURRENT_ID_KEY = 'guitar-tab-maker:current-song-id:v2';
 
-    const tabArea = document.getElementById('tabArea');
     const addRowButton = document.getElementById('addRow');
     const removeRowButton = document.getElementById('removeRow');
-    const playButton = document.getElementById('playButton');
     const rhythmToggleButton = document.getElementById('rhythmToggleButton');
     const meterBadge = document.getElementById('meterBadge');
     const capoInput = document.getElementById('capoInput');
@@ -19,7 +16,6 @@
     const newSongButton = document.getElementById('newSongButton');
     const songList = document.getElementById('songList');
     const playProgress = document.getElementById('playProgress');
-    const progressLabel = document.getElementById('progressLabel');
     const toast = document.getElementById('toast');
     const renameModal = document.getElementById('renameModal');
     const renameInput = document.getElementById('renameInput');
@@ -57,9 +53,6 @@
 
     let songs = [];
     let currentSongId = null;
-    var scoreViewEnabled = true;
-    var isPlaying = false;
-    var playIndex = 0;
     var activeBeatsPerMeasure = 4;
     let toastTimer = null;
     let menuOpenFor = null;
@@ -74,24 +67,12 @@
       return Number(value) === 3 ? 3 : 4;
     }
 
-    function stepsPerMeasure(beats = activeBeatsPerMeasure) {
-      return normalizeBeatsPerMeasure(beats) * STEPS_PER_BEAT;
-    }
-
     function slotsPerMeasure(beats = activeBeatsPerMeasure) {
       return normalizeBeatsPerMeasure(beats) * SLOTS_PER_BEAT;
     }
 
-    function stepsPerRow(beats = activeBeatsPerMeasure) {
-      return MEASURES * stepsPerMeasure(beats);
-    }
-
     function positionsPerRow(beats = activeBeatsPerMeasure) {
       return MEASURES * slotsPerMeasure(beats);
-    }
-
-    function rhythmGroupSlots(beats = activeBeatsPerMeasure) {
-      return normalizeBeatsPerMeasure(beats) === 3 ? 6 : SLOTS_PER_BEAT;
     }
 
     function makeDiv(className) {
@@ -226,9 +207,3 @@
       return currentSongId;
     }
 
-    function positionForOriginalStep(step) {
-      const measureSteps = stepsPerMeasure();
-      const measure = Math.floor(step / measureSteps);
-      const localStep = step % measureSteps;
-      return measure * slotsPerMeasure() + localStep * 2;
-    }

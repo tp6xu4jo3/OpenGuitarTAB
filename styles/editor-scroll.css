@@ -1,4 +1,6 @@
-*::-webkit-scrollbar-button{display:none!important;width:0!important;height:0!important}
+*::-webkit-scrollbar-button{display:none!important;width:0!important;height:0!important;min-width:0!important;min-height:0!important;-webkit-appearance:none!important;background:transparent!important}
+*::-webkit-scrollbar-button:single-button,*::-webkit-scrollbar-button:vertical:start:decrement,*::-webkit-scrollbar-button:vertical:end:increment,*::-webkit-scrollbar-button:horizontal:start:decrement,*::-webkit-scrollbar-button:horizontal:end:increment{display:none!important;width:0!important;height:0!important}
+@supports selector(::scroll-button(*)){*::scroll-button(*){display:none!important;content:none!important}}
 .editor-view:not([hidden]){height:100vh;height:100dvh;min-height:0;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr)}
 .editor-view .editor-header{position:relative;top:auto}
 .editor-view>main{box-sizing:border-box;min-height:0;height:100%;padding:12px var(--editor-gutter,clamp(16px,3.2vw,42px)) 12px}

@@ -24,6 +24,8 @@ const toolSession = read('src/editor/tool-session.js');
 const tools = read('src/editor/tools.js');
 const viewState = read('src/editor/view-state.js');
 const appCatalog = read('src/app-catalog.js');
+const appLibrary = read('src/app-library.js');
+const appRuntime = read('src/app-runtime.js');
 const editorScroll = read('styles/editor-scroll.css');
 const editorTools = read('styles/editor-tools.css');
 
@@ -93,6 +95,16 @@ const localEditor = appCatalog.slice(localStart, routeStart);
 assert.ok(previewEditor.indexOf("showPage('editor')") < previewEditor.indexOf('renderRows(previewSong.rows)'), 'preview must be visible before score layout renders');
 assert.ok(localEditor.indexOf("showPage('editor')") < localEditor.indexOf('loadSong(id)'), 'editor must be visible before song layout renders');
 assert.ok(editorScroll.includes('*::-webkit-scrollbar-button'), 'all WebKit scrollbars must suppress arrow buttons');
+assert.ok(editorScroll.includes('::-webkit-scrollbar-button:vertical:start:decrement'), 'vertical decrement arrows must stay suppressed');
+assert.ok(editorScroll.includes('::-webkit-scrollbar-button:vertical:end:increment'), 'vertical increment arrows must stay suppressed');
+assert.ok(editorScroll.includes('@supports selector(::scroll-button(*))'), 'standard generated scroll buttons must stay suppressed when supported');
+assert.equal(appLibrary.includes('readRowsFromDom'), false, 'library UI must not restore DOM-to-song reconciliation');
+assert.equal(appLibrary.includes('saveRowsToCurrentSong'), false, 'library UI must not persist editor DOM as music data');
+assert.equal(appLibrary.includes("playButton.addEventListener"), false, 'playback controller must be the only play-button owner');
+assert.equal(appLibrary.includes("rhythmToggleButton.addEventListener"), false, 'view-state must be the only score-mode toggle owner');
+assert.equal(appRuntime.includes('var scoreViewEnabled'), false, 'classic runtime must not retain duplicate score-mode state');
+assert.equal(appRuntime.includes('var isPlaying'), false, 'classic runtime must not retain duplicate playback state');
+assert.equal(appRuntime.includes('var playIndex'), false, 'classic runtime must not retain duplicate playback index state');
 
 assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
 assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');

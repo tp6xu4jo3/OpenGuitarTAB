@@ -24,8 +24,8 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 - `grid-navigation.js` — arrow-only score navigation over real fractional time positions. Enter is consumed but never moves the cursor.
 - `legacy-grid-compat.js` — the only production-grid compatibility boundary for legacy rows, rhythm rows, row counts, and explicit V3 -> V2 projection.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
-- `view-state.js` — edit/score/preview mode state plus presentation-only score density (normal/compact). Density changes never modify the song document.
-- `playback-controller.js` — playback UI state and event scheduling.
+- `view-state.js` — the single owner of edit/score mode switching plus presentation-only score density (normal/compact). Density changes never modify the song document.
+- `playback-controller.js` — the single owner of playback UI state, play-button behavior, progress index, and event scheduling.
 - `song-actions.js` — editor Save and Publish actions.
 
 Ordinary note entry is a local Store/DOM update and never triggers adaptive reflow on blur. Layout invalidation is typed: `metrics` recomputes adaptive widths for technique/mark/relation notation, `grid` rebuilds only visual rows belonging to the affected source system when editable time positions change, and `structure` is reserved for document/system structure changes. `layoutFrom` is a measure anchor, never a boolean alias for full `renderRows`.
@@ -84,4 +84,4 @@ Fractional rhythm editing is authoritative in V3: triplet and 32nd positions are
 
 ## Structural rule
 
-Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.
+Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. App/library scripts must not reintroduce DOM-to-song reads, duplicate playback state, or duplicate score-mode handlers. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.
