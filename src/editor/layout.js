@@ -1,4 +1,4 @@
-import { fractionToNumber, indexDocument, isDocumentV3, normalizeDocumentV3, normalizeFraction } from './model.js';
+import { fractionToNumber, isDocumentV3, normalizeDocumentV3, normalizeFraction } from './model.js';
 
 export const MAX_MEASURES_PER_SYSTEM = 4;
 export const DEFAULT_LAYOUT_WIDTH = 1120;
@@ -15,7 +15,6 @@ export function buildSystems(document, { maxMeasuresPerSystem = MAX_MEASURES_PER
   const breaks = new Set(normalized.layout?.systemBreakAfter || []);
   const systems = [];
   let current = [];
-
   for (const measure of normalized.measures) {
     current.push(measure);
     if (breaks.has(measure.id) || current.length >= maxMeasuresPerSystem) {
@@ -27,37 +26,41 @@ export function buildSystems(document, { maxMeasuresPerSystem = MAX_MEASURES_PER
   return systems.length ? systems : [[]];
 }
 
-function relationCountsByMeasure(document) {
-  const counts = new Map();
-  const index = indexDocument(document);
-  for (const relation of document.relations || []) {
-    const measureIds = new Set();
-    for (const noteId of [relation.fromNoteId, relation.toNoteId, ...(relation.noteIds || [])].filter(Boolean)) {
-      const measureId = index.noteLocation.get(String(noteId))?.measureId;
-      if (measureId) measureIds.add(measureId);
-    }
-    for (const measureId of measureIds) counts.set(measureId, (counts.get(measureId) || 0) + 1);
-  }
-  return counts;
+function hasTwoDigitFret(event) {
+  return (event?.notes || []).some(note => /^\d{2,}$/.test(String(note?.fret ?? '').trim()));
 }
 
-function complexityForMeasure(measure, relationCount = 0) {
-  let score = 1;
-  for (const event of measure?.events || []) {
-    score += (event.marks || []).length * 2.5;
-    if (event.rhythmAnchor) score += 2.25;
-    for (const note of event.notes || []) score += (note.techniques || []).length * 2.5;
+function closeTwoDigitPairs(measure) {
+  const events = [...(measure?.events || [])]
+    .filter(event => (event.notes || []).length)
+    .sort((left, right) => fractionToNumber(left.at) - fractionToNumber(right.at));
+  let pairs = 0;
+  for (let index = 1; index < events.length; index++) {
+    if (!hasTwoDigitFret(events[index - 1]) || !hasTwoDigitFret(events[index])) continue;
+    const distance = fractionToNumber(events[index].at) - fractionToNumber(events[index - 1].at);
+    if (distance > 0 && distance <= 0.25 + 1e-9) pairs += 1;
   }
-  score += (measure?.groups || []).length * 3;
-  score += relationCount * 2.75;
-  return Math.max(1, score);
+  return pairs;
+}
+
+function spacingPressureForMeasure(measure) {
+  let pressure = 1;
+  for (const event of measure?.events || []) {
+    for (const mark of event.marks || []) {
+      if (mark?.type === 'strum' || mark?.type === 'arpeggio') pressure += 2.5;
+    }
+  }
+  for (const group of measure?.groups || []) {
+    if (group?.type === 'subdivision' && group?.subdivision === 'thirty-second') pressure += 2.75;
+  }
+  pressure += closeTwoDigitPairs(measure) * 2.25;
+  return Math.max(1, pressure);
 }
 
 export function measureComplexity(documentModel, measure) {
   const document = sourceDocument(documentModel);
   const target = measure || document.measures[0];
-  if (!target) return 1;
-  return complexityForMeasure(target, relationCountsByMeasure(document).get(target.id) || 0);
+  return target ? spacingPressureForMeasure(target) : 1;
 }
 
 function minimumWidthForComplexity(complexity, minMeasureWidth) {
@@ -69,10 +72,9 @@ export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = 
 }
 
 function buildMetrics(document, minMeasureWidth) {
-  const relations = relationCountsByMeasure(document);
   const metrics = new Map();
   for (const measure of document.measures || []) {
-    const complexity = complexityForMeasure(measure, relations.get(measure.id) || 0);
+    const complexity = spacingPressureForMeasure(measure);
     metrics.set(measure.id, {
       complexity,
       minimumWidth: minimumWidthForComplexity(complexity, minMeasureWidth),
@@ -101,7 +103,6 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
   const result = [];
   let cursor = 0;
   const maxMeasures = Math.max(1, Math.min(MAX_MEASURES_PER_SYSTEM, Number(maxMeasuresPerSystem) || MAX_MEASURES_PER_SYSTEM));
-
   while (cursor < measures.length) {
     let count = 0;
     let required = 0;
@@ -113,10 +114,8 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
       count += 1;
     }
     if (!count) count = 1;
-
     const remaining = measures.length - (cursor + count);
     if (remaining === 1 && count >= 3) count -= 1;
-
     const slice = measures.slice(cursor, cursor + count);
     const allocation = allocateWidths(slice, availableWidth, metrics);
     result.push({
@@ -143,11 +142,9 @@ export function buildAdaptiveLayout(documentModel, {
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
   const metrics = buildMetrics(document, minMeasureWidth);
   const systems = [];
-
   logicalSystems.forEach((measures, sourceSystemIndex) => {
     systems.push(...splitLogicalSystem(measures, sourceSystemIndex, width, maxMeasuresPerSystem, metrics));
   });
-
   return { availableWidth: width, systems, logicalSystems };
 }
 
@@ -157,7 +154,6 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
   const usableWidth = Math.max(1, availableWidth - gap * Math.max(0, row.segments.length - 1));
   const allocation = allocateWidths(measures, usableWidth, metrics);
   let cursor = 0;
-
   const segments = row.segments.map(segment => {
     const count = segment.measures.length;
     const pixels = allocation.pixels.slice(cursor, cursor + count);
@@ -171,12 +167,7 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
       widthWeight: pixelTotal
     };
   });
-
-  return {
-    segments,
-    measureCount: measures.length,
-    minimumWidth: row.minimumWidth
-  };
+  return { segments, measureCount: measures.length, minimumWidth: row.minimumWidth };
 }
 
 export function buildCompactScoreLayout(documentModel, {
@@ -191,13 +182,11 @@ export function buildCompactScoreLayout(documentModel, {
   const metrics = buildMetrics(document, minMeasureWidth);
   const rows = [];
   let row = null;
-
   const flush = () => {
     const finalized = finalizeCompactRow(row, width, gap, metrics);
     if (finalized) rows.push(finalized);
     row = null;
   };
-
   logicalSystems.forEach((measures, sourceSystemIndex) => {
     measures.forEach((measure, measureIndex) => {
       const minimumWidth = metrics.get(measure.id)?.minimumWidth || minMeasureWidth;
@@ -205,26 +194,19 @@ export function buildCompactScoreLayout(documentModel, {
       const startsSegment = !lastSegment || lastSegment.sourceSystemIndex !== sourceSystemIndex;
       const extraGap = row?.segments?.length && startsSegment ? gap : 0;
       if (row?.measureCount && row.minimumWidth + extraGap + minimumWidth > width) flush();
-
       if (!row) row = { segments: [], measureCount: 0, minimumWidth: 0 };
       let segment = row.segments[row.segments.length - 1];
       if (!segment || segment.sourceSystemIndex !== sourceSystemIndex) {
         if (row.segments.length) row.minimumWidth += gap;
-        segment = {
-          sourceSystemIndex,
-          startMeasure: measureIndex,
-          measures: []
-        };
+        segment = { sourceSystemIndex, startMeasure: measureIndex, measures: [] };
         row.segments.push(segment);
       }
-
       segment.measures.push(measure);
       row.measureCount += 1;
       row.minimumWidth += minimumWidth;
     });
   });
   flush();
-
   return { availableWidth: width, rows, logicalSystems };
 }
 
