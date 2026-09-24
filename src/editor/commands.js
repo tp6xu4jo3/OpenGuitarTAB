@@ -14,12 +14,25 @@ import {
 } from './model.js';
 import { applyThirtySecondRangeToMeasure, applyTripletRangeToMeasure } from './rhythm-grid.js';
 
-export function createChangeSet({ measures = [], playback = [], relations = [], layoutFrom = null, document = false } = {}) {
+export const LAYOUT_INVALIDATION = Object.freeze({
+  METRICS: 'metrics',
+  GRID: 'grid',
+  STRUCTURE: 'structure'
+});
+
+const LAYOUT_PRIORITY = Object.freeze({
+  [LAYOUT_INVALIDATION.METRICS]: 1,
+  [LAYOUT_INVALIDATION.GRID]: 2,
+  [LAYOUT_INVALIDATION.STRUCTURE]: 3
+});
+
+export function createChangeSet({ measures = [], playback = [], relations = [], layoutFrom = null, layoutKind = null, document = false } = {}) {
   return {
     measures: [...new Set(measures.filter(Boolean).map(String))],
     playback: [...new Set(playback.filter(Boolean).map(String))],
     relations: [...new Set(relations.filter(Boolean).map(String))],
     layoutFrom: layoutFrom ? String(layoutFrom) : null,
+    layoutKind: layoutFrom && LAYOUT_PRIORITY[layoutKind] ? layoutKind : null,
     document: Boolean(document)
   };
 }
@@ -29,15 +42,17 @@ export function mergeChangeSets(...sets) {
   const playback = [];
   const relations = [];
   let layoutFrom = null;
+  let layoutKind = null;
   let document = false;
   for (const set of sets.filter(Boolean)) {
     measures.push(...(set.measures || []));
     playback.push(...(set.playback || []));
     relations.push(...(set.relations || []));
     if (!layoutFrom && set.layoutFrom) layoutFrom = set.layoutFrom;
+    if ((LAYOUT_PRIORITY[set.layoutKind] || 0) > (LAYOUT_PRIORITY[layoutKind] || 0)) layoutKind = set.layoutKind;
     document ||= Boolean(set.document);
   }
-  return createChangeSet({ measures, playback, relations, layoutFrom, document });
+  return createChangeSet({ measures, playback, relations, layoutFrom, layoutKind, document });
 }
 
 function sourceDocument(document) {
@@ -64,12 +79,13 @@ function sortEvents(events) {
   return events;
 }
 
-function changedMeasure(measureId, { playback = true, relations = [], layoutFrom = null } = {}) {
+function changedMeasure(measureId, { playback = true, relations = [], layoutFrom = null, layoutKind = null } = {}) {
   return createChangeSet({
     measures: [measureId],
     playback: playback ? [measureId] : [],
     relations,
-    layoutFrom
+    layoutFrom,
+    layoutKind
   });
 }
 
@@ -159,7 +175,7 @@ function noteSet(document, command, idFactory) {
   };
 }
 
-function updateEvent(document, eventId, updater, { playback = true, layout = false } = {}) {
+function updateEvent(document, eventId, updater, { playback = true, layoutKind = null } = {}) {
   for (let measureIndex = 0; measureIndex < document.measures.length; measureIndex++) {
     const sourceMeasure = document.measures[measureIndex];
     const eventIndex = sourceMeasure.events.findIndex(event => event.id === eventId);
@@ -168,13 +184,13 @@ function updateEvent(document, eventId, updater, { playback = true, layout = fal
     measure.events[eventIndex] = updater(measure.events[eventIndex]);
     return {
       document: withMeasure(document, measureIndex, measure),
-      changeSet: changedMeasure(measure.id, { playback, layoutFrom: layout ? measure.id : null })
+      changeSet: changedMeasure(measure.id, { playback, layoutFrom: layoutKind ? measure.id : null, layoutKind })
     };
   }
   return { document, changeSet: createChangeSet() };
 }
 
-function updateNote(document, noteId, updater, { playback = false, layout = false } = {}) {
+function updateNote(document, noteId, updater, { playback = false, layoutKind = null } = {}) {
   for (let measureIndex = 0; measureIndex < document.measures.length; measureIndex++) {
     const sourceMeasure = document.measures[measureIndex];
     for (let eventIndex = 0; eventIndex < sourceMeasure.events.length; eventIndex++) {
@@ -184,7 +200,7 @@ function updateNote(document, noteId, updater, { playback = false, layout = fals
       measure.events[eventIndex].notes[noteIndex] = updater(measure.events[eventIndex].notes[noteIndex]);
       return {
         document: withMeasure(document, measureIndex, measure),
-        changeSet: changedMeasure(measure.id, { playback, layoutFrom: layout ? measure.id : null })
+        changeSet: changedMeasure(measure.id, { playback, layoutFrom: layoutKind ? measure.id : null, layoutKind })
       };
     }
   }
@@ -250,7 +266,7 @@ function addTechnique(document, command, idFactory) {
     const technique = { ...raw, id: String(raw.id || idFactory('t')) };
     if (techniques.some(item => sameEntityPayload(item, technique))) return note;
     return { ...note, techniques: [...techniques, technique] };
-  }, { playback: true, layout: true });
+  }, { playback: true, layoutKind: LAYOUT_INVALIDATION.METRICS });
 }
 
 function deleteTechnique(document, techniqueId) {
@@ -259,14 +275,14 @@ function deleteTechnique(document, techniqueId) {
   return updateNote(document, location.noteId, note => {
     const techniques = (note.techniques || []).filter(item => item.id !== techniqueId);
     return { ...note, techniques };
-  }, { playback: true, layout: true });
+  }, { playback: true, layoutKind: LAYOUT_INVALIDATION.METRICS });
 }
 
 function deleteTechniqueByType(document, noteId, techniqueType) {
   return updateNote(document, String(noteId || ''), note => {
     const techniques = (note.techniques || []).filter(item => item.type !== techniqueType);
     return { ...note, techniques };
-  }, { playback: true, layout: true });
+  }, { playback: true, layoutKind: LAYOUT_INVALIDATION.METRICS });
 }
 
 function addMark(document, command, idFactory) {
@@ -281,7 +297,7 @@ function addMark(document, command, idFactory) {
       ? marks.filter(item => !['strum', 'arpeggio'].includes(item.type))
       : marks;
     return { ...event, marks: [...retained, mark] };
-  }, { playback: false, layout: true });
+  }, { playback: false, layoutKind: LAYOUT_INVALIDATION.METRICS });
 }
 
 function deleteMark(document, markId) {
@@ -290,7 +306,7 @@ function deleteMark(document, markId) {
   return updateEvent(document, location.eventId, event => ({
     ...event,
     marks: (event.marks || []).filter(mark => mark.id !== markId)
-  }), { playback: false, layout: true });
+  }), { playback: false, layoutKind: LAYOUT_INVALIDATION.METRICS });
 }
 
 function applyRhythmRange(document, command, idFactory, transformer) {
@@ -304,7 +320,7 @@ function applyRhythmRange(document, command, idFactory, transformer) {
   if (!transformed.ok) return { document, changeSet: createChangeSet() };
   return {
     document: withMeasure(document, measureIndex, transformed.measure),
-    changeSet: changedMeasure(sourceMeasure.id, { playback: true, layoutFrom: sourceMeasure.id })
+    changeSet: changedMeasure(sourceMeasure.id, { playback: true, layoutFrom: sourceMeasure.id, layoutKind: LAYOUT_INVALIDATION.GRID })
   };
 }
 
@@ -320,7 +336,7 @@ function addGroup(document, command, idFactory) {
   measure.groups.push(group);
   return {
     document: withMeasure(document, measureIndex, measure),
-    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id })
+    changeSet: changedMeasure(measure.id, { layoutFrom: measure.id, layoutKind: LAYOUT_INVALIDATION.GRID })
   };
 }
 
@@ -354,7 +370,8 @@ function replaceMeasureContent(document, command) {
     document: next,
     changeSet: changedMeasure(target.id, {
       relations: pruned.removedRelationIds,
-      layoutFrom: target.id
+      layoutFrom: target.id,
+      layoutKind: LAYOUT_INVALIDATION.GRID
     })
   };
 }
@@ -369,7 +386,7 @@ function addRelation(document, command, idFactory) {
   const measures = [...new Set(noteIds.map(id => index.noteLocation.get(id)?.measureId).filter(Boolean))];
   return {
     document: { ...document, relations: [...(document.relations || []), relation] },
-    changeSet: createChangeSet({ measures, relations: [relation.id], layoutFrom: measures[0] || null })
+    changeSet: createChangeSet({ measures, relations: [relation.id], layoutFrom: measures[0] || null, layoutKind: LAYOUT_INVALIDATION.METRICS })
   };
 }
 
@@ -380,7 +397,7 @@ function deleteRelation(document, relationId) {
   const measures = [...new Set(relationNoteIds(relation).map(id => index.noteLocation.get(id)?.measureId).filter(Boolean))];
   return {
     document: { ...document, relations: document.relations.filter(item => item.id !== relationId) },
-    changeSet: createChangeSet({ measures, relations: [relationId], layoutFrom: measures[0] || null })
+    changeSet: createChangeSet({ measures, relations: [relationId], layoutFrom: measures[0] || null, layoutKind: LAYOUT_INVALIDATION.METRICS })
   };
 }
 
@@ -399,7 +416,7 @@ function insertMeasure(document, command, idFactory) {
   measures.splice(targetIndex, 0, measure);
   return {
     document: { ...document, measures },
-    changeSet: createChangeSet({ measures: [measure.id], playback: [measure.id], layoutFrom: measure.id })
+    changeSet: createChangeSet({ measures: [measure.id], playback: [measure.id], layoutFrom: measure.id, layoutKind: LAYOUT_INVALIDATION.STRUCTURE })
   };
 }
 
@@ -422,7 +439,8 @@ function deleteMeasure(document, measureId) {
       measures: [measureId],
       playback: [measureId],
       relations: pruned.removedRelationIds,
-      layoutFrom: measures[Math.max(0, measureIndex - 1)]?.id || measures[0]?.id
+      layoutFrom: measures[Math.max(0, measureIndex - 1)]?.id || measures[0]?.id,
+      layoutKind: LAYOUT_INVALIDATION.STRUCTURE
     })
   };
 }
@@ -439,7 +457,7 @@ function moveMeasure(document, command) {
   measures.splice(to, 0, measure);
   return {
     document: { ...document, measures },
-    changeSet: createChangeSet({ measures: [measure.id], playback: [measure.id], layoutFrom: measure.id })
+    changeSet: createChangeSet({ measures: [measure.id], playback: [measure.id], layoutFrom: measure.id, layoutKind: LAYOUT_INVALIDATION.STRUCTURE })
   };
 }
 

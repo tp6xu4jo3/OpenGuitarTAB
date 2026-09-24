@@ -148,7 +148,15 @@ assert.equal(stateSync.includes('documentToLegacyProjection'), false, 'state syn
 assert.equal(stateSync.includes('window.renderRows'), false, 'state sync must call the renderer module directly');
 assert.equal(stateSync.includes('window.syncNoteInputBackground'), false, 'state sync must call presentation helpers directly');
 assert.equal(controller.includes('window.scheduleEditorLayout'), false, 'controller must call the layout scheduler directly');
-assert.equal(controller.includes('if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();'), true, 'tool commands must request a full grid render only for explicit layout invalidations');
+assert.equal(controller.includes('else if (result.changeSet.layoutFrom) applyLayoutChange(result.document, result.changeSet);'), true, 'layout invalidation must flow through the local layout updater');
+assert.equal(controller.includes('result.changeSet.document || result.changeSet.layoutFrom'), false, 'layoutFrom must never be treated as a boolean alias for full renderRows');
+assert.equal(gridRenderer.includes('function applyLayoutChange'), true, 'grid renderer must own local layout invalidation');
+assert.equal(gridRenderer.includes('updateAdaptiveSourceWidths'), true, 'metrics-only changes must update measure widths without rebuilding the grid');
+assert.equal(gridRenderer.includes('replaceAdaptiveSourceRows'), true, 'grid-shape or wrap changes must rebuild only the affected source-system visual rows');
+assert.equal(commands.includes("METRICS: 'metrics'"), true, 'ChangeSet must distinguish notation metrics invalidation');
+assert.equal(commands.includes("GRID: 'grid'"), true, 'ChangeSet must distinguish source-grid invalidation');
+assert.equal(commands.includes("STRUCTURE: 'structure'"), true, 'ChangeSet must distinguish document structure invalidation');
+assert.equal(notationRenderer.includes('changeSet.layoutFrom) this.fullRenderPending'), false, 'notation rendering must not treat layout metrics as a full notation render');
 assert.equal(controller.includes('stateSync.markCurrent(store);\n  scheduleLayoutRender();'), false, 'commands must not bypass ChangeSet-driven layout invalidation');
 assert.equal(inputController.includes('layoutDirty'), false, 'ordinary note input must not schedule adaptive layout on blur');
 assert.equal(gridRenderer.includes('renderAdaptiveRows'), true, 'adaptive wraps must render as first-class visual rows instead of stacked grids inside one row');
