@@ -17,6 +17,25 @@
       "_driveFileId": "pages-summer",
       "_driveFileName": "pages-summer.json",
       "_driveModifiedTime": "static-test"
+    },
+    {
+      "id": "song-jiandanai-20260922",
+      "name": "簡單愛",
+      "artist": "周杰倫",
+      "album": "范特西",
+      "source": "17jita",
+      "playStyle": "fingerstyle",
+      "difficulty": 2,
+      "tempo": 97,
+      "capo": 0,
+      "beatsPerMeasure": 4,
+      "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500",
+      "owner": "admin",
+      "uploadedBy": "admin",
+      "public": true,
+      "_driveFileId": "pages-jiandanai",
+      "_driveFileName": "pages-jiandanai.json",
+      "_driveModifiedTime": "static-test-drive-copy"
     }
   ]
 }
