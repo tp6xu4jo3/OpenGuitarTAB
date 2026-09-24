@@ -1,4 +1,4 @@
-const GITHUB_PAGES_HOST = /(^|\\.)github\\.io$/i;
+const GITHUB_PAGES_HOST = /(^|\.)github\.io$/i;
 
 export function isGitHubPagesPreview(hostname = '') {
   return GITHUB_PAGES_HOST.test(String(hostname));
