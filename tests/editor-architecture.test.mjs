@@ -181,8 +181,7 @@ assert.equal(notationRenderer.includes("String(grid.dataset.measureIds || '')"),
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');
-assert.equal(vercelConfig.git?.deploymentEnabled?.['*'], false, 'feature branches must not auto-deploy to Vercel');
-assert.equal(vercelConfig.git?.deploymentEnabled?.main, true, 'main must remain the only automatic Vercel deployment branch');
+assert.equal(vercelConfig.git?.deploymentEnabled, false, 'Git pushes must never auto-deploy to Vercel; production is deployed manually after main is ready');
 
 assert.equal(bootstrap.includes("'./src/app-editor"), false, 'bootstrap must not load classic editor scripts');
 
