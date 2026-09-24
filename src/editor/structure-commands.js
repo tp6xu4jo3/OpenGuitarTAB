@@ -66,7 +66,7 @@ export function insertSystem(inputDocument, index, { measureCount = 4, idFactory
   const systems = normalizeSystems(document);
   const safe = Math.max(0, Math.min(systems.length, Math.trunc(Number(index) || 0)));
   const reference = systems[Math.max(0, Math.min(systems.length - 1, safe - 1))]?.at(-1) || document.measures[0];
-  const count = Math.max(1, Math.min(4, Math.trunc(Number(measureCount) || 4));
+  const count = Math.max(1, Math.min(4, Math.trunc(Number(measureCount) || 4)));
   const inserted = Array.from({ length: count }, () => blankMeasure(reference, idFactory));
   systems.splice(safe, 0, inserted);
   return {
