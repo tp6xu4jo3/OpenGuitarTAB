@@ -1,7 +1,7 @@
-.row-insert-zone{height:18px!important;min-height:18px!important;position:relative;z-index:20;overflow:visible;display:flex;align-items:center;justify-content:center}
+.row-insert-zone{height:18px!important;min-height:18px!important;position:relative;z-index:40;overflow:visible;display:flex;align-items:center;justify-content:center;pointer-events:auto}
 .row-insert-zone:hover{height:18px!important;min-height:18px!important}
 .row-insert-zone::before{left:50px;right:8px;background:transparent!important}
-.row-insert-controls{position:absolute;left:50%;top:50%;z-index:30;display:flex;align-items:center;justify-content:center;gap:6px;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;transition:opacity .14s ease,transform .14s ease}
+.row-insert-controls{position:absolute;left:50%;top:50%;z-index:41;display:flex;align-items:center;justify-content:center;gap:6px;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;transition:opacity .14s ease,transform .14s ease}
 .row-insert-zone:hover .row-insert-controls,.row-insert-zone:focus-within .row-insert-controls,.row-insert-zone.is-drag-target .row-insert-controls{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
 .row-boundary-button{box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#000;cursor:pointer;pointer-events:auto;box-shadow:0 6px 14px rgba(30,215,96,.20);transition:background .14s ease,transform .14s ease}
 .row-boundary-button:hover,.row-boundary-button:focus-visible{background:#3be477;transform:scale(1.05);outline:none}
