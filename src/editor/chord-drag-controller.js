@@ -6,6 +6,7 @@ export const CHORD_DRAG_MIME = 'application/x-openguitartab-chord';
 
 let installed = false;
 let activeDropTarget = null;
+let activeDragPayload = null;
 
 function editingBlocked() {
   return isPreviewActive() || isScoreViewActive();
@@ -53,19 +54,25 @@ function payloadFromTransfer(dataTransfer) {
   }
 }
 
+function payloadFromChordButton(chordButton) {
+  const chord = getChordById(chordButton?.dataset?.chordId);
+  const voicing = chord ? getChordVoicing(chord.id, chordButton?.dataset?.voicingId) : null;
+  return chord && voicing ? { chordId: chord.id, voicingId: voicing.id } : null;
+}
+
 function handleDragStart(event) {
   const chordButton = event.target?.closest?.('#editorRibbon [data-chord-id][data-voicing-id]');
   if (!chordButton || editingBlocked()) return;
-  const chord = getChordById(chordButton.dataset.chordId);
-  const voicing = chord ? getChordVoicing(chord.id, chordButton.dataset.voicingId) : null;
-  if (!chord || !voicing || !event.dataTransfer) return;
+  const payload = payloadFromChordButton(chordButton);
+  if (!payload || !event.dataTransfer) return;
+  activeDragPayload = payload;
   event.dataTransfer.effectAllowed = 'copy';
-  event.dataTransfer.setData(CHORD_DRAG_MIME, JSON.stringify({ chordId: chord.id, voicingId: voicing.id }));
+  event.dataTransfer.setData(CHORD_DRAG_MIME, JSON.stringify(payload));
   chordButton.classList.add('is-dragging');
 }
 
 function handleDragOver(event) {
-  if (editingBlocked() || !payloadFromTransfer(event.dataTransfer)) return;
+  if (editingBlocked() || !activeDragPayload) return;
   const target = targetFromNode(event.target);
   if (!target) {
     clearDropTarget();
@@ -82,9 +89,10 @@ function handleDragOver(event) {
 }
 
 function handleDrop(event) {
-  const payload = payloadFromTransfer(event.dataTransfer);
+  const payload = activeDragPayload || payloadFromTransfer(event.dataTransfer);
   const target = targetFromNode(event.target);
   clearDropTarget();
+  activeDragPayload = null;
   if (!payload || !target || editingBlocked()) return;
   event.preventDefault();
   const result = window.editorV3?.dispatch?.({
@@ -101,6 +109,7 @@ function handleDrop(event) {
 
 function handleDragEnd(event) {
   event.target?.closest?.('[data-chord-id]')?.classList.remove('is-dragging');
+  activeDragPayload = null;
   clearDropTarget();
 }
 

@@ -110,6 +110,20 @@ function structuralAction(target, action) {
   return false;
 }
 
+function insertSystemAtBoundary(index) {
+  if (editingBlocked()) return false;
+  const store = currentStore();
+  if (!store) return false;
+  const documentModel = store.getDocument();
+  const count = buildSystems(documentModel).length;
+  const boundary = Math.max(0, Math.min(count, Math.trunc(Number(index) || 0)));
+  return commitResult(
+    insertSystem(documentModel, boundary),
+    `已新增第 ${boundary + 1} 列`,
+    { type: 'row', rowIndex: boundary }
+  );
+}
+
 function openMenu(target, x, y) {
   if (editingBlocked()) return;
   setSelected(target);
@@ -245,7 +259,11 @@ function makeInsertZone(index) {
   add.className = 'row-boundary-button row-boundary-add';
   add.setAttribute('aria-label', `在第 ${index + 1} 列位置新增列`);
   add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>';
-  add.addEventListener('click', () => structuralAction({ type: 'row', rowIndex: index }, 'insert-before'));
+  add.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    insertSystemAtBoundary(index);
+  });
   controls.appendChild(add);
   zone.appendChild(controls);
   return zone;
@@ -360,7 +378,7 @@ function installGlobalActions() {
   window.pasteRow = rowIndex => { setSelected({ type: 'row', rowIndex }); pasteTarget(selected); };
   window.addTabSystem = () => {
     const count = buildSystems(currentStore()?.getDocument() || { measures: [] }).length;
-    structuralAction({ type: 'row', rowIndex: count }, 'insert-before');
+    insertSystemAtBoundary(count);
   };
   window.removeLastTabSystem = () => {
     const count = buildSystems(currentStore()?.getDocument() || { measures: [] }).length;
