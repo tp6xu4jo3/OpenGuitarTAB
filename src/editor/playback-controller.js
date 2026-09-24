@@ -386,6 +386,7 @@ export function installPlaybackController() {
     start: startPlayback,
     stop: stopPlayback,
     getIndex: () => state.currentIndex,
+    setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
     getPlaybackIndex: () => ensureIndex(),
     get isPlaying() { return state.playing; }
   };

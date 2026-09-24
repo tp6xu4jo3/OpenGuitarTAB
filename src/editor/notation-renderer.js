@@ -226,7 +226,7 @@ export class NotationRenderer {
   schedule(documentModel, changeSet = null) {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
-    if (!changeSet || changeSet.document || changeSet.layoutFrom) this.fullRenderPending = true;
+    if (!changeSet || changeSet.document) this.fullRenderPending = true;
     if (changeSet) {
       const previous = this.pendingChangeSet || {};
       this.pendingChangeSet = {
@@ -265,7 +265,7 @@ export class NotationRenderer {
     if (!this.document || !this.root) return;
     const systems = buildSystems(this.document);
     const locations = systemsWithLocations(this.document);
-    const full = !changeSet || changeSet.document || changeSet.layoutFrom;
+    const full = !changeSet || changeSet.document;
     const dirtyMeasureIds = new Set((changeSet?.measures || []).map(String));
 
     if (full) this.annotateAll(locations);

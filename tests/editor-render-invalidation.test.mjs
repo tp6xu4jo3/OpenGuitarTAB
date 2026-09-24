@@ -57,24 +57,28 @@ function apply(command) {
     noteId: 'n-a',
     technique: { type: 'harmonic' }
   });
-  assert.equal(harmonic.changeSet.layoutFrom, 'm-technique', 'technique insertion may change notation spacing and should recompute layout once');
+  assert.equal(harmonic.changeSet.layoutFrom, 'm-technique', 'technique insertion should invalidate layout metrics from its measure');
+  assert.equal(harmonic.changeSet.layoutKind, 'metrics', 'technique insertion must not request a grid rebuild');
 
   const strum = apply({
     type: 'event/mark/add',
     eventId: 'e-chord',
     mark: { type: 'strum', direction: 'up' }
   });
-  assert.equal(strum.changeSet.layoutFrom, 'm-technique', 'sweep notation may change spacing and should recompute layout once');
+  assert.equal(strum.changeSet.layoutFrom, 'm-technique', 'sweep notation should invalidate layout metrics from its measure');
+  assert.equal(strum.changeSet.layoutKind, 'metrics', 'sweep notation must not request a grid rebuild');
 
   const relation = apply({
     type: 'relation/add',
     relation: { type: 'slide', fromNoteId: 'n-a', toNoteId: 'n-next' }
   });
-  assert.equal(relation.changeSet.layoutFrom, 'm-technique', 'relation notation may change spacing and should recompute layout once');
+  assert.equal(relation.changeSet.layoutFrom, 'm-technique', 'relation notation should invalidate layout metrics from its measure');
+  assert.equal(relation.changeSet.layoutKind, 'metrics', 'relations must not request a grid rebuild');
 
   const relationId = relation.document.relations[0].id;
   const removedRelation = apply({ type: 'relation/delete', relationId });
-  assert.equal(removedRelation.changeSet.layoutFrom, 'm-technique', 'deleting relation notation should recompute layout once');
+  assert.equal(removedRelation.changeSet.layoutFrom, 'm-technique', 'deleting relation notation should invalidate layout metrics');
+  assert.equal(removedRelation.changeSet.layoutKind, 'metrics', 'deleting a relation must stay on the metrics path');
 }
 
 {
@@ -86,7 +90,8 @@ function apply(command) {
     string: 1,
     fret: '12'
   });
-  assert.equal(note.changeSet.layoutFrom, null, 'ordinary note entry must never trigger a full adaptive layout render');
+  assert.equal(note.changeSet.layoutFrom, null, 'ordinary note entry must never trigger adaptive layout');
+  assert.equal(note.changeSet.layoutKind, null, 'ordinary note entry has no layout invalidation kind');
 }
 
 {
@@ -97,10 +102,12 @@ function apply(command) {
     endAt: [1, 4]
   });
   assert.equal(triplet.changeSet.layoutFrom, 'm-rhythm', 'triplet changes editable time positions and must invalidate layout');
+  assert.equal(triplet.changeSet.layoutKind, 'grid', 'triplet must rebuild only the affected source grid rows');
 
   const groupId = triplet.document.measures[1].groups[0].id;
   const removedGroup = apply({ type: 'group/delete', groupId });
   assert.equal(removedGroup.changeSet.layoutFrom, 'm-rhythm', 'removing a tuplet group changes fractional grid positions and must invalidate layout');
+  assert.equal(removedGroup.changeSet.layoutKind, 'grid', 'removing a tuplet group must rebuild only the affected source grid rows');
 }
 
 {
@@ -111,6 +118,7 @@ function apply(command) {
     endAt: [5, 4]
   });
   assert.equal(thirtySecond.changeSet.layoutFrom, 'm-rhythm', '32nd subdivision changes editable time positions and must invalidate layout');
+  assert.equal(thirtySecond.changeSet.layoutKind, 'grid', '32nd subdivision must use source-grid invalidation');
 }
 
 {
@@ -124,6 +132,7 @@ function apply(command) {
     }
   });
   assert.equal(replacement.changeSet.layoutFrom, 'm-rhythm', 'measure content replacement may change grid shape and must invalidate layout');
+  assert.equal(replacement.changeSet.layoutKind, 'grid', 'measure replacement must use source-grid invalidation');
 }
 
 console.log('editor render invalidation tests passed');

@@ -169,8 +169,8 @@
       menuPosition = null;
       tempoInput.value = clamp(Number(song.tempo) || 120, 30, 300);
       capoInput.value = clamp(Math.round(Number(song.capo) || 0), 0, 12);
-      playIndex = 0;
       renderRows(song.rows);
+      window.editorPlayback?.setIndex?.(0, { highlight: false });
       renderSongList();
     }
 
@@ -315,8 +315,8 @@
         closeNewSongModal();
         tempoInput.value = saved.tempo;
         capoInput.value = saved.capo;
-        playIndex = 0;
         renderRows(saved.rows);
+        window.editorPlayback?.setIndex?.(0, { highlight: false });
         renderSongList();
         meterBadge.textContent = `每小節 ${beats} 拍`;
         renderLibraryGrid();
@@ -370,8 +370,8 @@
     newSongThreeBeats.addEventListener('click', () => createNewSong(3));
     newSongFourBeats.addEventListener('click', () => createNewSong(4));
     newSongModal.addEventListener('click', event => { if (event.target === newSongModal) closeNewSongModal(); });
-    playButton.addEventListener('click', () => { if (isPlaying) stopPlayback(); else startPlayback(); });
-    rhythmToggleButton.addEventListener('click', () => { const rows = readRowsFromDom(); saveRowsToCurrentSong(rows, false); setScoreViewEnabled(!scoreViewEnabled); renderRows(rows); });
     tempoInput.addEventListener('change', () => { const song = currentSong(); if (song) song.tempo = getTempo(); });
     capoInput.addEventListener('change', () => { const song = currentSong(); if (song) song.capo = getCapo(); });
-    playProgress.addEventListener('input', event => setProgressIndex(Number(event.target.value), false, true));
+    playProgress.addEventListener('input', event => {
+      window.editorPlayback?.setIndex?.(Number(event.target.value), { updateSlider: false, highlight: true });
+    });

@@ -529,6 +529,130 @@ function renderAdaptiveRows(tabArea, normalized, systems, adaptive) {
   return rowCount;
 }
 
+function segmentSignature(segment) {
+  return (segment?.measureIds || []).map(String).join(',');
+}
+
+function updateGridWidths(grid, segment) {
+  const widths = segment?.measureWidths || [];
+  const measureCount = Math.max(1, Number(grid?.dataset.measureCount) || widths.length || 1);
+  if (!grid || widths.length !== measureCount) return false;
+  const beats = beatsPerMeasure();
+  const measureSteps = beats * 2;
+  grid.dataset.measureWidths = widths.map(value => Number(value).toFixed(6)).join(',');
+  grid.style.gridTemplateColumns = gridTemplateColumns(widths, measureSteps);
+
+  [...grid.querySelectorAll(':scope > .measure-line')].forEach((line, boundary) => {
+    line.style.left = `${measureBoundaryPercentForGrid(grid, boundary)}%`;
+  });
+
+  const guides = [...grid.querySelectorAll(':scope > .beat-guide')];
+  let guideIndex = 0;
+  for (let localMeasure = 0; localMeasure < measureCount; localMeasure++) {
+    const measureLeft = measureBoundaryPercentForGrid(grid, localMeasure);
+    const width = widths[localMeasure];
+    for (let beat = 1; beat < beats; beat++) {
+      const guide = guides[guideIndex++];
+      if (guide) guide.style.setProperty('--guide-percent', `${measureLeft + width * (beat / beats)}%`);
+    }
+  }
+  return true;
+}
+
+function sourceSystemIndexForMeasure(systems, measureId) {
+  return systems.findIndex(system => system.some(measure => String(measure.id) === String(measureId)));
+}
+
+function refreshVisualRowMetadata(tabArea) {
+  const rows = [...tabArea.querySelectorAll(':scope > .tab-system')];
+  rows.forEach((system, visualIndex) => {
+    system.dataset.visualRow = String(visualIndex);
+  });
+  return rows;
+}
+
+function replaceAdaptiveSourceRows(tabArea, normalized, systems, adaptive, sourceSystemIndex) {
+  const existing = [...tabArea.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
+  const segments = adaptive.systems.filter(segment => segment.sourceSystemIndex === sourceSystemIndex);
+  if (!existing.length || !segments.length) return false;
+
+  const rowCount = Math.max(normalized?.length || 0, systems?.length || 0, 1);
+  const logical = systems[sourceSystemIndex] || [];
+  const fragment = document.createDocumentFragment();
+  segments.forEach((segment, segmentIndex) => {
+    const system = createTabSystem(sourceSystemIndex, rowCount, {
+      rowValues: normalized?.[sourceSystemIndex] || Array.from({ length: STRINGS }, () => []),
+      logicalSystem: logical,
+      segments: [segment]
+    });
+    system.dataset.sourceRow = String(sourceSystemIndex);
+    system.dataset.sourceStart = String(segmentIndex === 0);
+    system.dataset.sourceEnd = String(segmentIndex === segments.length - 1);
+    fragment.appendChild(system);
+  });
+
+  existing[0].before(fragment);
+  existing.forEach(node => node.remove());
+  refreshVisualRowMetadata(tabArea);
+  return true;
+}
+
+function updateAdaptiveSourceWidths(tabArea, adaptive, sourceSystemIndex) {
+  const existing = [...tabArea.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
+  const segments = adaptive.systems.filter(segment => segment.sourceSystemIndex === sourceSystemIndex);
+  if (existing.length !== segments.length || !existing.length) return false;
+  if (existing.some((system, index) => {
+    const grid = system.querySelector(':scope .tab-grid');
+    return String(grid?.dataset.measureIds || '') !== segmentSignature(segments[index]);
+  })) return false;
+
+  return existing.every((system, index) => updateGridWidths(system.querySelector(':scope .tab-grid'), segments[index]));
+}
+
+function publishPartialLayout(layoutPlan, sourceSystemIndex) {
+  window.editorLayoutPlan = layoutPlan;
+  window.editorPlayback?.invalidate?.();
+  window.updateProgressRange?.();
+  window.dispatchEvent(new CustomEvent('opentab:editor-rendered', {
+    detail: { layout: layoutPlan, partial: true, sourceSystemIndex }
+  }));
+}
+
+function applyLayoutChange(documentModel, changeSet = {}) {
+  const tabArea = document.getElementById('tabArea');
+  const song = currentSongSafe();
+  const measureId = changeSet?.layoutFrom;
+  if (!tabArea || !song?.rows || !documentModel || !measureId) return false;
+
+  if (changeSet.layoutKind === 'structure' || isScoreViewActive()) {
+    scheduleLayoutRender();
+    return true;
+  }
+
+  const systems = buildSystems(documentModel);
+  const sourceSystemIndex = sourceSystemIndexForMeasure(systems, measureId);
+  if (sourceSystemIndex < 0) {
+    scheduleLayoutRender();
+    return true;
+  }
+
+  const beats = beatsPerMeasure(song);
+  const normalized = typeof window.normalizeRows === 'function' ? window.normalizeRows(song.rows, beats) : song.rows;
+  const adaptive = buildAdaptiveLayout(documentModel, { availableWidth: layoutAvailableWidth(tabArea) });
+  const metricsOnly = changeSet.layoutKind === 'metrics';
+  const updatedWidths = metricsOnly && updateAdaptiveSourceWidths(tabArea, adaptive, sourceSystemIndex);
+
+  if (!updatedWidths && !replaceAdaptiveSourceRows(tabArea, normalized, systems, adaptive, sourceSystemIndex)) {
+    scheduleLayoutRender();
+    return true;
+  }
+
+  renderRhythmNotation(sourceSystemIndex);
+  updateRemoveRowButton();
+  publishPartialLayout(adaptive, sourceSystemIndex);
+  return true;
+}
+
 function renderRows(rows) {
   window.editorPlayback?.stop?.(false, true);
   const song = currentSongSafe();
@@ -635,5 +759,6 @@ export {
   rowMeasureCount,
   rowPositionCount,
   rowStepCount,
-  scheduleLayoutRender
+  scheduleLayoutRender,
+  applyLayoutChange
 };

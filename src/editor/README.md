@@ -24,11 +24,11 @@ V2 migration happens when a song without a V3 document enters a `ScoreStore`. Ge
 - `grid-navigation.js` — arrow-only score navigation over real fractional time positions. Enter is consumed but never moves the cursor.
 - `legacy-grid-compat.js` — the only production-grid compatibility boundary for legacy rows, rhythm rows, row counts, and explicit V3 -> V2 projection.
 - `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
-- `view-state.js` — edit/score/preview mode state plus presentation-only score density (normal/compact). Density changes never modify the song document.
-- `playback-controller.js` — playback UI state and event scheduling.
+- `view-state.js` — the single owner of edit/score mode switching plus presentation-only score density (normal/compact). Density changes never modify the song document.
+- `playback-controller.js` — the single owner of playback UI state, play-button behavior, progress index, and event scheduling.
 - `song-actions.js` — editor Save and Publish actions.
 
-Ordinary note entry is a local Store/DOM update and never triggers adaptive reflow on blur. Technique, mark, and relation changes explicitly invalidate layout once because their notation can change spacing; rhythm-grid and structural commands continue to invalidate layout because they change time/grid shape.
+Ordinary note entry is a local Store/DOM update and never triggers adaptive reflow on blur. Layout invalidation is typed: `metrics` recomputes adaptive widths for technique/mark/relation notation, `grid` rebuilds only visual rows belonging to the affected source system when editable time positions change, and `structure` is reserved for document/system structure changes. `layoutFrom` is a measure anchor, never a boolean alias for full `renderRows`.
 
 Technique tools are click-only. Clicking a tool activates it, a successful target command returns the session to idle, invalid targets keep the tool active, and Escape or clicking the active tool again cancels it. Structure drag/drop remains a separate editor interaction.
 
@@ -43,7 +43,7 @@ Technique tools are click-only. Clicking a tool activates it, a successful targe
 
 Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.
 
-`ChangeSet.measures` drives local notation updates. `ChangeSet.layoutFrom` is reserved for commands that change grid/time structure or measure/system structure. Harmonic, strum/arpeggio, slide, tie, slur, and their deletion paths must not rebuild the full production grid; triplet/32nd subdivision, tuplet-group grid changes, measure content replacement, and structural edits must invalidate layout explicitly.
+`ChangeSet.measures` drives local notation updates. `ChangeSet.layoutFrom` anchors layout work at a measure and `ChangeSet.layoutKind` defines its scope. Harmonic, strum/arpeggio, slide, tie, slur, and their deletion paths use `metrics`: if visual grouping is unchanged, only adaptive measure widths and local notation are refreshed; if grouping changes, only that source system's visual rows are rebuilt. Triplet/32nd subdivision, tuplet-group grid changes, and measure content replacement use `grid` and rebuild only that source system. Structural edits use `structure` and may request a full render.
 
 ## Playback and audio
 
@@ -84,4 +84,4 @@ Fractional rhythm editing is authoritative in V3: triplet and 32nd positions are
 
 ## Structural rule
 
-Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.
+Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. App/library scripts must not reintroduce DOM-to-song reads, duplicate playback state, or duplicate score-mode handlers. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.

@@ -1,6 +1,6 @@
 import { EditorClipboard } from './clipboard.js';
 import { createChangeSet } from './commands.js';
-import { scheduleLayoutRender } from './grid-renderer.js';
+import { applyLayoutChange, scheduleLayoutRender } from './grid-renderer.js';
 import { installEditorInputController } from './input-controller.js';
 import { buildSystems } from './layout.js';
 import { compareFractions, fractionKey, normalizeFraction } from './model.js';
@@ -57,7 +57,8 @@ function dispatchCommand(command) {
   if (!store) return { document: null, changeSet: createChangeSet() };
   const result = store.dispatch(command);
   stateSync.markCurrent(store);
-  if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();
+  if (result.changeSet.document) scheduleLayoutRender();
+  else if (result.changeSet.layoutFrom) applyLayoutChange(result.document, result.changeSet);
   return result;
 }
 

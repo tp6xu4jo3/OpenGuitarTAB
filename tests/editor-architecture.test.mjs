@@ -24,8 +24,11 @@ const toolSession = read('src/editor/tool-session.js');
 const tools = read('src/editor/tools.js');
 const viewState = read('src/editor/view-state.js');
 const appCatalog = read('src/app-catalog.js');
+const appLibrary = read('src/app-library.js');
+const appRuntime = read('src/app-runtime.js');
 const editorScroll = read('styles/editor-scroll.css');
 const editorTools = read('styles/editor-tools.css');
+const vercelConfig = JSON.parse(read('vercel.json'));
 
 for (const removed of [
   'legacy-ui-bridge',
@@ -93,6 +96,16 @@ const localEditor = appCatalog.slice(localStart, routeStart);
 assert.ok(previewEditor.indexOf("showPage('editor')") < previewEditor.indexOf('renderRows(previewSong.rows)'), 'preview must be visible before score layout renders');
 assert.ok(localEditor.indexOf("showPage('editor')") < localEditor.indexOf('loadSong(id)'), 'editor must be visible before song layout renders');
 assert.ok(editorScroll.includes('*::-webkit-scrollbar-button'), 'all WebKit scrollbars must suppress arrow buttons');
+assert.ok(editorScroll.includes('::-webkit-scrollbar-button:vertical:start:decrement'), 'vertical decrement arrows must stay suppressed');
+assert.ok(editorScroll.includes('::-webkit-scrollbar-button:vertical:end:increment'), 'vertical increment arrows must stay suppressed');
+assert.ok(editorScroll.includes('@supports selector(::scroll-button(*))'), 'standard generated scroll buttons must stay suppressed when supported');
+assert.equal(appLibrary.includes('readRowsFromDom'), false, 'library UI must not restore DOM-to-song reconciliation');
+assert.equal(appLibrary.includes('saveRowsToCurrentSong'), false, 'library UI must not persist editor DOM as music data');
+assert.equal(appLibrary.includes("playButton.addEventListener"), false, 'playback controller must be the only play-button owner');
+assert.equal(appLibrary.includes("rhythmToggleButton.addEventListener"), false, 'view-state must be the only score-mode toggle owner');
+assert.equal(appRuntime.includes('var scoreViewEnabled'), false, 'classic runtime must not retain duplicate score-mode state');
+assert.equal(appRuntime.includes('var isPlaying'), false, 'classic runtime must not retain duplicate playback state');
+assert.equal(appRuntime.includes('var playIndex'), false, 'classic runtime must not retain duplicate playback index state');
 
 assert.equal(controller.includes('stopImmediatePropagation'), false, 'controller must not intercept older editor handlers');
 assert.equal(viewState.includes('stopImmediatePropagation'), false, 'view-state must not intercept older editor handlers');
@@ -148,7 +161,15 @@ assert.equal(stateSync.includes('documentToLegacyProjection'), false, 'state syn
 assert.equal(stateSync.includes('window.renderRows'), false, 'state sync must call the renderer module directly');
 assert.equal(stateSync.includes('window.syncNoteInputBackground'), false, 'state sync must call presentation helpers directly');
 assert.equal(controller.includes('window.scheduleEditorLayout'), false, 'controller must call the layout scheduler directly');
-assert.equal(controller.includes('if (result.changeSet.document || result.changeSet.layoutFrom) scheduleLayoutRender();'), true, 'tool commands must request a full grid render only for explicit layout invalidations');
+assert.equal(controller.includes('else if (result.changeSet.layoutFrom) applyLayoutChange(result.document, result.changeSet);'), true, 'layout invalidation must flow through the local layout updater');
+assert.equal(controller.includes('result.changeSet.document || result.changeSet.layoutFrom'), false, 'layoutFrom must never be treated as a boolean alias for full renderRows');
+assert.equal(gridRenderer.includes('function applyLayoutChange'), true, 'grid renderer must own local layout invalidation');
+assert.equal(gridRenderer.includes('updateAdaptiveSourceWidths'), true, 'metrics-only changes must update measure widths without rebuilding the grid');
+assert.equal(gridRenderer.includes('replaceAdaptiveSourceRows'), true, 'grid-shape or wrap changes must rebuild only the affected source-system visual rows');
+assert.equal(commands.includes("METRICS: 'metrics'"), true, 'ChangeSet must distinguish notation metrics invalidation');
+assert.equal(commands.includes("GRID: 'grid'"), true, 'ChangeSet must distinguish source-grid invalidation');
+assert.equal(commands.includes("STRUCTURE: 'structure'"), true, 'ChangeSet must distinguish document structure invalidation');
+assert.equal(notationRenderer.includes('changeSet.layoutFrom) this.fullRenderPending'), false, 'notation rendering must not treat layout metrics as a full notation render');
 assert.equal(controller.includes('stateSync.markCurrent(store);\n  scheduleLayoutRender();'), false, 'commands must not bypass ChangeSet-driven layout invalidation');
 assert.equal(inputController.includes('layoutDirty'), false, 'ordinary note input must not schedule adaptive layout on blur');
 assert.equal(gridRenderer.includes('renderAdaptiveRows'), true, 'adaptive wraps must render as first-class visual rows instead of stacked grids inside one row');
@@ -160,6 +181,8 @@ assert.equal(notationRenderer.includes("String(grid.dataset.measureIds || '')"),
 assert.equal(bootstrap.includes('installGridRenderer'), true, 'bootstrap must install the consolidated grid renderer');
 assert.equal(bootstrap.includes('installEditorSongActions'), true, 'bootstrap must install editor song actions');
 assert.equal(bootstrap.includes('installSongImport'), true, 'bootstrap must install song import outside editor core');
+assert.equal(vercelConfig.git?.deploymentEnabled, false, 'Git pushes must never auto-deploy to Vercel; production is deployed manually after main is ready');
+
 assert.equal(bootstrap.includes("'./src/app-editor"), false, 'bootstrap must not load classic editor scripts');
 
 console.log('editor architecture tests passed');
