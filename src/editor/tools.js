@@ -4,7 +4,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     label: '泛音',
     glyph: '◇',
     target: 'note',
-    hint: '人工泛音：點選1品以上的音符，顯示左手品位與+12觸弦點',
+    hint: '泛音：自然泛音位置或12品以上可套用，標記顯示在六弦下方',
     command(target) {
       return {
         type: 'note/technique/add',
@@ -85,16 +85,31 @@ export const TOOL_DEFINITIONS = Object.freeze({
   },
   triplet: {
     id: 'triplet',
-    label: '三連音',
+    label: '八分三連音',
     glyph: '3',
-    target: 'eventRange',
-    hint: '依序點選同小節的範圍起點與終點，將範圍切成3個真正的3:2時間位置',
+    target: 'ColumnTarget',
+    hint: '點一下起點，向右把一拍切成3個等分的八分三連音位置',
     command(target) {
       return {
         type: 'rhythm/triplet/apply',
         measureId: target.measureId,
-        startAt: [...target.startAt],
-        endAt: [...target.endAt]
+        startAt: [...target.at],
+        subdivision: 'eighth'
+      };
+    }
+  },
+  triplet16: {
+    id: 'triplet16',
+    label: '十六分三連音',
+    glyph: '≡3',
+    target: 'ColumnTarget',
+    hint: '點一下起點，向右把半拍切成3個等分的十六分三連音位置',
+    command(target) {
+      return {
+        type: 'rhythm/triplet/apply',
+        measureId: target.measureId,
+        startAt: [...target.at],
+        subdivision: 'sixteenth'
       };
     }
   },
@@ -102,14 +117,13 @@ export const TOOL_DEFINITIONS = Object.freeze({
     id: 'duration32',
     label: '32分音',
     glyph: '32',
-    target: 'eventRange',
-    hint: '依序點選兩個相鄰16分位置，將區間切成2個32分位置',
+    target: 'ColumnTarget',
+    hint: '點一下16分位置，向右切成2個32分位置',
     command(target) {
       return {
         type: 'rhythm/32nd/apply',
         measureId: target.measureId,
-        startAt: [...target.startAt],
-        endAt: [...target.endAt]
+        startAt: [...target.at]
       };
     }
   }
