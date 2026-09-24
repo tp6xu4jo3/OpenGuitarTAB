@@ -64,6 +64,21 @@ assert.equal((await reopened.library()).songs.find(song => song.id === 'song-a')
 assert.ok(fetchCalls.every(url => !url.includes('/api')), 'LocalTestDataSource must never call /api');
 assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTestDataSource may fetch only static test fixtures');
 
+const originalFetch = globalThis.fetch;
+let defaultFetchCalls = 0;
+globalThis.fetch = async function (url, options) {
+  assert.equal(this, globalThis, 'default browser fetch must execute with the global object as its receiver');
+  defaultFetchCalls += 1;
+  return { ok: true, status: 200, json: async () => ({ user: null }) };
+};
+try {
+  const defaultServer = new ServerDataSource({ origin: 'https://openguitartab.vercel.app' });
+  await defaultServer.session();
+  assert.equal(defaultFetchCalls, 1, 'default server transport should call the browser fetch implementation once');
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 const serverCalls = [];
 const server = new ServerDataSource({
   origin: 'https://openguitartab.vercel.app',
