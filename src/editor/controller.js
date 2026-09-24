@@ -25,10 +25,10 @@ let scoreRenderer = null;
 let editorRibbon = null;
 let selectedTechniqueRef = null;
 let techniqueContextMenu = null;
+let chordPlacement = null;
+let relationPreviewVisible = false;
 
-function toast(message) {
-  window.showToast?.(message);
-}
+function toast(message) { window.showToast?.(message); }
 
 function escapeSelector(value) {
   const text = String(value ?? '');
@@ -45,13 +45,8 @@ function bindStore(store) {
   return store;
 }
 
-function ensureStore() {
-  return bindStore(stateSync.ensureStore());
-}
-
-function editingBlocked() {
-  return isPreviewActive() || isScoreViewActive();
-}
+function ensureStore() { return bindStore(stateSync.ensureStore()); }
+function editingBlocked() { return isPreviewActive() || isScoreViewActive(); }
 
 function dispatchCommand(command) {
   const store = ensureStore();
@@ -61,9 +56,7 @@ function dispatchCommand(command) {
   return result;
 }
 
-function systemMeasures(store, rowIndex) {
-  return buildSystems(store.getDocument())?.[rowIndex] || [];
-}
+function systemMeasures(store, rowIndex) { return buildSystems(store.getDocument())?.[rowIndex] || []; }
 
 function copyModule(target) {
   if (!target || editingBlocked()) return false;
@@ -91,10 +84,7 @@ function pasteModule(target) {
   const store = ensureStore();
   if (!store) return false;
   if (target.type === 'measure') {
-    if (!clipboardState.has('measure')) {
-      toast('目前沒有可貼上的小節');
-      return true;
-    }
+    if (!clipboardState.has('measure')) { toast('目前沒有可貼上的小節'); return true; }
     const measure = systemMeasures(store, target.rowIndex)?.[target.measureIndex];
     if (!measure) return false;
     const result = clipboardState.pasteMeasure(store.getDocument(), measure.id);
@@ -104,10 +94,7 @@ function pasteModule(target) {
     return true;
   }
   if (target.type === 'row') {
-    if (!clipboardState.has('system')) {
-      toast('目前沒有可貼上的列');
-      return true;
-    }
+    if (!clipboardState.has('system')) { toast('目前沒有可貼上的列'); return true; }
     const measures = systemMeasures(store, target.rowIndex);
     if (!measures.length) return false;
     const result = clipboardState.pasteSystem(store.getDocument(), measures.map(measure => measure.id));
@@ -129,7 +116,11 @@ function atFromNode(node) {
   const target = node?.closest?.('.v3-column-target[data-measure-id][data-at],.v3-note[data-measure-id][data-at],.v3-note-editor[data-measure-id][data-at]');
   const at = fractionFromDataset(target?.dataset?.at);
   if (!target || !at) return null;
-  return { measureId: String(target.dataset.measureId || ''), at };
+  return {
+    measureId: String(target.dataset.measureId || ''),
+    at,
+    duration: fractionFromDataset(target.dataset.duration) || [1, 4]
+  };
 }
 
 function toolTargetFromNode(definition, node) {
@@ -153,33 +144,24 @@ function eventAtColumn(documentModel, target) {
 function eventsInRange(documentModel, target) {
   const measure = (documentModel?.measures || []).find(item => String(item.id) === String(target?.measureId || ''));
   if (!measure || !Array.isArray(target?.startAt) || !Array.isArray(target?.endAt)) return [];
-  return (measure.events || []).filter(event =>
-    compareFractions(event.at, target.startAt) >= 0 && compareFractions(event.at, target.endAt) <= 0
-  );
+  return (measure.events || []).filter(event => compareFractions(event.at, target.startAt) >= 0 && compareFractions(event.at, target.endAt) <= 0);
 }
 
 function commandTarget(definition, target, documentModel) {
   if (definition.target === 'note' || definition.target === 'notePair') return target;
   if (definition.target === 'event') {
     const event = eventAtColumn(documentModel, target);
-    return event ? { eventId: event.id, measureId: target.measureId, at: target.at } : null;
+    return event ? { eventId: event.id, measureId: target.measureId, at: target.at, duration: target.duration } : null;
   }
   if (definition.target === 'eventRange') {
     const events = eventsInRange(documentModel, target);
-    return {
-      measureId: target.measureId,
-      startAt: target.startAt,
-      endAt: target.endAt,
-      eventIds: events.map(event => event.id)
-    };
+    return { measureId: target.measureId, startAt: target.startAt, endAt: target.endAt, eventIds: events.map(event => event.id) };
   }
   return target;
 }
 
 function clearToolSource() {
-  document.querySelectorAll('.v3-note.tool-link-source,.v3-column-target.tool-range-source').forEach(node => {
-    node.classList.remove('tool-link-source', 'tool-range-source');
-  });
+  document.querySelectorAll('.v3-note.tool-link-source,.v3-column-target.tool-range-source').forEach(node => node.classList.remove('tool-link-source', 'tool-range-source'));
 }
 
 function markToolSource(kind, target) {
@@ -195,23 +177,21 @@ function markToolSource(kind, target) {
   }
 }
 
+function changed(result) {
+  const set = result?.changeSet;
+  return Boolean(set?.document || set?.measures?.length || set?.relations?.length || set?.layoutFrom);
+}
+
 function dispatchTool(toolId, target, options = {}) {
   const definition = toolRegistry.get(toolId);
   if (!definition || editingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
   const resolved = commandTarget(definition, target, store.getDocument());
-  if (!resolved) {
-    toast('這個時間位置沒有可套用技巧的目標');
-    return false;
-  }
+  if (!resolved) { toast('這個時間位置沒有可套用技巧的目標'); return false; }
   const validation = resolveTechniqueTarget(toolId, resolved, store.getDocument());
-  if (!validation.ok) {
-    toast(validation.message || '這個目標無法套用此技巧');
-    return false;
-  }
-  dispatchCommand(toolRegistry.createCommand(toolId, validation.target, options));
-  return true;
+  if (!validation.ok) { toast(validation.message || '這個目標無法套用此技巧'); return false; }
+  return changed(dispatchCommand(toolRegistry.createCommand(toolId, validation.target, options)));
 }
 
 function clearTechniqueSelection() {
@@ -219,9 +199,7 @@ function clearTechniqueSelection() {
   selectedTechniqueRef = null;
 }
 
-function hideTechniqueContextMenu() {
-  if (techniqueContextMenu) techniqueContextMenu.hidden = true;
-}
+function hideTechniqueContextMenu() { if (techniqueContextMenu) techniqueContextMenu.hidden = true; }
 
 function ensureTechniqueContextMenu() {
   if (techniqueContextMenu?.isConnected) return techniqueContextMenu;
@@ -245,10 +223,7 @@ function selectTechniqueMarker(marker) {
   clearTechniqueSelection();
   marker.classList.add('is-selected');
   marker.focus({ preventScroll: true });
-  selectedTechniqueRef = {
-    kind: String(marker.dataset.techniqueKind || ''),
-    id: String(marker.dataset.techniqueId || '')
-  };
+  selectedTechniqueRef = { kind: String(marker.dataset.techniqueKind || ''), id: String(marker.dataset.techniqueId || '') };
   return selectedTechniqueRef;
 }
 
@@ -278,33 +253,56 @@ function showTechniqueContextMenu(marker, event) {
   menu.hidden = false;
 }
 
-function syncToolButtons() {
-  editorRibbon?.setActiveTool(toolSession.snapshot().toolId);
+function clearRelationPreview() {
+  if (!relationPreviewVisible) return;
+  notationRenderer?.clearPreview();
+  relationPreviewVisible = false;
 }
+
+function syncToolButtons() { editorRibbon?.setActiveTool(toolSession.snapshot().toolId); }
 
 function cancelActiveTool() {
   if (!toolSession.active) return false;
   toolSession.cancel();
-  notationRenderer?.clearPreview();
+  clearRelationPreview();
   clearToolSource();
   syncToolButtons();
   return true;
 }
 
+function cancelChordPlacement() {
+  if (!chordPlacement) return false;
+  chordPlacement = null;
+  editorRibbon?.setActiveChord(null, null);
+  return true;
+}
+
 function setActiveTool(toolId) {
   const definition = toolRegistry.get(toolId);
-  if (!definition) {
-    cancelActiveTool();
-    return null;
-  }
+  cancelChordPlacement();
+  if (!definition) { cancelActiveTool(); return null; }
   editorRibbon?.open(RIBBON_SECTIONS.TECHNIQUE);
   toolSession.activate(definition.id, toolTargetKind(definition));
-  notationRenderer?.clearPreview();
+  clearRelationPreview();
   clearToolSource();
   clearTechniqueSelection();
   hideTechniqueContextMenu();
   syncToolButtons();
   return toolSession.snapshot().toolId;
+}
+
+function setActiveChord(selection) {
+  cancelActiveTool();
+  if (!selection?.chordId || !selection?.voicingId) {
+    cancelChordPlacement();
+    return null;
+  }
+  chordPlacement = { chordId: String(selection.chordId), voicingId: String(selection.voicingId) };
+  editorRibbon?.open(RIBBON_SECTIONS.CHORD);
+  editorRibbon?.setActiveChord(chordPlacement.chordId, chordPlacement.voicingId);
+  clearTechniqueSelection();
+  hideTechniqueContextMenu();
+  return chordPlacement;
 }
 
 function ensureEditorRibbon() {
@@ -314,8 +312,10 @@ function ensureEditorRibbon() {
   editorRibbon = new EditorRibbon({
     toolDefinitions: toolRegistry.list(),
     onToolSelect: toolId => setActiveTool(toolId),
+    onChordSelect: selection => setActiveChord(selection),
     onSectionChange: section => {
       if (section !== RIBBON_SECTIONS.TECHNIQUE) cancelActiveTool();
+      if (section !== RIBBON_SECTIONS.CHORD) cancelChordPlacement();
     }
   });
   editorRibbon.mountBefore(tabArea);
@@ -329,7 +329,10 @@ function syncEditorRibbon() {
   const editorView = document.getElementById('editorView');
   const hidden = Boolean(editorView?.hidden || editingBlocked());
   ribbon.setHidden(hidden);
-  if (hidden) cancelActiveTool();
+  if (hidden) {
+    cancelActiveTool();
+    cancelChordPlacement();
+  }
 }
 
 function invalidSelectionMessage(reason) {
@@ -343,22 +346,18 @@ function handleToolSelection(target) {
   const snapshot = toolSession.snapshot();
   if (!snapshot.toolId) return false;
   const result = toolSession.select(target);
-  if (result.status === 'invalid') {
-    toast(invalidSelectionMessage(result.reason));
-    return true;
-  }
+  if (result.status === 'invalid') { toast(invalidSelectionMessage(result.reason)); return true; }
   if (result.status === 'pending') {
     markToolSource(snapshot.targetKind, result.source);
-    toast(snapshot.targetKind === TOOL_TARGET_KINDS.NOTE_PAIR
-      ? '已選擇第一個音符，請選擇第二個音符'
-      : '已選擇範圍起點，請選擇終點');
+    toast(snapshot.targetKind === TOOL_TARGET_KINDS.NOTE_PAIR ? '已選擇第一個音符，請選擇第二個音符' : '已選擇範圍起點，請選擇終點');
     return true;
   }
   if (result.status === 'complete') {
     const committed = dispatchTool(snapshot.toolId, result.target);
     if (committed) {
-      toolSession.commitSuccess();
-      notationRenderer?.clearPreview();
+      const keepActive = editorRibbon?.isContinuous(RIBBON_SECTIONS.TECHNIQUE);
+      toolSession.commitSuccess({ keepActive });
+      clearRelationPreview();
       clearToolSource();
       syncToolButtons();
     }
@@ -367,18 +366,25 @@ function handleToolSelection(target) {
   return false;
 }
 
+function handleChordPlacement(node) {
+  if (!chordPlacement || editingBlocked()) return false;
+  const target = atFromNode(node);
+  if (!target) return false;
+  const result = dispatchCommand({ type: 'chord/apply', ...target, ...chordPlacement });
+  if (!changed(result)) return false;
+  if (!editorRibbon?.isContinuous(RIBBON_SECTIONS.CHORD)) cancelChordPlacement();
+  return true;
+}
+
 function installToolInteractions() {
   document.addEventListener('click', event => {
     const deleteAction = event.target?.closest?.('[data-delete-technique]');
-    if (deleteAction) {
-      event.preventDefault();
-      deleteSelectedTechnique();
-      return;
-    }
+    if (deleteAction) { event.preventDefault(); deleteSelectedTechnique(); return; }
     const techniqueMarker = event.target?.closest?.('.technique-marker');
     if (techniqueMarker) {
       event.preventDefault();
       cancelActiveTool();
+      cancelChordPlacement();
       selectTechniqueMarker(techniqueMarker);
       hideTechniqueContextMenu();
       return;
@@ -387,18 +393,24 @@ function installToolInteractions() {
       clearTechniqueSelection();
       hideTechniqueContextMenu();
     }
+    if (editingBlocked()) return;
     const snapshot = toolSession.snapshot();
-    if (!snapshot.toolId || editingBlocked()) return;
-    const definition = toolRegistry.get(snapshot.toolId);
-    if (!definition) return;
-    const target = toolTargetFromNode(definition, event.target);
-    const inScore = Boolean(event.target?.closest?.('#tabArea'));
-    if (!target) {
-      if (inScore) toast('請點選有效的譜面目標');
+    if (snapshot.toolId) {
+      const definition = toolRegistry.get(snapshot.toolId);
+      if (!definition) return;
+      const target = toolTargetFromNode(definition, event.target);
+      const inScore = Boolean(event.target?.closest?.('#tabArea'));
+      if (!target) { if (inScore) toast('請點選有效的譜面目標'); return; }
+      event.preventDefault();
+      handleToolSelection(target);
       return;
     }
-    event.preventDefault();
-    handleToolSelection(target);
+    if (chordPlacement && event.target?.closest?.('#tabArea')) {
+      const target = atFromNode(event.target);
+      if (!target) { toast('請點選有效的譜面時間位置'); return; }
+      event.preventDefault();
+      handleChordPlacement(event.target);
+    }
   });
 
   document.addEventListener('contextmenu', event => {
@@ -406,13 +418,14 @@ function installToolInteractions() {
     if (!marker) return;
     event.preventDefault();
     cancelActiveTool();
+    cancelChordPlacement();
     showTechniqueContextMenu(marker, event);
   });
 
   document.addEventListener('pointermove', event => {
     const snapshot = toolSession.snapshot();
     if (snapshot.targetKind !== TOOL_TARGET_KINDS.NOTE_PAIR || !snapshot.firstTarget?.noteId) {
-      notationRenderer?.clearPreview();
+      clearRelationPreview();
       return;
     }
     notationRenderer?.previewRelation({
@@ -421,21 +434,21 @@ function installToolInteractions() {
       clientX: event.clientX,
       clientY: event.clientY
     });
+    relationPreviewVisible = true;
   }, { passive: true });
 
   document.addEventListener('keydown', event => {
-    const editable = event.target instanceof HTMLInputElement
-      || event.target instanceof HTMLTextAreaElement
-      || event.target?.isContentEditable;
+    const editable = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target?.isContentEditable;
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedTechniqueRef && !editable) {
       event.preventDefault();
       deleteSelectedTechnique();
       return;
     }
     if (event.key !== 'Escape') return;
-    if (!toolSession.active && !selectedTechniqueRef && techniqueContextMenu?.hidden !== false) return;
+    if (!toolSession.active && !chordPlacement && !selectedTechniqueRef && techniqueContextMenu?.hidden !== false) return;
     event.preventDefault();
     cancelActiveTool();
+    cancelChordPlacement();
     clearTechniqueSelection();
     hideTechniqueContextMenu();
   });
@@ -446,7 +459,12 @@ function installRenderers() {
   if (!tabArea) return;
   notationRenderer = new NotationRenderer(tabArea);
   scoreRenderer = new SparseScoreRenderer(tabArea, {
-    onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload })
+    onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload }),
+    onRendered: detail => {
+      if (!detail?.layout && !detail?.full && detail?.sourceSystemIndex == null) return;
+      const store = ensureStore();
+      if (store) notationRenderer?.schedule(store.getDocument(), { document: true });
+    }
   });
   const editorView = document.getElementById('editorView');
   const previewBadge = document.getElementById('previewBadge');
@@ -472,11 +490,19 @@ export function installEditorV3() {
   installRenderers();
   installToolInteractions();
 
+  const chordPlacementApi = {
+    get active() { return Boolean(chordPlacement); },
+    get selection() { return chordPlacement ? { ...chordPlacement } : null; },
+    select: selection => setActiveChord(selection),
+    clear: () => cancelChordPlacement()
+  };
+
   const api = {
     version: 3,
     stores: registry,
     tools: toolRegistry,
     toolSession,
+    chordPlacement: chordPlacementApi,
     getStore: () => ensureStore(),
     getRenderer: () => scoreRenderer,
     renderCurrentSong,
@@ -505,10 +531,7 @@ export function installEditorV3() {
       if (store) notationRenderer?.schedule(store.getDocument(), changeSet);
     },
     createSparseRenderer(root, options = {}) {
-      return new SparseScoreRenderer(root, {
-        ...options,
-        onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload })
-      });
+      return new SparseScoreRenderer(root, { ...options, onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload }) });
     }
   };
 
@@ -517,9 +540,6 @@ export function installEditorV3() {
   ensureStore();
   renderCurrentSong();
   syncEditorRibbon();
-  window.addEventListener('hashchange', () => queueMicrotask(() => {
-    ensureStore();
-    syncEditorRibbon();
-  }));
+  window.addEventListener('hashchange', () => queueMicrotask(() => { ensureStore(); syncEditorRibbon(); }));
   return api;
 }
