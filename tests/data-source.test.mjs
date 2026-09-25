@@ -72,9 +72,11 @@ globalThis.fetch = async function (url, options) {
   return { ok: true, status: 200, json: async () => ({ user: null }) };
 };
 try {
+  const defaultLocal = new LocalTestDataSource({ storage: new MemoryStorage(), baseHref });
+  await defaultLocal.catalog();
   const defaultServer = new ServerDataSource({ origin: 'https://openguitartab.vercel.app' });
   await defaultServer.session();
-  assert.equal(defaultFetchCalls, 1, 'default server transport should call the browser fetch implementation once');
+  assert.equal(defaultFetchCalls, 2, 'default local and server transports should call browser fetch with the correct receiver');
 } finally {
   globalThis.fetch = originalFetch;
 }

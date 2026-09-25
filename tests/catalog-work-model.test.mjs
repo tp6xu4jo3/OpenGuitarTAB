@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanSongForWrite } from '../api/index.js';
 import {
   aggregateCatalogWorks,
@@ -86,7 +87,7 @@ const persistedAgain = cleanSongForWrite(persisted, { owner: 'test', public: fal
 assert.equal(persistedAgain.workId, persisted.workId);
 assert.equal(persistedAgain.arrangementId, persisted.arrangementId);
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const apiSource = readFileSync(join(root, 'api/index.js'), 'utf8');
 assert.match(apiSource, /works:\s*aggregateCatalogWorks\(songs\)/);
 assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must preserve workId but create a new arrangementId');
