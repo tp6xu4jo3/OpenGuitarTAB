@@ -1,6 +1,6 @@
 export const DOCUMENT_VERSION = 3;
 export const STRING_COUNT = 6;
-export const ARTIFICIAL_HARMONIC_OFFSET = 0;
+export const ARTIFICIAL_HARMONIC_OFFSET = 12;
 
 export function cloneValue(value) {
   if (typeof structuredClone === 'function') return structuredClone(value);
@@ -78,11 +78,12 @@ function normalizeOwnedEntity(value, prefix, idFactory) {
 function normalizeTechnique(technique, idFactory, fallbackFret = '') {
   const normalized = normalizeOwnedEntity(technique, 't', idFactory);
   if (normalized.type !== 'harmonic') return normalized;
-  const baseFret = Number(fallbackFret);
   let touchFret = Number(normalized.touchFret);
-  if (Number.isFinite(baseFret) && Number.isFinite(touchFret) && touchFret === baseFret + 12) touchFret = baseFret;
-  if (!Number.isFinite(touchFret) && Number.isFinite(baseFret)) touchFret = baseFret;
-  if (Number.isFinite(touchFret)) normalized.touchFret = Math.max(0, Math.trunc(touchFret));
+  if (!Number.isFinite(touchFret)) {
+    const baseFret = Number(fallbackFret);
+    if (Number.isFinite(baseFret)) touchFret = baseFret + ARTIFICIAL_HARMONIC_OFFSET;
+  }
+  if (Number.isFinite(touchFret)) normalized.touchFret = Math.max(ARTIFICIAL_HARMONIC_OFFSET, Math.trunc(touchFret));
   else delete normalized.touchFret;
   delete normalized.kind;
   delete normalized.baseFret;
