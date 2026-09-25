@@ -13,6 +13,7 @@ import {
   compareFractions,
   fractionKey,
   fractionToNumber,
+  harmonicTechnique,
   isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
@@ -108,6 +109,23 @@ function stringFromPointer(clientY, staff, stringCount = STRING_COUNT) {
 
 function segmentSignature(segment) {
   return (segment?.measureIds || segment?.measures?.map(measure => measure.id) || []).map(String).join(',');
+}
+
+function explicitRhythmGroup(measure, event) {
+  const eventId = String(event?.id || '');
+  const atKey = fractionKey(event?.at || [0, 1]);
+  return (measure?.groups || []).find(group => {
+    if (!['tuplet', 'subdivision'].includes(group?.type)) return false;
+    if ((group.eventIds || []).map(String).includes(eventId)) return true;
+    return (group.slots || []).some(slot => fractionKey(slot) === atKey);
+  }) || null;
+}
+
+function displayValueForNote(note) {
+  const harmonic = harmonicTechnique(note);
+  if (!harmonic) return noteDisplayValue(note);
+  const touchFret = String(Math.max(12, Math.trunc(Number(harmonic.touchFret) || 12)));
+  return isScoreViewActive() ? `<${touchFret}>` : touchFret;
 }
 
 export class SparseScoreRenderer {
@@ -322,8 +340,9 @@ export class SparseScoreRenderer {
         noteNode.dataset.duration = fractionKey(event.duration || BASE_GRID_STEP);
         noteNode.dataset.string = String(note.string);
         noteNode.style.top = top;
-        noteNode.textContent = noteDisplayValue(note);
-        noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${noteDisplayValue(note)} 品`);
+        const displayValue = displayValueForNote(note);
+        noteNode.textContent = displayValue;
+        noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${displayValue} 品`);
         eventNode.append(backdrop, noteNode);
       }
       staff.appendChild(eventNode);
@@ -335,46 +354,61 @@ export class SparseScoreRenderer {
 
   createRhythmLayer(measure, visualTimeByKey) {
     const layer = div('v3-rhythm-layer');
-    Object.assign(layer.style, {
-      position: 'absolute', left: '0', right: '0', bottom: '1px', height: '30px',
-      overflow: 'visible', pointerEvents: 'none', color: '#111'
-    });
     const points = (measure.events || [])
       .filter(event => (event.notes || []).length)
       .sort((left, right) => fractionToNumber(left.at) - fractionToNumber(right.at))
       .map(event => {
         const visualTime = visualTimeByKey.get(fractionKey(event.at));
+        const group = explicitRhythmGroup(measure, event);
         return {
+          event,
           x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
           at: fractionToNumber(event.at),
-          beams: rhythmBeamCount(event.duration || BASE_GRID_STEP)
+          beams: Math.max(rhythmBeamCount(event.duration || BASE_GRID_STEP), Number(group?.beamCount) || 0),
+          group
         };
       });
-    points.forEach((point, index) => {
+
+    const groups = new Map();
+    points.forEach(point => {
+      const key = point.group?.id ? `group:${point.group.id}` : `beat:${Math.floor(point.at + 1e-9)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(point);
       const stem = div('v3-rhythm-stem');
-      Object.assign(stem.style, {
-        position: 'absolute', left: `${point.x}%`, top: '2px', width: '1.5px', height: '22px',
-        background: 'currentColor', transform: 'translateX(-.75px)'
-      });
+      stem.style.left = `${point.x}%`;
       layer.appendChild(stem);
-      for (let level = 1; level <= point.beams; level++) {
-        const next = points[index + 1];
-        const y = 20 - (level - 1) * 5;
-        if (next && next.beams >= level && next.at - point.at <= 1 + 1e-9) {
-          const beam = div('v3-rhythm-beam');
-          Object.assign(beam.style, {
-            position: 'absolute', left: `${point.x}%`, right: `${Math.max(0, 100 - next.x)}%`, top: `${y}px`,
-            height: '2px', background: 'currentColor'
-          });
-          layer.appendChild(beam);
-        } else {
-          const flag = div('v3-rhythm-flag');
-          Object.assign(flag.style, {
-            position: 'absolute', left: `${point.x}%`, top: `${y}px`, width: '8px', height: '2px',
-            background: 'currentColor'
-          });
+    });
+
+    groups.forEach(groupPoints => {
+      groupPoints.sort((left, right) => left.at - right.at);
+      const explicit = groupPoints.find(point => point.group)?.group || null;
+      const maxBeams = Math.max(0, ...groupPoints.map(point => point.beams));
+      for (let level = 1; level <= maxBeams; level++) {
+        groupPoints.forEach((point, index) => {
+          if (point.beams < level) return;
+          const next = groupPoints[index + 1];
+          const canConnect = Boolean(next && next.beams >= level);
+          if (canConnect) {
+            const beam = div(`v3-rhythm-beam v3-rhythm-beam-${level}`);
+            beam.style.left = `${point.x}%`;
+            beam.style.width = `${Math.max(0.5, next.x - point.x)}%`;
+            layer.appendChild(beam);
+            return;
+          }
+          const previous = groupPoints[index - 1];
+          if (previous && previous.beams >= level) return;
+          const flag = div(`v3-rhythm-flag v3-rhythm-beam-${level}`);
+          flag.style.left = `${point.x}%`;
           layer.appendChild(flag);
-        }
+        });
+      }
+      if (explicit?.type === 'tuplet' && groupPoints.length) {
+        const first = groupPoints[0];
+        const last = groupPoints.at(-1);
+        const label = div('v3-rhythm-tuplet-number');
+        label.textContent = '3';
+        label.style.left = `${(first.x + last.x) / 2}%`;
+        layer.appendChild(label);
       }
     });
     return layer;
@@ -436,13 +470,36 @@ export class SparseScoreRenderer {
     window.dispatchEvent(new CustomEvent('opentab:editor-rendered', { detail }));
   }
 
+  noteAt(measureId, at, string) {
+    const measure = this.document?.measures?.find(item => String(item.id) === String(measureId));
+    if (!measure) return null;
+    const event = (measure.events || []).find(item => fractionKey(item.at) === fractionKey(at));
+    return (event?.notes || []).find(note => Number(note.string) === Number(string)) || null;
+  }
+
+  cursorValueAt(measureId, at, string) {
+    const note = this.noteAt(measureId, at, string);
+    if (!note) return '';
+    const harmonic = harmonicTechnique(note);
+    if (harmonic) return String(Math.max(12, Math.trunc(Number(harmonic.touchFret) || 12)));
+    return noteDisplayValue(note);
+  }
+
   handlePointerDown(event) {
     if (isPreviewActive() || isScoreViewActive() || window.editorV3?.toolSession?.active || window.editorV3?.chordPlacement?.active) return;
+    if (event.target.closest?.('.v3-note-editor')) return;
     if (event.target.closest?.('.technique-marker,.editor-module-menu,.measure-module-hitbox')) return;
     const note = event.target.closest?.('.v3-note');
     if (note) {
       event.preventDefault();
-      this.showCursor({ measureId: note.dataset.measureId, string: Number(note.dataset.string), at: parseFraction(note.dataset.at), duration: parseFraction(note.dataset.duration) || BASE_GRID_STEP, initialValue: note.textContent || '' });
+      window.jumpToInput?.(note, false);
+      this.showCursor({
+        measureId: note.dataset.measureId,
+        string: Number(note.dataset.string),
+        at: parseFraction(note.dataset.at),
+        duration: parseFraction(note.dataset.duration) || BASE_GRID_STEP,
+        initialValue: this.cursorValueAt(note.dataset.measureId, parseFraction(note.dataset.at), Number(note.dataset.string))
+      });
       return;
     }
     const target = event.target.closest?.('.v3-column-target');
@@ -453,8 +510,11 @@ export class SparseScoreRenderer {
     if (!staff || !measure) return;
     const at = parseFraction(target?.dataset.at) || timeFromPointerX(event.clientX, staff.getBoundingClientRect(), measure, this.snap);
     const duration = parseFraction(target?.dataset.duration) || BASE_GRID_STEP;
+    const string = stringFromPointer(event.clientY, staff, this.stringCount);
     event.preventDefault();
-    this.showCursor({ measureId, string: stringFromPointer(event.clientY, staff, this.stringCount), at, duration });
+    const playbackTarget = target || staff.querySelector(`.v3-column-target[data-at="${escapeSelector(fractionKey(at))}"]`);
+    if (playbackTarget) window.jumpToInput?.(playbackTarget, false);
+    this.showCursor({ measureId, string, at, duration, initialValue: this.cursorValueAt(measureId, at, string) });
   }
 
   hideCursor() {
@@ -475,11 +535,26 @@ export class SparseScoreRenderer {
     if (index < 0) return null;
     if (direction === 'left' || direction === 'right') {
       const next = columns[Math.max(0, Math.min(columns.length - 1, index + (direction === 'left' ? -1 : 1)))];
-      return next ? { measureId: next.dataset.measureId, at: parseFraction(next.dataset.at), duration: parseFraction(next.dataset.duration), string } : null;
+      if (!next) return null;
+      const nextAt = parseFraction(next.dataset.at);
+      const nextDuration = parseFraction(next.dataset.duration) || BASE_GRID_STEP;
+      return {
+        measureId: next.dataset.measureId,
+        at: nextAt,
+        duration: nextDuration,
+        string,
+        initialValue: this.cursorValueAt(next.dataset.measureId, nextAt, string)
+      };
     }
     const nextString = string + (direction === 'up' ? -1 : 1);
     if (nextString < 0 || nextString >= this.stringCount) return null;
-    return { measureId, at, duration: BASE_GRID_STEP, string: nextString };
+    return {
+      measureId,
+      at,
+      duration,
+      string: nextString,
+      initialValue: this.cursorValueAt(measureId, at, nextString)
+    };
   }
 
   showCursor({ measureId, string = 0, at = [0, 1], duration = BASE_GRID_STEP, initialValue = '' } = {}) {
@@ -487,7 +562,7 @@ export class SparseScoreRenderer {
     const measureNode = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
     const staff = measureNode?.querySelector('.v3-staff');
     if (!measure || !measureNode || !staff || !Array.isArray(at)) return null;
-    this.hideCursor();
+    if (this.cursor?.isConnected) this.cursor.blur();
     const input = document.createElement('input');
     input.className = 'v3-note-editor';
     input.type = 'text';
@@ -516,10 +591,14 @@ export class SparseScoreRenderer {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const direction = event.key.replace('Arrow', '').toLowerCase();
-      const next = this.navigateCursor({ measureId, string, at, direction });
+      const next = this.navigateCursor({ measureId, string, at, duration, direction });
       commit();
       this.hideCursor();
-      if (next) requestAnimationFrame(() => this.showCursor(next));
+      if (next) requestAnimationFrame(() => {
+        const nextTarget = this.root?.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(next.measureId)}"][data-at="${escapeSelector(fractionKey(next.at))}"]`);
+        if (nextTarget) window.jumpToInput?.(nextTarget, false);
+        this.showCursor(next);
+      });
     });
     input.addEventListener('blur', () => {
       commit();
