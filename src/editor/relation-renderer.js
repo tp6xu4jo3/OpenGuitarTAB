@@ -1,4 +1,4 @@
-import { indexDocument, relationNoteIds } from './model.js';
+import { indexDocument, noteBaseFret, relationNoteIds } from './model.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -13,10 +13,19 @@ function escapeSelector(value) {
   return globalThis.CSS?.escape ? CSS.escape(text) : text.replace(/["\\]/g, '\\$&');
 }
 
-function centerIn(element, container) {
+function boxIn(element, container) {
   const rect = element.getBoundingClientRect();
   const base = container.getBoundingClientRect();
-  return { x: rect.left - base.left + rect.width / 2, y: rect.top - base.top + rect.height / 2 };
+  const left = rect.left - base.left;
+  const top = rect.top - base.top;
+  return {
+    left,
+    right: rect.right - base.left,
+    top,
+    bottom: rect.bottom - base.top,
+    x: left + rect.width / 2,
+    y: top + rect.height / 2
+  };
 }
 
 function edgePoint(grid, container, side, y) {
@@ -33,11 +42,32 @@ function relationGrid(node) {
   return node?.closest?.('.v3-grid') || null;
 }
 
+function arcPoints(fromNode, toNode, container) {
+  const from = boxIn(fromNode, container);
+  const to = boxIn(toNode, container);
+  return {
+    from: { x: from.x, y: from.top - 1 },
+    to: { x: to.x, y: to.top - 1 }
+  };
+}
+
+function slidePoints(fromNode, toNode, container, fromFret, toFret) {
+  const from = boxIn(fromNode, container);
+  const to = boxIn(toNode, container);
+  const ascending = Number(toFret) > Number(fromFret);
+  const delta = Number(toFret) === Number(fromFret) ? 0 : ascending ? -6 : 6;
+  return {
+    from: { x: from.right - 1, y: from.y - delta },
+    to: { x: to.left + 1, y: to.y + delta }
+  };
+}
+
 function relationPath(type, from, to) {
   if (type === 'tie' || type === 'slur') {
     const dx = to.x - from.x;
-    const lift = Math.max(8, Math.min(28, Math.abs(dx) * 0.12));
-    return `M ${from.x} ${from.y} Q ${from.x + dx / 2} ${Math.min(from.y, to.y) - lift} ${to.x} ${to.y}`;
+    const lift = Math.max(9, Math.min(30, Math.abs(dx) * 0.15));
+    const controlY = Math.min(from.y, to.y) - lift;
+    return `M ${from.x} ${from.y} Q ${from.x + dx / 2} ${controlY} ${to.x} ${to.y}`;
   }
   return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
@@ -47,7 +77,7 @@ function appendRelationPath(svg, { type, from, to, relationId = '', preview = fa
     d: relationPath(type, from, to),
     fill: 'none',
     stroke: 'currentColor',
-    'stroke-width': type === 'slide' ? 1.5 : 1.2,
+    'stroke-width': type === 'slide' ? 1.8 : 1.35,
     'stroke-linecap': 'round',
     'vector-effect': 'non-scaling-stroke'
   });
@@ -87,9 +117,10 @@ export class RelationRenderer {
     const systemElement = fromNode?.closest?.('.tab-system');
     if (!fromNode || !systemElement) return;
     const base = systemElement.getBoundingClientRect();
+    const box = boxIn(fromNode, systemElement);
     appendRelationPath(this.ensureOverlay(systemElement), {
       type,
-      from: centerIn(fromNode, systemElement),
+      from: type === 'slide' ? { x: box.right, y: box.y } : { x: box.x, y: box.top - 1 },
       to: { x: clientX - base.left, y: clientY - base.top },
       preview: true
     });
@@ -117,16 +148,23 @@ export class RelationRenderer {
       const toNode = toInSystem ? systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(toId)}"]`) : null;
       const fromGrid = relationGrid(fromNode);
       const toGrid = relationGrid(toNode);
+
       if (fromNode && toNode && fromGrid === toGrid) {
-        appendRelationPath(svg, { type: relation.type, from: centerIn(fromNode, systemElement), to: centerIn(toNode, systemElement), relationId: relation.id });
+        const points = relation.type === 'slide'
+          ? slidePoints(fromNode, toNode, systemElement, noteBaseFret(index.noteById.get(fromId)), noteBaseFret(index.noteById.get(toId)))
+          : arcPoints(fromNode, toNode, systemElement);
+        appendRelationPath(svg, { type: relation.type, ...points, relationId: relation.id });
         continue;
       }
+
       if (fromNode && fromGrid) {
-        const from = centerIn(fromNode, systemElement);
+        const box = boxIn(fromNode, systemElement);
+        const from = relation.type === 'slide' ? { x: box.right, y: box.y } : { x: box.x, y: box.top - 1 };
         appendRelationPath(svg, { type: relation.type, from, to: edgePoint(fromGrid, systemElement, 'right', from.y), relationId: relation.id });
       }
       if (toNode && toGrid) {
-        const to = centerIn(toNode, systemElement);
+        const box = boxIn(toNode, systemElement);
+        const to = relation.type === 'slide' ? { x: box.left, y: box.y } : { x: box.x, y: box.top - 1 };
         appendRelationPath(svg, { type: relation.type, from: edgePoint(toGrid, systemElement, 'left', to.y), to, relationId: relation.id });
       }
     }

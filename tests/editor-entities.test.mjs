@@ -13,8 +13,8 @@ let documentModel = createDocumentV3({
     id: 'm-entities',
     timeSignature: { numerator: 4, denominator: 4 },
     events: [
-      { id: 'e-a', at: [0, 1], duration: [1, 1], notes: [{ id: 'n-a', string: 0, fret: '1' }], marks: [] },
-      { id: 'e-b', at: [1, 1], duration: [1, 1], notes: [{ id: 'n-b', string: 0, fret: '3' }], marks: [] }
+      { id: 'e-a', at: [0, 1], duration: [1, 1], notes: [{ id: 'n-a', string: 0, fret: '5' }], marks: [] },
+      { id: 'e-b', at: [1, 1], duration: [1, 1], notes: [{ id: 'n-b', string: 0, fret: '7' }], marks: [] }
     ],
     groups: []
   }]
@@ -74,6 +74,6 @@ assert.equal(indexDocument(documentModel).relationById.has(relationId), false);
 documentModel = applyCommand(documentModel, { type: 'technique/delete', techniqueId }).document;
 index = indexDocument(documentModel);
 assert.equal(index.techniqueById.has(techniqueId), false);
-assert.equal(index.noteById.get('n-a').fret, '1', 'removing the harmonic must restore the derived base fret');
+assert.equal(index.noteById.get('n-a').fret, '5', 'removing a harmonic must leave the fretted note unchanged');
 
 console.log('editor entity tests passed');

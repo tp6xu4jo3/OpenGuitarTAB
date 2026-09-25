@@ -20,13 +20,8 @@ function editingBlocked() {
   return Boolean(editorView?.hidden || editorView?.classList.contains('score-view') || (previewBadge && !previewBadge.hidden));
 }
 
-function toast(message) {
-  window.showToast?.(message);
-}
-
-function currentStore() {
-  return window.editorV3?.getStore?.() || null;
-}
+function toast(message) { window.showToast?.(message); }
+function currentStore() { return window.editorV3?.getStore?.() || null; }
 
 function focusNode(node) {
   if (!node) return;
@@ -71,9 +66,7 @@ function commitResult(result, message, nextSelection = null) {
   return true;
 }
 
-function copyTarget(target) {
-  return window.editorV3?.clipboard?.copyModule?.(target) || false;
-}
+function copyTarget(target) { return window.editorV3?.clipboard?.copyModule?.(target) || false; }
 
 function pasteTarget(target) {
   const ok = window.editorV3?.clipboard?.pasteModule?.(target) || false;
@@ -95,16 +88,24 @@ function structuralAction(target, action) {
 
   if (target.type === 'measure') {
     const system = buildSystems(documentModel)[target.rowIndex] || [];
-    if (action.startsWith('insert') && system.length >= 4) {
-      toast('每列最多4個小節');
-      return false;
-    }
     if (action === 'delete' && system.length <= 1) {
       toast('每列至少保留1個小節');
       return false;
     }
-    if (action === 'insert-before') return commitResult(insertMeasureAt(documentModel, target.rowIndex, target.measureIndex), '已在左方新增小節', target);
-    if (action === 'insert-after') return commitResult(insertMeasureAt(documentModel, target.rowIndex, target.measureIndex + 1), '已在右方新增小節', { ...target, measureIndex: target.measureIndex + 1 });
+    if (action === 'insert-before') {
+      return commitResult(
+        insertMeasureAt(documentModel, target.rowIndex, target.measureIndex, { overflowDirection: 'backward' }),
+        '已在左方新增小節',
+        target
+      );
+    }
+    if (action === 'insert-after') {
+      return commitResult(
+        insertMeasureAt(documentModel, target.rowIndex, target.measureIndex + 1, { overflowDirection: 'forward' }),
+        '已在右方新增小節',
+        { ...target, measureIndex: target.measureIndex + 1 }
+      );
+    }
     if (action === 'delete') return commitResult(deleteMeasureAt(documentModel, target.rowIndex, target.measureIndex), '已刪除小節');
   }
   return false;
@@ -117,11 +118,7 @@ function insertSystemAtBoundary(index) {
   const documentModel = store.getDocument();
   const count = buildSystems(documentModel).length;
   const boundary = Math.max(0, Math.min(count, Math.trunc(Number(index) || 0)));
-  return commitResult(
-    insertSystem(documentModel, boundary),
-    `已新增第 ${boundary + 1} 列`,
-    { type: 'row', rowIndex: boundary }
-  );
+  return commitResult(insertSystem(documentModel, boundary), `已新增第 ${boundary + 1} 列`, { type: 'row', rowIndex: boundary });
 }
 
 function openMenu(target, x, y) {
@@ -131,12 +128,12 @@ function openMenu(target, x, y) {
   const menu = ensureMenu();
   menu.replaceChildren();
   const add = (label, fn, danger = false) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `editor-module-menu-action${danger ? ' danger' : ''}`;
-    button.textContent = label;
-    button.addEventListener('click', () => { closeMenu(); fn(); });
-    menu.appendChild(button);
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = `editor-module-menu-action${danger ? ' danger' : ''}`;
+    action.textContent = label;
+    action.addEventListener('click', () => { closeMenu(); fn(); });
+    menu.appendChild(action);
   };
   add('複製', () => copyTarget(target));
   add('貼上', () => pasteTarget(target));

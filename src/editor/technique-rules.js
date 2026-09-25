@@ -1,5 +1,12 @@
 import { compareFractions, indexDocument, noteBaseFret } from './model.js';
-import { eventsInTimeRange, thirtySecondRange, tripletRange } from './rhythm-grid.js';
+import {
+  eventsInTimeRange,
+  rhythmRangeFitsMeasure,
+  thirtySecondFromStart,
+  tripletFromStart
+} from './rhythm-grid.js';
+
+const NATURAL_HARMONIC_FRETS = new Set([3, 4, 5, 7, 9]);
 
 function noteContext(index, noteId) {
   const id = String(noteId || '');
@@ -21,6 +28,10 @@ function invalid(message) {
   return { ok: false, message };
 }
 
+function measureForColumn(index, target) {
+  return index.measureById.get(String(target?.measureId || ''))?.measure || null;
+}
+
 export function resolveTechniqueTarget(toolId, target, documentModel) {
   const id = String(toolId || '');
   const index = indexDocument(documentModel);
@@ -29,7 +40,8 @@ export function resolveTechniqueTarget(toolId, target, documentModel) {
     const context = noteContext(index, target?.noteId);
     if (!context) return invalid('請點選已有品位的音符');
     const fret = Number(noteBaseFret(context.note));
-    if (!Number.isFinite(fret) || fret < 1) return invalid('人工泛音需要先有1品以上的按弦音');
+    const allowed = Number.isInteger(fret) && (NATURAL_HARMONIC_FRETS.has(fret) || fret >= 12);
+    if (!allowed) return invalid('泛音只支援自然泛音位置（3、4、5、7、9品）或12品以上');
     return { ok: true, target: { noteId: context.note.id } };
   }
 
@@ -76,22 +88,26 @@ export function resolveTechniqueTarget(toolId, target, documentModel) {
     };
   }
 
-  if (id === 'triplet') {
-    const measure = index.measureById.get(String(target?.measureId || ''))?.measure;
-    if (!measure || !Array.isArray(target?.startAt) || !Array.isArray(target?.endAt)) {
-      return invalid('請在同一小節選擇三連音範圍');
-    }
-    const range = tripletRange(target.startAt, target.endAt);
+  if (id === 'triplet' || id === 'triplet16') {
+    const measure = measureForColumn(index, target);
+    if (!measure || !Array.isArray(target?.at)) return invalid('請點選小節內的時間位置');
+    const subdivision = id === 'triplet16' ? 'sixteenth' : 'eighth';
+    const range = tripletFromStart(target.at, subdivision);
+    if (!rhythmRangeFitsMeasure(measure, range)) return invalid('這個位置右側空間不足以建立三連音');
     const events = eventsInTimeRange(measure, range.startAt, range.endExclusive)
-      .filter(event => (event.notes || []).length || (event.marks || []).length);
-    if (events.length > 3) return invalid('三連音範圍最多只能包含3個既有時間事件');
-    return { ok: true, target: { ...target, eventIds: events.map(event => event.id) } };
+      .filter(event => (event.notes || []).length || (event.marks || []).length || !event.rhythmOnly);
+    if (events.length > 3) return invalid('三連音區間已有太多音符，請先整理該拍內容');
+    return { ok: true, target: { ...target, subdivision, eventIds: events.map(event => event.id) } };
   }
 
   if (id === 'duration32') {
-    if (!thirtySecondRange(target?.startAt, target?.endAt)) {
-      return invalid('32分音只能選擇兩個相鄰的16分位置');
-    }
+    const measure = measureForColumn(index, target);
+    if (!measure || !Array.isArray(target?.at)) return invalid('請點選小節內的16分位置');
+    const range = thirtySecondFromStart(target.at);
+    if (!rhythmRangeFitsMeasure(measure, range)) return invalid('這個位置右側空間不足以建立32分音');
+    const events = eventsInTimeRange(measure, range.startAt, range.endExclusive)
+      .filter(event => (event.notes || []).length || (event.marks || []).length || !event.rhythmOnly);
+    if (events.length > 2) return invalid('這個16分區間已有太多音符');
     return { ok: true, target };
   }
 

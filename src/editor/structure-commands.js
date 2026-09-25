@@ -1,5 +1,5 @@
 import { cloneValue, createId, normalizeDocumentV3, relationNoteIds } from './model.js';
-import { createChangeSet } from './commands.js';
+import { createChangeSet, LAYOUT_INVALIDATION } from './commands.js';
 import { buildSystems } from './layout.js';
 
 function blankMeasure(reference, idFactory = createId) {
@@ -22,10 +22,7 @@ function flattenSystems(document, systems, { relations = document.relations || [
     ...cloneValue(document),
     measures,
     relations: cloneValue(relations),
-    layout: {
-      ...(cloneValue(document.layout) || {}),
-      systemBreakAfter
-    }
+    layout: { ...(cloneValue(document.layout) || {}), systemBreakAfter }
   });
 }
 
@@ -54,6 +51,16 @@ function affectedMeasureIds(...systems) {
   return [...new Set(systems.flat(2).map(measure => measure?.id).filter(Boolean).map(String))];
 }
 
+function structureChange(measures, layoutFrom, extra = {}) {
+  return createChangeSet({
+    measures,
+    playback: measures,
+    layoutFrom,
+    layoutKind: LAYOUT_INVALIDATION.STRUCTURE,
+    ...extra
+  });
+}
+
 export function insertSystem(inputDocument, index, { measureCount = 4, idFactory = createId } = {}) {
   const document = normalizeDocumentV3(inputDocument);
   const systems = normalizeSystems(document);
@@ -62,14 +69,9 @@ export function insertSystem(inputDocument, index, { measureCount = 4, idFactory
   const count = Math.max(1, Math.min(4, Math.trunc(Number(measureCount) || 4)));
   const inserted = Array.from({ length: count }, () => blankMeasure(reference, idFactory));
   systems.splice(safe, 0, inserted);
-  const next = flattenSystems(document, systems);
   return {
-    document: next,
-    changeSet: createChangeSet({
-      measures: inserted.map(measure => measure.id),
-      playback: inserted.map(measure => measure.id),
-      layoutFrom: inserted[0]?.id
-    })
+    document: flattenSystems(document, systems),
+    changeSet: structureChange(inserted.map(measure => measure.id), inserted[0]?.id)
   };
 }
 
@@ -84,12 +86,7 @@ export function deleteSystem(inputDocument, index) {
   const layoutFrom = systems[Math.max(0, safe - 1)]?.[0]?.id || systems[0]?.[0]?.id || null;
   return {
     document: next,
-    changeSet: createChangeSet({
-      measures: removedMeasures.map(measure => measure.id),
-      playback: removedMeasures.map(measure => measure.id),
-      relations: pruned.removed,
-      layoutFrom
-    })
+    changeSet: structureChange(removedMeasures.map(measure => measure.id), layoutFrom, { relations: pruned.removed })
   };
 }
 
@@ -105,30 +102,69 @@ export function moveSystem(inputDocument, fromIndex, insertionIndex) {
   to = Math.max(0, Math.min(systems.length, to));
   systems.splice(to, 0, moved);
   if (to === from) return { document, changeSet: createChangeSet() };
-  const next = flattenSystems(document, systems);
   return {
-    document: next,
-    changeSet: createChangeSet({
-      measures: moved.map(measure => measure.id),
-      playback: moved.map(measure => measure.id),
-      layoutFrom: moved[0]?.id
-    })
+    document: flattenSystems(document, systems),
+    changeSet: structureChange(moved.map(measure => measure.id), moved[0]?.id)
   };
 }
 
-export function insertMeasureAt(inputDocument, systemIndex, measureIndex, { idFactory = createId } = {}) {
+function cascadeForward(systems, startIndex, initialOverflow) {
+  let overflow = initialOverflow;
+  let index = startIndex + 1;
+  while (overflow) {
+    if (!systems[index]) systems[index] = [];
+    systems[index].unshift(overflow);
+    if (systems[index].length <= 4) return;
+    overflow = systems[index].pop();
+    index += 1;
+  }
+}
+
+function cascadeBackward(systems, startIndex, initialOverflow) {
+  let overflow = initialOverflow;
+  let index = startIndex - 1;
+  while (overflow) {
+    if (index < 0) {
+      systems.unshift([overflow]);
+      return;
+    }
+    systems[index].push(overflow);
+    if (systems[index].length <= 4) return;
+    overflow = systems[index].shift();
+    index -= 1;
+  }
+}
+
+export function insertMeasureAt(inputDocument, systemIndex, measureIndex, {
+  idFactory = createId,
+  overflowDirection = 'forward'
+} = {}) {
   const document = normalizeDocumentV3(inputDocument);
   const systems = normalizeSystems(document);
   const system = systems[systemIndex];
-  if (!system || system.length >= 4) return { document, changeSet: createChangeSet() };
+  if (!system) return { document, changeSet: createChangeSet() };
   const safe = Math.max(0, Math.min(system.length, Math.trunc(Number(measureIndex) || 0)));
   const reference = system[Math.max(0, Math.min(system.length - 1, safe - 1))] || document.measures[0];
   const measure = blankMeasure(reference, idFactory);
+  const before = systems.map(row => [...row]);
   system.splice(safe, 0, measure);
-  const next = flattenSystems(document, systems);
+
+  if (system.length > 4) {
+    if (overflowDirection === 'backward') {
+      const spillIndex = safe === 0 ? 1 : 0;
+      const [overflow] = system.splice(spillIndex, 1);
+      cascadeBackward(systems, systemIndex, overflow);
+    } else {
+      const spillIndex = safe === system.length - 1 ? system.length - 2 : system.length - 1;
+      const [overflow] = system.splice(spillIndex, 1);
+      cascadeForward(systems, systemIndex, overflow);
+    }
+  }
+
+  const changed = affectedMeasureIds(before, systems, [[measure]]);
   return {
-    document: next,
-    changeSet: createChangeSet({ measures: [measure.id], playback: [measure.id], layoutFrom: measure.id })
+    document: flattenSystems(document, systems),
+    changeSet: structureChange(changed, measure.id)
   };
 }
 
@@ -143,12 +179,7 @@ export function deleteMeasureAt(inputDocument, systemIndex, measureIndex) {
   const next = flattenSystems(document, systems, { relations: pruned.relations });
   return {
     document: next,
-    changeSet: createChangeSet({
-      measures: [removed.id],
-      playback: [removed.id],
-      relations: pruned.removed,
-      layoutFrom: system[Math.max(0, safe - 1)]?.id || system[0]?.id
-    })
+    changeSet: structureChange([removed.id], system[Math.max(0, safe - 1)]?.id || system[0]?.id, { relations: pruned.removed })
   };
 }
 
@@ -168,10 +199,9 @@ export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureInd
     target = Math.max(0, Math.min(source.length, target));
     source.splice(target, 0, moved);
     if (target === sourceMeasureIndex) return { document, changeSet: createChangeSet() };
-    const next = flattenSystems(document, systems);
     return {
-      document: next,
-      changeSet: createChangeSet({ measures: [moved.id], playback: [moved.id], layoutFrom: moved.id })
+      document: flattenSystems(document, systems),
+      changeSet: structureChange([moved.id], moved.id)
     };
   }
 
@@ -179,7 +209,6 @@ export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureInd
   const beforeTarget = cloneValue(targetSystem);
   const [moved] = source.splice(sourceMeasureIndex, 1);
   const requestedBoundary = Math.max(0, Math.min(targetSystem.length, Math.trunc(Number(targetBoundary) || 0)));
-
   if (sourceSystemIndex < targetSystemIndex) {
     const exchanged = targetSystem.shift();
     const adjustedBoundary = Math.max(0, Math.min(targetSystem.length, requestedBoundary > 0 ? requestedBoundary - 1 : 0));
@@ -192,14 +221,9 @@ export function moveMeasureAt(inputDocument, sourceSystemIndex, sourceMeasureInd
     if (exchanged) source.unshift(exchanged);
   }
 
-  const next = flattenSystems(document, systems);
   const changed = affectedMeasureIds(beforeSource, beforeTarget, source, targetSystem);
   return {
-    document: next,
-    changeSet: createChangeSet({
-      measures: changed,
-      playback: changed,
-      layoutFrom: source[0]?.id || moved.id
-    })
+    document: flattenSystems(document, systems),
+    changeSet: structureChange(changed, source[0]?.id || moved.id)
   };
 }

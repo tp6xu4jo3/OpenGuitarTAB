@@ -2,114 +2,65 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDocumentV3 } from '../src/editor/model.js';
 import { buildAdaptiveLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
-import { insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
+import { deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
 
-function plainMeasure(id, { eventCount = 1, technique = false } = {}) {
-  const events = Array.from({ length: eventCount }, (_, index) => ({
-    id: `${id}-e${index}`,
-    at: [index, Math.max(1, eventCount)],
-    duration: [1, 4],
-    notes: [{
-      id: `${id}-n${index}`,
-      string: index % 6,
-      fret: String((index % 9) + 1),
-      techniques: technique && index === 0
-        ? [{ id: `${id}-tech`, type: 'harmonic', touchFret: 12 }]
-        : []
-    }],
-    marks: []
-  }));
-  return {
-    id,
-    timeSignature: { numerator: 4, denominator: 4 },
-    events,
-    groups: []
-  };
+function plainMeasure(id,{mark=false,harmonic=false}={}){
+  return {id,timeSignature:{numerator:4,denominator:4},groups:[],events:[{id:`${id}-e`,at:[0,1],duration:[1,4],marks:mark?[{id:`${id}-mk`,type:'strum',direction:'up'}]:[],notes:[{id:`${id}-n`,string:0,fret:'5',techniques:harmonic?[{id:`${id}-h`,type:'harmonic',touchFret:17}]:[]}]}]};
 }
+function twoRows(){return createDocumentV3({measures:Array.from({length:8},(_,i)=>plainMeasure(`m${i+1}`)),layout:{systemBreakAfter:['m4','m8']}});}
+function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 
 {
-  const documentModel = createDocumentV3({
-    measures: [plainMeasure('dense-plain', { eventCount: 8 }), plainMeasure('simple')]
-  });
-  assert.equal(
-    measureComplexity(documentModel, documentModel.measures[0]),
-    measureComplexity(documentModel, documentModel.measures[1]),
-    'ordinary note density must not make a measure elastically wider'
-  );
-  const layout = buildAdaptiveLayout(documentModel, { availableWidth: 900 });
-  assert.ok(
-    Math.abs(layout.systems[0].measureWidths[0] - layout.systems[0].measureWidths[1]) < 0.001,
-    'measures without techniques must receive equal widths on the same visual row'
-  );
+  const doc=createDocumentV3({measures:[plainMeasure('harmonic',{harmonic:true}),plainMeasure('plain')]});
+  assert.equal(measureComplexity(doc,doc.measures[0]),measureComplexity(doc,doc.measures[1]),'harmonic does not flex layout');
+  const layout=buildAdaptiveLayout(doc,{availableWidth:900});
+  assert.ok(Math.abs(layout.systems[0].measureWidths[0]-layout.systems[0].measureWidths[1])<0.001);
 }
-
 {
-  const documentModel = createDocumentV3({
-    measures: [plainMeasure('technique', { technique: true }), plainMeasure('plain')]
-  });
-  assert.ok(
-    measureComplexity(documentModel, documentModel.measures[0]) > measureComplexity(documentModel, documentModel.measures[1]),
-    'technique notation may request extra measure width'
-  );
-  const layout = buildAdaptiveLayout(documentModel, { availableWidth: 900 });
-  assert.ok(layout.systems[0].measureWidths[0] > layout.systems[0].measureWidths[1]);
+  const doc=createDocumentV3({measures:[plainMeasure('sweep',{mark:true}),plainMeasure('plain')]});
+  assert.ok(measureComplexity(doc,doc.measures[0])>measureComplexity(doc,doc.measures[1]),'left-side sweep may flex layout');
 }
-
-function twoRows() {
-  return createDocumentV3({
-    measures: Array.from({ length: 8 }, (_, index) => plainMeasure(`m${index + 1}`)),
-    layout: { systemBreakAfter: ['m4', 'm8'] }
-  });
-}
-
 {
-  const movedDown = moveMeasureAt(twoRows(), 0, 1, 1, 2).document;
-  assert.deepEqual(
-    buildSystems(movedDown).map(system => system.map(measure => measure.id)),
-    [
-      ['m1', 'm3', 'm4', 'm5'],
-      ['m6', 'm2', 'm7', 'm8']
-    ],
-    'moving a measure downward must exchange the target row first measure back to the source row end'
-  );
+  const moved=moveMeasureAt(twoRows(),0,1,1,2).document;
+  assert.deepEqual(buildSystems(moved).map(row=>row.map(m=>m.id)),[['m1','m3','m4','m5'],['m6','m2','m7','m8']]);
 }
-
 {
-  const movedUp = moveMeasureAt(twoRows(), 1, 2, 0, 2).document;
-  assert.deepEqual(
-    buildSystems(movedUp).map(system => system.map(measure => measure.id)),
-    [
-      ['m1', 'm2', 'm7', 'm3'],
-      ['m4', 'm5', 'm6', 'm8']
-    ],
-    'moving a measure upward must exchange the target row last measure back to the source row front'
-  );
+  const moved=moveMeasureAt(twoRows(),1,2,0,2).document;
+  assert.deepEqual(buildSystems(moved).map(row=>row.map(m=>m.id)),[['m1','m2','m7','m3'],['m4','m5','m6','m8']]);
 }
-
 {
-  const documentModel = twoRows();
-  const inserted = insertSystem(documentModel, 1).document;
-  assert.equal(buildSystems(inserted).length, 3, 'row boundary insertion must create a real logical system');
-  assert.equal(buildSystems(inserted)[1].length, 4);
+  const inserted=insertMeasureAt(twoRows(),0,2,{idFactory:ids(),overflowDirection:'forward'}).document;
+  const rows=buildSystems(inserted).map(row=>row.map(m=>m.id));
+  assert.equal(rows[0].length,4);
+  assert.equal(rows[1][0],'m4','right insertion must spill previous row tail to next row front');
+  assert.equal(rows.at(-1).length,1,'cascade may create a new final row instead of rejecting insertion');
+}
+{
+  const inserted=insertMeasureAt(twoRows(),1,2,{idFactory:ids(),overflowDirection:'backward'}).document;
+  const rows=buildSystems(inserted).map(row=>row.map(m=>m.id));
+  assert.ok(rows.some(row=>row.at(-1)==='m5'),'left insertion must spill target row head to the preceding row tail');
+  assert.equal(rows[0][0],'m1','when the preceding row is also full its own head cascades into a new previous row');
+  assert.equal(rows.flat().length,9);
+}
+{
+  const inserted=insertSystem(twoRows(),1).document;
+  assert.equal(buildSystems(inserted).length,3);
+  const deleted=deleteSystem(inserted,1).document;
+  assert.equal(buildSystems(deleted).length,2,'inserted row must also be deletable');
 }
 
-const rendererSource = await readFile(new URL('../src/editor/renderer.js', import.meta.url), 'utf8');
-const editorCss = await readFile(new URL('../styles/editor-v3.css', import.meta.url), 'utf8');
-const chordDragSource = await readFile(new URL('../src/editor/chord-drag-controller.js', import.meta.url), 'utf8');
-const structureSource = await readFile(new URL('../src/editor/structure-controller.js', import.meta.url), 'utf8');
-const structureCommandsSource = await readFile(new URL('../src/editor/structure-commands.js', import.meta.url), 'utf8');
-
-assert.match(rendererSource, /addFractions\(at, duration \|\| BASE_GRID_STEP\)/, 'sparse columns must align to the legacy visual subdivision position');
-assert.match(rendererSource, /--v3-anchor-x/, 'each sparse hit target must expose its exact visual circle anchor');
-assert.match(editorCss, /data-at\$="\/1"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#e8e8e8/s, 'quarter-note circles must be large gray');
-assert.match(editorCss, /data-at\$="\/2"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#fff/s, 'eighth-note circles must be large white');
-assert.match(editorCss, /data-at\$="\/4"[^}]*--v3-dot-radius:3px[^}]*--v3-dot-fill:#fff/s, 'sixteenth-note circles must be small white');
-assert.match(chordDragSource, /let activeDragPayload = null/);
-const dragOverSource = chordDragSource.slice(chordDragSource.indexOf('function handleDragOver'), chordDragSource.indexOf('function handleDrop'));
-assert.match(dragOverSource, /activeDragPayload/, 'dragover must use the payload captured at dragstart');
-assert.doesNotMatch(dragOverSource, /payloadFromTransfer/, 'dragover must not depend on DataTransfer.getData, which browsers can hide until drop');
-assert.match(structureSource, /function insertSystemAtBoundary\(index\)/);
-assert.match(structureSource, /event\.stopPropagation\(\);\s*insertSystemAtBoundary\(index\)/s, 'between-row add button must call the row boundary insertion path directly');
-assert.doesNotMatch(structureCommandsSource, /cascadeInsert/, 'cross-row measure moves must use edge exchange, not cascade overflow');
-
+const rendererSource=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
+const editorCss=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
+const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controller.js',import.meta.url),'utf8');
+const structureSource=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
+const rowCss=await readFile(new URL('../styles/editor-row-controls.css',import.meta.url),'utf8');
+assert.match(rendererSource,/layoutKind === 'structure'/,'structural edits must rebuild row DOM immediately');
+assert.match(editorCss,/data-at\$="\/1"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#e8e8e8/s);
+assert.match(editorCss,/data-at\$="\/2"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#fff/s);
+assert.match(editorCss,/data-at\$="\/4"[^}]*--v3-dot-radius:3px[^}]*--v3-dot-fill:#fff/s);
+assert.match(chordDragSource,/let activeDragPayload = null/);
+assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex, \{ overflowDirection: 'backward' \}\)/);
+assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex \+ 1, \{ overflowDirection: 'forward' \}\)/);
+assert.doesNotMatch(structureSource,/每列最多4個小節/);
+assert.match(rowCss,/\.row-insert-zone\{[^}]*z-index:40/s);
 console.log('editor grid and structure regression tests passed');

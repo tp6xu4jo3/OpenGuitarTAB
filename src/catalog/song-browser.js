@@ -59,20 +59,11 @@ function artistInitial(artist) {
   return clean ? [...clean][0].toUpperCase() : '？';
 }
 
-function installHorizontalWheel(rail) {
-  rail.addEventListener('wheel', event => {
-    if (rail.scrollWidth <= rail.clientWidth) return;
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-    event.preventDefault();
-    rail.scrollLeft += event.deltaY;
-  }, { passive: false });
-}
-
 function createNextButton(label, rail) {
   const button = createElement('button', 'song-browser-next');
   button.type = 'button';
   button.setAttribute('aria-label', label);
-  button.innerHTML = '<span aria-hidden="true">›</span>';
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5.5 6.5 6.5L9 18.5"/></svg>';
   button.addEventListener('click', () => {
     rail.scrollBy({ left: Math.max(260, rail.clientWidth * 0.82), behavior: 'smooth' });
   });
@@ -122,8 +113,6 @@ export class SongBrowser {
     this.artistShell.appendChild(this.artistNext);
     this.songShell.after(this.artistHeading, this.artistShell);
 
-    installHorizontalWheel(this.container);
-    installHorizontalWheel(this.artistRail);
     this.searchInput?.addEventListener('input', () => this.render());
   }
 
@@ -161,9 +150,7 @@ export class SongBrowser {
     }
     this.expandedWorkId = nextExpanded;
     if (nextExpanded) {
-      const card = this.container.querySelector(`.work-card[data-work-id="${CSS.escape(nextExpanded)}"]`);
-      this.setCardExpanded(card, true);
-      card?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      this.setCardExpanded(this.container.querySelector(`.work-card[data-work-id="${CSS.escape(nextExpanded)}"]`), true);
     }
   }
 
@@ -192,8 +179,7 @@ export class SongBrowser {
     this.artistHeading.hidden = Boolean(this.errorText);
     this.artistShell.hidden = Boolean(this.errorText);
     if (this.errorText) return;
-    const artists = collectArtists(this.works);
-    for (const artist of artists) {
+    for (const artist of collectArtists(this.works)) {
       const button = createElement('button', 'artist-filter-button');
       button.type = 'button';
       const active = this.activeArtist === artist;
@@ -256,7 +242,6 @@ export class SongBrowser {
 
   createFrontFace(work) {
     const front = createElement('div', 'work-card-face work-card-front');
-    const art = this.createCover(work);
     const body = createElement('div', 'song-card-body work-card-copy');
     body.append(
       createElement('h3', '', work.name || '未命名曲譜'),
@@ -264,19 +249,17 @@ export class SongBrowser {
       this.createStyleBadges(work),
       createElement('p', 'work-card-flip-hint', `${work.arrangements?.length || 0} 個版本 · 點擊展開`)
     );
-    front.append(art, body);
+    front.append(this.createCover(work), body);
     return front;
   }
 
   createBackFace(work) {
     const back = createElement('div', 'work-card-face work-card-back');
     const summary = createElement('div', 'work-card-back-summary');
-    const art = this.createCover(work, 'work-card-back-art');
     const copy = createElement('div', 'work-card-back-copy');
     copy.append(
       createElement('h3', '', work.name || '未命名曲譜'),
-      createElement('p', 'song-card-artist', work.artist || '未知歌手'),
-      this.createStyleBadges(work)
+      createElement('p', 'song-card-artist', work.artist || '未知歌手')
     );
     const collapse = createElement('button', 'work-card-toggle', '收合');
     collapse.type = 'button';
@@ -285,7 +268,7 @@ export class SongBrowser {
       this.toggleWork(work.workId);
     });
     copy.appendChild(collapse);
-    summary.append(art, copy);
+    summary.append(this.createCover(work, 'work-card-back-art'), copy);
 
     const list = createElement('div', 'work-card-arrangements');
     (work.arrangements || []).forEach(arrangement => list.appendChild(this.createArrangementRow(work, arrangement)));

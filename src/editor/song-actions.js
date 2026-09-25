@@ -1,4 +1,5 @@
 let publishInProgress = false;
+let saveInProgress = false;
 let installed = false;
 
 function currentSongSafe() { return typeof window.currentSong === 'function' ? window.currentSong() : null; }
@@ -7,6 +8,7 @@ function refreshLibraryViews() { window.renderSongList?.(); window.renderLibrary
 async function refreshCatalogIfNeeded() {
   if (typeof window.isAdminUser === 'function' && window.isAdminUser() && typeof window.loadCatalog === 'function') await window.loadCatalog();
 }
+
 function prepareCurrentSong() {
   const song = currentSongSafe();
   if (!song) return null;
@@ -18,9 +20,36 @@ function prepareCurrentSong() {
   return song;
 }
 
+function setBusy(button, busy, label) {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent || '';
+    button.disabled = true;
+    button.classList.add('is-busy');
+    button.replaceChildren();
+    const spinner = document.createElement('span');
+    spinner.className = 'button-spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = label;
+    button.append(spinner, text);
+    button.setAttribute('aria-busy', 'true');
+    return;
+  }
+  button.disabled = false;
+  button.classList.remove('is-busy');
+  button.removeAttribute('aria-busy');
+  button.textContent = button.dataset.idleLabel || '';
+  delete button.dataset.idleLabel;
+}
+
 export async function saveCurrentSong() {
+  if (saveInProgress) return;
   const song = prepareCurrentSong();
   if (!song || !currentUser()) { window.openLoginModal?.('#/library'); return; }
+  const saveButton = document.getElementById('saveSongButton');
+  saveInProgress = true;
+  setBusy(saveButton, true, '儲存中');
   try {
     const saved = await window.persistSong(song);
     const title = document.getElementById('editorTitle');
@@ -31,6 +60,9 @@ export async function saveCurrentSong() {
   } catch (error) {
     console.error(error);
     window.showToast?.('儲存失敗');
+  } finally {
+    saveInProgress = false;
+    setBusy(saveButton, false, '');
   }
 }
 
@@ -77,7 +109,7 @@ export async function confirmPublishSong() {
   song.artist = artist;
   song._opentab = { ...(song._opentab || {}), uploadedBy: currentUser().username };
   publishInProgress = true;
-  if (confirm) confirm.disabled = true;
+  setBusy(confirm, true, '上傳中');
   if (cancel) cancel.disabled = true;
   try {
     const payload = typeof window.compactSong === 'function' ? window.compactSong(song) : song;
@@ -96,7 +128,7 @@ export async function confirmPublishSong() {
     if (error) error.textContent = errorValue?.message === 'SAVE_BEFORE_PUBLISH' ? '請先儲存曲譜。' : '上傳公共曲庫失敗，請稍後再試。';
   } finally {
     publishInProgress = false;
-    if (confirm) confirm.disabled = false;
+    setBusy(confirm, false, '');
     if (cancel) cancel.disabled = false;
   }
 }

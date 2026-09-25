@@ -32,14 +32,21 @@ export class EditorRibbon {
     toolDefinitions = [],
     chordLibrary = CHORD_LIBRARY,
     onToolSelect = null,
+    onChordSelect = null,
+    onContinuousChange = null,
     onSectionChange = null
   } = {}) {
     this.toolDefinitions = [...toolDefinitions];
     this.chordLibrary = [...chordLibrary];
     this.onToolSelect = onToolSelect;
+    this.onChordSelect = onChordSelect;
+    this.onContinuousChange = onContinuousChange;
     this.onSectionChange = onSectionChange;
     this.activeSection = null;
     this.activeToolId = null;
+    this.activeChordId = null;
+    this.activeVoicingId = null;
+    this.continuous = { technique: false, chord: false };
     this.selectedChordRoot = CHORD_ROOTS[0]?.id || 'C';
     this.root = null;
     this.panel = null;
@@ -47,36 +54,27 @@ export class EditorRibbon {
     this.tabButtons = new Map();
     this.sections = new Map();
     this.chordRootButtons = new Map();
+    this.continuousButtons = new Map();
     this.handleClick = this.handleClick.bind(this);
   }
 
   mountBefore(referenceNode) {
     if (this.root?.isConnected) return this.root;
     if (!referenceNode?.parentNode) return null;
-
     const root = document.createElement('section');
     root.className = 'editor-ribbon';
     root.id = 'editorRibbon';
     root.setAttribute('aria-label', '編輯器工具列');
-
     const tabs = document.createElement('div');
     tabs.className = 'editor-ribbon-tabs';
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-label', '編輯工具分類');
-    tabs.append(
-      this.createTab(RIBBON_SECTIONS.TECHNIQUE, '技巧'),
-      this.createTab(RIBBON_SECTIONS.CHORD, '和弦')
-    );
-
+    tabs.append(this.createTab(RIBBON_SECTIONS.TECHNIQUE, '技巧'), this.createTab(RIBBON_SECTIONS.CHORD, '和弦'));
     const panel = document.createElement('div');
     panel.className = 'editor-ribbon-panel';
     panel.id = 'editorRibbonPanel';
     panel.hidden = true;
-    panel.append(
-      this.createTechniqueSection(),
-      this.createChordSection()
-    );
-
+    panel.append(this.createTechniqueSection(), this.createChordSection());
     root.append(tabs, panel);
     root.addEventListener('click', this.handleClick);
     referenceNode.before(root);
@@ -95,6 +93,7 @@ export class EditorRibbon {
     this.tabButtons.clear();
     this.sections.clear();
     this.chordRootButtons.clear();
+    this.continuousButtons.clear();
   }
 
   createTab(section, label) {
@@ -108,6 +107,15 @@ export class EditorRibbon {
     return node;
   }
 
+  createContinuousButton(section) {
+    const node = button('editor-continuous-button', '連續');
+    node.dataset.continuousSection = section;
+    node.setAttribute('aria-pressed', 'false');
+    node.title = '開啟後，套用一次後仍保持目前工具，可連續點選其他位置';
+    this.continuousButtons.set(section, node);
+    return node;
+  }
+
   createTechniqueSection() {
     const section = document.createElement('div');
     section.className = 'editor-ribbon-section editor-ribbon-techniques';
@@ -115,25 +123,22 @@ export class EditorRibbon {
     section.dataset.ribbonPanel = RIBBON_SECTIONS.TECHNIQUE;
     section.setAttribute('role', 'tabpanel');
     section.hidden = true;
-
+    section.appendChild(this.createContinuousButton(RIBBON_SECTIONS.TECHNIQUE));
     this.toolDefinitions.forEach(definition => {
       const tool = button('editor-tool-button', '');
       tool.dataset.editorTool = definition.id;
       tool.title = definition.hint || definition.label || definition.id;
       tool.setAttribute('aria-pressed', 'false');
-
       const glyph = document.createElement('span');
       glyph.className = 'editor-tool-glyph';
       glyph.textContent = definition.glyph || definition.label || definition.id;
       glyph.setAttribute('aria-hidden', 'true');
-
       const name = document.createElement('span');
       name.className = 'editor-tool-name';
       name.textContent = definition.label || definition.id;
       tool.append(glyph, name);
       section.appendChild(tool);
     });
-
     this.sections.set(RIBBON_SECTIONS.TECHNIQUE, section);
     return section;
   }
@@ -145,7 +150,9 @@ export class EditorRibbon {
     section.dataset.ribbonPanel = RIBBON_SECTIONS.CHORD;
     section.setAttribute('role', 'tabpanel');
     section.hidden = true;
-
+    const toolbar = document.createElement('div');
+    toolbar.className = 'editor-chord-toolbar';
+    toolbar.appendChild(this.createContinuousButton(RIBBON_SECTIONS.CHORD));
     const roots = document.createElement('div');
     roots.className = 'editor-chord-roots';
     roots.setAttribute('aria-label', '和弦根音');
@@ -156,12 +163,12 @@ export class EditorRibbon {
       this.chordRootButtons.set(root.id, rootButton);
       roots.appendChild(rootButton);
     });
-
+    toolbar.appendChild(roots);
     const choices = document.createElement('div');
     choices.className = 'editor-chord-choices';
     choices.setAttribute('aria-label', '和弦庫');
     this.chordChoices = choices;
-    section.append(roots, choices);
+    section.append(toolbar, choices);
     this.sections.set(RIBBON_SECTIONS.CHORD, section);
     this.renderChordChoices();
     return section;
@@ -173,19 +180,16 @@ export class EditorRibbon {
       ? chordsForRoot(this.selectedChordRoot)
       : this.chordLibrary.filter(chord => chord.root === this.selectedChordRoot);
     const fragment = document.createDocumentFragment();
-
     CHORD_CATEGORIES.forEach(category => {
       const categoryChords = chords.filter(chord => chord.category === category.id);
       if (!categoryChords.length) return;
       const group = document.createElement('div');
       group.className = 'editor-chord-category';
       group.dataset.chordCategory = category.id;
-
       const label = document.createElement('span');
       label.className = 'editor-chord-category-label';
       label.textContent = category.label;
       group.appendChild(label);
-
       const items = document.createElement('div');
       items.className = 'editor-chord-items';
       categoryChords.forEach(chord => {
@@ -196,15 +200,15 @@ export class EditorRibbon {
         chordButton.dataset.chordId = chord.id;
         chordButton.dataset.voicingId = voicing.id;
         chordButton.title = `${chord.symbol} · ${voicingText(voicing.frets)}`;
-        chordButton.setAttribute('aria-label', `${chord.symbol}，指型 ${voicingText(voicing.frets)}，拖曳到譜面時間位置`);
+        chordButton.setAttribute('aria-label', `${chord.symbol}，指型 ${voicingText(voicing.frets)}，可點選後放到譜面或拖曳到時間位置`);
         items.appendChild(chordButton);
       });
       group.appendChild(items);
       fragment.appendChild(group);
     });
-
     this.chordChoices.replaceChildren(fragment);
     this.syncChordRoots();
+    this.syncActiveChord();
   }
 
   syncChordRoots() {
@@ -212,6 +216,20 @@ export class EditorRibbon {
       const active = rootId === this.selectedChordRoot;
       rootButton.classList.toggle('is-active', active);
       rootButton.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  syncContinuous() {
+    this.continuousButtons.forEach((node, section) => {
+      node.setAttribute('aria-pressed', String(Boolean(this.continuous[section])));
+    });
+  }
+
+  syncActiveChord() {
+    this.root?.querySelectorAll('[data-chord-id][data-voicing-id]').forEach(node => {
+      const active = node.dataset.chordId === this.activeChordId && node.dataset.voicingId === this.activeVoicingId;
+      node.classList.toggle('is-active', active);
+      node.setAttribute('aria-pressed', String(active));
     });
   }
 
@@ -223,6 +241,24 @@ export class EditorRibbon {
     return this.selectedChordRoot;
   }
 
+  setContinuous(section, enabled) {
+    if (!VALID_SECTIONS.has(section)) return false;
+    this.continuous[section] = Boolean(enabled);
+    this.syncContinuous();
+    this.onContinuousChange?.(section, this.continuous[section]);
+    return this.continuous[section];
+  }
+
+  isContinuous(section) {
+    return Boolean(this.continuous[section]);
+  }
+
+  setActiveChord(chordId, voicingId) {
+    this.activeChordId = chordId ? String(chordId) : null;
+    this.activeVoicingId = voicingId ? String(voicingId) : null;
+    this.syncActiveChord();
+  }
+
   handleClick(event) {
     const tab = event.target.closest?.('[data-ribbon-section]');
     if (tab && this.root?.contains(tab)) {
@@ -230,10 +266,24 @@ export class EditorRibbon {
       this.toggle(tab.dataset.ribbonSection);
       return;
     }
+    const continuous = event.target.closest?.('[data-continuous-section]');
+    if (continuous && this.root?.contains(continuous)) {
+      event.preventDefault();
+      const section = continuous.dataset.continuousSection;
+      this.setContinuous(section, !this.isContinuous(section));
+      return;
+    }
     const root = event.target.closest?.('[data-chord-root]');
     if (root && this.root?.contains(root)) {
       event.preventDefault();
       this.setChordRoot(root.dataset.chordRoot);
+      return;
+    }
+    const chord = event.target.closest?.('[data-chord-id][data-voicing-id]');
+    if (chord && this.root?.contains(chord)) {
+      event.preventDefault();
+      this.setActiveChord(chord.dataset.chordId, chord.dataset.voicingId);
+      this.onChordSelect?.({ chordId: chord.dataset.chordId, voicingId: chord.dataset.voicingId });
       return;
     }
     const tool = event.target.closest?.('[data-editor-tool]');
@@ -243,18 +293,9 @@ export class EditorRibbon {
     }
   }
 
-  toggle(section) {
-    return this.setSection(nextRibbonSection(this.activeSection, section));
-  }
-
-  open(section) {
-    if (!VALID_SECTIONS.has(section)) return this.activeSection;
-    return this.setSection(section);
-  }
-
-  close() {
-    return this.setSection(null);
-  }
+  toggle(section) { return this.setSection(nextRibbonSection(this.activeSection, section)); }
+  open(section) { return VALID_SECTIONS.has(section) ? this.setSection(section) : this.activeSection; }
+  close() { return this.setSection(null); }
 
   setSection(section) {
     const next = VALID_SECTIONS.has(section) ? section : null;
@@ -275,15 +316,16 @@ export class EditorRibbon {
     });
   }
 
-  setHidden(hidden) {
-    if (this.root) this.root.hidden = Boolean(hidden);
-  }
+  setHidden(hidden) { if (this.root) this.root.hidden = Boolean(hidden); }
 
   state() {
     return {
       activeRibbon: this.activeSection,
       activeToolId: this.activeToolId,
-      chordRoot: this.selectedChordRoot
+      activeChordId: this.activeChordId,
+      activeVoicingId: this.activeVoicingId,
+      chordRoot: this.selectedChordRoot,
+      continuous: { ...this.continuous }
     };
   }
 
@@ -293,17 +335,16 @@ export class EditorRibbon {
     this.panel.hidden = !expanded;
     this.root.classList.toggle('is-expanded', expanded);
     this.root.dataset.activeRibbon = this.activeSection || '';
-
     this.tabButtons.forEach((tab, section) => {
       const active = section === this.activeSection;
       tab.classList.toggle('is-active', active);
       tab.setAttribute('aria-selected', String(active));
       tab.setAttribute('aria-expanded', String(active));
     });
-    this.sections.forEach((panel, section) => {
-      panel.hidden = section !== this.activeSection;
-    });
+    this.sections.forEach((panel, section) => { panel.hidden = section !== this.activeSection; });
     this.syncChordRoots();
+    this.syncContinuous();
     this.setActiveTool(this.activeToolId);
+    this.syncActiveChord();
   }
 }
