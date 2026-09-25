@@ -63,6 +63,7 @@ export function buildPlaybackIndex(documentModel) {
         .map(event => playbackEvent(event, beatStart));
       entries.push({
         index: entries.length,
+        eventId: beatEvents[0]?.eventId || '',
         measureId: String(measure.id),
         measureIndex,
         rowIndex: location.rowIndex,
@@ -72,7 +73,9 @@ export function buildPlaybackIndex(documentModel) {
         durationBeats: Math.max(0, beatEnd - beatStart),
         measureDurationBeats,
         absoluteBeat: measureStartBeat + beatStart,
-        events: beatEvents
+        events: beatEvents,
+        notes: beatEvents.flatMap(event => event.notes),
+        marks: beatEvents.flatMap(event => event.marks)
       });
     }
 
