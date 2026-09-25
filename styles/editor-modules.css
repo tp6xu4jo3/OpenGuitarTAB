@@ -8,9 +8,10 @@
 .content.edit-view .editor-row-module.drop-after{transform:translateY(-8px);box-shadow:0 3px 0 #1ed760}
 .row-module-handle{box-sizing:border-box;width:46px;min-width:46px;min-height:var(--system-height);padding:8px 3px;border:1px solid rgba(30,215,96,.22);border-radius:13px;background:#eaf8ef;color:#1f4930;cursor:grab;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}
 .row-module-handle:hover{background:#def5e6;border-color:rgba(30,215,96,.42)}
-.visual-row-handle{box-sizing:border-box;width:46px;min-width:46px;min-height:var(--system-height);padding:8px 3px;border:1px solid rgba(30,215,96,.16);border-radius:13px;background:#f3fbf6;color:#39724d;display:flex;align-items:center;justify-content:center;user-select:none}
+.visual-row-handle{box-sizing:border-box;width:46px;min-width:46px;min-height:var(--system-height);padding:8px 3px;border:1px solid rgba(30,215,96,.16);border-radius:13px;background:#f3fbf6;color:#39724d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease}
+.visual-row-handle:hover{background:#e9f8ee;border-color:rgba(30,215,96,.36)}
 .row-module-handle:active{cursor:grabbing}
-.editor-row-module.is-selected .row-module-handle{background:#ccefd8;border-color:#38c76e;box-shadow:0 0 0 3px rgba(30,215,96,.10)}
+.editor-row-module.is-selected .row-module-handle,.editor-row-module.is-selected .visual-row-handle{background:#ccefd8;border-color:#38c76e;box-shadow:0 0 0 3px rgba(30,215,96,.10)}
 .row-drag-grip{font-size:18px;line-height:1;color:#45a867;letter-spacing:-2px;user-select:none}
 .row-module-label{font-size:12px;font-weight:800;color:#39724d;white-space:nowrap;user-select:none;writing-mode:vertical-rl;text-orientation:upright;letter-spacing:.08em}
 .row-module-more{width:28px;height:28px;display:grid;place-items:center;padding:0;border:0;border-radius:999px;background:rgba(255,255,255,.72);color:#163b24;font-size:18px;line-height:1;cursor:pointer;transition:background .15s ease,transform .15s ease}
