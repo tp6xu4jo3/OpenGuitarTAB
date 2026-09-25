@@ -21,7 +21,7 @@ assert.match(catalogCss,/\.song-browser-next\{[^}]*width:42px[^}]*height:42px[^}
 assert.match(catalogCss,/\.song-browser-rail-shell:hover>\.song-browser-next/,'next control appears on hover');
 assert.match(catalogCss,/\.song-browser-rail\s*\{[^}]*grid-template-rows:repeat\(2,318px\)/s);
 assert.match(catalogCss,/\.song-browser-artist-rail\s*\{[^}]*grid-template-rows:1fr/s);
-assert.doesNotMatch(html,/PUBLIC CATALOG/);
+assert.doesNotMatch(html,/PUBLIC CATALOG|OPEN TAB LIBRARY|YOUR LIBRARY/,'catalog/library hero should not show redundant English eyebrow labels');
 assert.match(html,/class="library-hero-copy"/);
 assert.match(html,/class="library-hero-controls"/);
 assert.match(editorCss,/\.v3-column-target\{[^}]*z-index:4/s);
