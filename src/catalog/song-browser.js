@@ -230,8 +230,6 @@ export class SongBrowser {
     const meta = createElement('div', 'work-card-arrangement-meta');
     const values = [difficultyLabel(arrangement.difficulty)];
     if (arrangement.source) values.push(`來源 ${arrangement.source}`);
-    values.push(`Capo ${Number(arrangement.capo) || 0}`);
-    values.push(`${Number(arrangement.tempo) || 120} BPM`);
     meta.textContent = values.join(' · ');
     info.append(title, meta);
     const actions = createElement('div', 'work-card-arrangement-actions');
