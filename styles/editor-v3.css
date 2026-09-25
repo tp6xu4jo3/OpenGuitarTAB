@@ -23,6 +23,7 @@
 .v3-note.tool-link-source{outline:2px solid #1ed760;background:#e8faee}
 .v3-note.is-playing{background:#dff7e7;outline:1px solid #1ed760}
 .v3-note-editor{z-index:12;box-sizing:border-box;width:30px;height:28px;padding:0 3px;border:1px solid #1ed760;border-radius:5px;background:#fff;color:#111;font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center;outline:0;box-shadow:0 0 0 3px rgba(30,215,96,.12)}
+.content.score-view .v3-staff{top:12px;bottom:calc(var(--rhythm-height,36px) + 10px);min-height:0}
 .content.score-view .v3-column-target{cursor:default;pointer-events:none}
 .content.score-view .v3-column-target::before{display:none}
 .content.score-view .v3-column-target:hover::after{background:transparent}
