@@ -51,7 +51,7 @@ const secondNote=firstEvent.notes[1];
   const harmonic=documentModel.measures[0].events[0].notes[0];
   assert.deepEqual(result.changeSet.measures,[firstMeasure.id]);
   assert.equal(harmonic.fret,'5');
-  assert.equal(harmonic.techniques[0].touchFret,17);
+  assert.equal(harmonic.techniques[0].touchFret,5,'natural harmonic stores the visible fret without a +12 offset');
 }
 {
   const result=applyCommand(documentModel,{type:'event/duration/set',eventId:firstEvent.id,duration:[1,8]});
