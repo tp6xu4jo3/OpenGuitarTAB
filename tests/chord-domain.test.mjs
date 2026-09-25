@@ -85,8 +85,9 @@ assert.deepEqual(event.notes.map(note => [note.string, note.fret]), [
 ]);
 
 const playback = buildPlaybackIndex(applied.document);
-assert.equal(playback.entries.length, 1);
+assert.equal(playback.entries.length, 4, '4/4 playback must keep all four beats even when three are empty');
 assert.deepEqual(playback.entries[0].notes.map(note => [note.string, note.fret]), event.notes.map(note => [note.string, note.fret]), 'playback must consume the notes produced by chord/apply');
+assert.deepEqual(playback.entries.slice(1).map(entry => entry.notes.length), [0, 0, 0]);
 
 const manuallyEdited = applyCommand(applied.document, {
   type: 'note/set',

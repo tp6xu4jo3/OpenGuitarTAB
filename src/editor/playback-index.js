@@ -26,6 +26,20 @@ function playbackNotes(notes) {
   }));
 }
 
+function playbackEvent(event, beatStart) {
+  const atBeats = eventTime(event);
+  return {
+    eventId: String(event.id || ''),
+    at: cloneValue(event.at),
+    duration: cloneValue(event.duration),
+    atBeats,
+    offsetBeats: Math.max(0, atBeats - beatStart),
+    durationBeats: eventDuration(event),
+    notes: playbackNotes(event.notes),
+    marks: cloneValue(event.marks || [])
+  };
+}
+
 export function buildPlaybackIndex(documentModel) {
   const document = normalizeDocumentV3(documentModel);
   const locations = locationMap(document);
@@ -34,33 +48,40 @@ export function buildPlaybackIndex(documentModel) {
 
   document.measures.forEach((measure, measureIndex) => {
     const measureDurationBeats = measureDurationInBeats(measure);
+    const wholeBeatCount = Math.max(1, Math.ceil(measureDurationBeats - 1e-9));
     const location = locations.get(measure.id) || { rowIndex: 0, measureIndex };
     const events = [...(measure.events || [])].sort((a, b) => eventTime(a) - eventTime(b));
 
-    events.forEach(event => {
-      const atBeats = Math.min(measureDurationBeats, eventTime(event));
+    for (let beatIndex = 0; beatIndex < wholeBeatCount; beatIndex++) {
+      const beatStart = beatIndex;
+      const beatEnd = Math.min(measureDurationBeats, beatIndex + 1);
+      const beatEvents = events
+        .filter(event => {
+          const at = eventTime(event);
+          return at >= beatStart - 1e-9 && at < beatEnd - 1e-9;
+        })
+        .map(event => playbackEvent(event, beatStart));
       entries.push({
         index: entries.length,
-        eventId: event.id,
-        measureId: measure.id,
+        eventId: beatEvents[0]?.eventId || '',
+        measureId: String(measure.id),
         measureIndex,
         rowIndex: location.rowIndex,
         measureIndexInSystem: location.measureIndex,
-        at: cloneValue(event.at),
-        duration: cloneValue(event.duration),
-        atBeats,
-        durationBeats: eventDuration(event),
+        at: [beatIndex, 1],
+        atBeats: beatIndex,
+        durationBeats: Math.max(0, beatEnd - beatStart),
         measureDurationBeats,
-        absoluteBeat: measureStartBeat + atBeats,
-        notes: playbackNotes(event.notes),
-        marks: cloneValue(event.marks || [])
+        absoluteBeat: measureStartBeat + beatStart,
+        events: beatEvents,
+        notes: beatEvents.flatMap(event => event.notes),
+        marks: beatEvents.flatMap(event => event.marks)
       });
-    });
+    }
 
     measureStartBeat += measureDurationBeats;
   });
 
-  entries.sort((a, b) => a.absoluteBeat - b.absoluteBeat || a.measureIndex - b.measureIndex || a.atBeats - b.atBeats);
   entries.forEach((entry, index) => { entry.index = index; });
 
   return {

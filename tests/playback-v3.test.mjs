@@ -48,19 +48,24 @@ const documentModel = {
 };
 
 const playback = buildPlaybackIndex(documentModel);
-assert.equal(playback.entries.length, 3);
+assert.equal(playback.entries.length, 7, 'every beat must exist in playback even when it is empty');
 assert.equal(playback.totalBeats, 7);
-assert.equal(playback.entries[0].durationBeats, 1 / 8);
-assert.equal(playback.entries[1].absoluteBeat, 1 / 3);
-assert.equal(playback.entries[2].absoluteBeat, 4.5);
-assert.equal(playback.entries[2].rowIndex, 0);
-assert.equal(playback.entries[2].measureIndexInSystem, 1);
+assert.equal(playback.entries[0].absoluteBeat, 0);
+assert.equal(playback.entries[3].absoluteBeat, 3);
+assert.equal(playback.entries[4].absoluteBeat, 4);
+assert.equal(playback.entries[6].absoluteBeat, 6);
+assert.equal(playback.entries[4].rowIndex, 0);
+assert.equal(playback.entries[4].measureIndexInSystem, 1);
+assert.deepEqual(playback.entries[1].events, [], 'an empty beat must remain on the timeline');
+assert.equal(playback.entries[0].events.length, 2);
+assert.equal(playback.entries[0].events[1].eventId, 'e2');
+assert.equal(playback.entries[0].events[1].offsetBeats, 1 / 3, 'triplet audio timing must remain fractional inside its beat');
+assert.equal(playback.entries[4].events[0].offsetBeats, 1 / 2);
 
-const tripletPosition = legacyPositionForEntry(playback.entries[1]);
-assert.equal(tripletPosition, 4 / 3);
-assert.equal(Number.isInteger(tripletPosition), false, 'triplets must not be quantized to legacy slots');
+const secondBeatPosition = legacyPositionForEntry(playback.entries[1]);
+assert.equal(secondBeatPosition, 4);
 assert.equal(nearestPlaybackIndex(playback, 0, 0), 0);
-assert.equal(nearestPlaybackIndex(playback, 0, 18), 2);
+assert.equal(nearestPlaybackIndex(playback, 0, 18), 5);
 
 const openLowE = frequencyForTab(5, 0, 0);
 const octaveLowE = frequencyForTab(5, 12, 0);
@@ -81,6 +86,7 @@ const compoundSong = {
 const compoundDocument = migrateSongToDocumentV3(compoundSong);
 assert.deepEqual(compoundDocument.measures[0].timeSignature, { numerator: 6, denominator: 8 });
 assert.equal(buildPlaybackIndex(compoundDocument).totalBeats, 3, '6/8 must keep the legacy three-quarter-note measure duration');
+assert.equal(buildPlaybackIndex(compoundDocument).entries.length, 3, 'compound meter playback still traverses every beat');
 
 const inconsistentMeter = migrateSongToDocumentV3({ ...compoundSong, meter: '4/4' });
 assert.deepEqual(
@@ -100,5 +106,7 @@ assert.equal(
   false,
   'clearing the sparse playback cursor must not scan the whole document for legacy playhead nodes'
 );
+assert.match(playbackControllerSource, /v3-playback-beat/,'playback must render one rounded beat bar rather than note highlights');
+assert.doesNotMatch(playbackControllerSource, /\.classList\.add\('is-playing'\)/,'playback must not highlight individual notes');
 
 console.log('editor v3 playback tests passed');
