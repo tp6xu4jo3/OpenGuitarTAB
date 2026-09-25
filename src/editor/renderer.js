@@ -558,17 +558,18 @@ export class SparseScoreRenderer {
   }
 
   showCursor({ measureId, string = 0, at = [0, 1], duration = BASE_GRID_STEP, initialValue = '' } = {}) {
+    if (this.cursor?.isConnected) this.cursor.blur();
     const measure = this.document?.measures?.find(item => String(item.id) === String(measureId));
     const measureNode = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
     const staff = measureNode?.querySelector('.v3-staff');
     if (!measure || !measureNode || !staff || !Array.isArray(at)) return null;
-    if (this.cursor?.isConnected) this.cursor.blur();
     const input = document.createElement('input');
     input.className = 'v3-note-editor';
     input.type = 'text';
     input.inputMode = 'numeric';
     input.maxLength = 2;
-    input.value = normalizeFret(initialValue);
+    const originalValue = normalizeFret(initialValue);
+    input.value = originalValue;
     input.dataset.measureId = String(measureId);
     input.dataset.string = String(string);
     input.dataset.at = fractionKey(at);
@@ -579,7 +580,9 @@ export class SparseScoreRenderer {
     const commit = () => {
       if (committed || cancelled) return;
       committed = true;
-      this.onCommitNote?.({ measureId: String(measureId), string: Number(string), at: cloneValue(at), duration: cloneValue(duration || BASE_GRID_STEP), fret: normalizeFret(input.value) });
+      const nextValue = normalizeFret(input.value);
+      if (nextValue === originalValue) return;
+      this.onCommitNote?.({ measureId: String(measureId), string: Number(string), at: cloneValue(at), duration: cloneValue(duration || BASE_GRID_STEP), fret: nextValue });
     };
     input.addEventListener('input', () => {
       const normalized = normalizeFret(input.value);
