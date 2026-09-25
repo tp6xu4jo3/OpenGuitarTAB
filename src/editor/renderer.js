@@ -77,9 +77,22 @@ function visualPercentageForAt(measure, at) {
 }
 
 function layoutAvailableWidth(root) {
-  const measured = Number(root?.clientWidth) || Number(root?.getBoundingClientRect?.().width) || 0;
+  const rootWidth = Number(root?.clientWidth) || Number(root?.getBoundingClientRect?.().width) || 0;
+  const sheet = root?.closest?.('.sheet');
+  const sheetWidth = Number(sheet?.clientWidth) || Number(sheet?.getBoundingClientRect?.().width) || 0;
+  const viewportWidth = Number(document.documentElement?.clientWidth) || Number(window.innerWidth) || 0;
+  const candidates = [rootWidth, sheetWidth, viewportWidth].filter(value => Number.isFinite(value) && value > 0);
+  const measured = candidates.length ? Math.min(...candidates) : 0;
   const rail = isScoreViewActive() ? 0 : EDITOR_RAIL_WIDTH;
   return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + rail) - rail);
+}
+
+function rhythmBeamCount(duration) {
+  const value = fractionToNumber(duration || BASE_GRID_STEP);
+  if (!Number.isFinite(value) || value >= 1) return 0;
+  if (value >= 0.5) return 1;
+  if (value >= 0.25) return 2;
+  return 3;
 }
 
 function eventAt(measure, at) {
@@ -316,7 +329,55 @@ export class SparseScoreRenderer {
       staff.appendChild(eventNode);
     }
     node.appendChild(staff);
+    if (isScoreViewActive()) node.appendChild(this.createRhythmLayer(measure, visualTimeByKey));
     return node;
+  }
+
+  createRhythmLayer(measure, visualTimeByKey) {
+    const layer = div('v3-rhythm-layer');
+    Object.assign(layer.style, {
+      position: 'absolute', left: '0', right: '0', bottom: '1px', height: '30px',
+      overflow: 'visible', pointerEvents: 'none', color: '#111'
+    });
+    const points = (measure.events || [])
+      .filter(event => (event.notes || []).length)
+      .sort((left, right) => fractionToNumber(left.at) - fractionToNumber(right.at))
+      .map(event => {
+        const visualTime = visualTimeByKey.get(fractionKey(event.at));
+        return {
+          x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
+          at: fractionToNumber(event.at),
+          beams: rhythmBeamCount(event.duration || BASE_GRID_STEP)
+        };
+      });
+    points.forEach((point, index) => {
+      const stem = div('v3-rhythm-stem');
+      Object.assign(stem.style, {
+        position: 'absolute', left: `${point.x}%`, top: '2px', width: '1.5px', height: '22px',
+        background: 'currentColor', transform: 'translateX(-.75px)'
+      });
+      layer.appendChild(stem);
+      for (let level = 1; level <= point.beams; level++) {
+        const next = points[index + 1];
+        const y = 20 - (level - 1) * 5;
+        if (next && next.beams >= level && next.at - point.at <= 1 + 1e-9) {
+          const beam = div('v3-rhythm-beam');
+          Object.assign(beam.style, {
+            position: 'absolute', left: `${point.x}%`, right: `${Math.max(0, 100 - next.x)}%`, top: `${y}px`,
+            height: '2px', background: 'currentColor'
+          });
+          layer.appendChild(beam);
+        } else {
+          const flag = div('v3-rhythm-flag');
+          Object.assign(flag.style, {
+            position: 'absolute', left: `${point.x}%`, top: `${y}px`, width: '8px', height: '2px',
+            background: 'currentColor'
+          });
+          layer.appendChild(flag);
+        }
+      }
+    });
+    return layer;
   }
 
   renderMeasure(measureId) {
