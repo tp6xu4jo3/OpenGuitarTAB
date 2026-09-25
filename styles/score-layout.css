@@ -6,7 +6,7 @@
 .score-density-option{height:28px;padding:0 9px;border:0;border-radius:999px;background:transparent;color:#444;font-size:12px;font-weight:800;cursor:pointer}
 .score-density-option:hover,.score-density-option:focus-visible{background:#eee;outline:none}
 .score-density-option.is-active{background:#111;color:#fff}
-.content.score-view.score-density-compact{--row-height:14px;--staff-height:calc(var(--row-height)*6);--rhythm-height:30px;--system-height:calc(var(--staff-height) + var(--rhythm-height))}
+.content.score-view.score-density-compact{--rhythm-height:42px;--system-height:204px}
 .content.score-view.score-density-compact #tabArea{display:flex;flex-direction:column;gap:10px}
 .content.score-view .score-density-line{display:flex;align-items:flex-start;gap:0;width:100%;max-width:100%;min-width:0}
 .content.score-view .score-density-segment{flex:var(--score-density-weight,1) 1 0;min-width:0;margin:0!important;grid-template-columns:0 minmax(0,1fr)!important;gap:0!important}
