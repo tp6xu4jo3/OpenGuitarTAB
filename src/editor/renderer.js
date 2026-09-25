@@ -10,7 +10,6 @@ import {
 import {
   addFractions,
   cloneValue,
-  compareFractions,
   fractionKey,
   fractionToNumber,
   harmonicTechnique,
@@ -20,7 +19,7 @@ import {
   noteDisplayValue,
   STRING_COUNT
 } from './model.js';
-import { fractionalGridTimes, isTimeReplacedByFractionalGrid } from './rhythm-grid.js';
+import { editableTimesForMeasure } from './rhythm-grid.js';
 import { isPreviewActive, isScoreViewActive, scoreDensityMode } from './view-state.js';
 
 const EDITOR_RAIL_WIDTH = 102;
@@ -46,25 +45,6 @@ function normalizeFret(value) {
   const text = String(value ?? '').trim();
   if (/^x$/i.test(text)) return 'x';
   return text.replace(/\D/g, '').slice(0, 2);
-}
-
-export function editableTimesForMeasure(measure) {
-  const duration = measureDurationInBeats(measure);
-  const map = new Map();
-  const add = (at, durationValue = BASE_GRID_STEP) => {
-    const normalized = normalizeFraction(at);
-    const numeric = fractionToNumber(normalized);
-    if (numeric < 0 || numeric >= duration) return;
-    const key = fractionKey(normalized);
-    if (!map.has(key)) map.set(key, { at: normalized, duration: normalizeFraction(durationValue, BASE_GRID_STEP) });
-  };
-  for (let value = 0; value < duration - 1e-9; value += 0.25) {
-    const at = [Math.round(value * 4), 4];
-    if (!isTimeReplacedByFractionalGrid(measure, at)) add(at);
-  }
-  for (const time of fractionalGridTimes(measure)) add(time.at, time.duration || BASE_GRID_STEP);
-  for (const event of measure?.events || []) add(event.at, event.duration || BASE_GRID_STEP);
-  return [...map.values()].sort((left, right) => compareFractions(left.at, right.at));
 }
 
 function visualPercentageForTime(at, duration, measure) {
@@ -122,10 +102,9 @@ function explicitRhythmGroup(measure, event) {
 }
 
 function displayValueForNote(note) {
-  const harmonic = harmonicTechnique(note);
-  if (!harmonic) return noteDisplayValue(note);
-  const touchFret = String(Math.max(12, Math.trunc(Number(harmonic.touchFret) || 12)));
-  return isScoreViewActive() ? `<${touchFret}>` : touchFret;
+  const value = noteDisplayValue(note);
+  if (!harmonicTechnique(note)) return value;
+  return isScoreViewActive() ? `<${value}>` : value;
 }
 
 export class SparseScoreRenderer {
@@ -328,8 +307,6 @@ export class SparseScoreRenderer {
       eventNode.style.left = `${visualPercentageForTime(event.at, visualTime?.duration || BASE_GRID_STEP, measure)}%`;
       for (const note of event.notes || []) {
         const top = `${((Number(note.string) + 0.5) / this.stringCount) * 100}%`;
-        const backdrop = div('v3-note-backdrop');
-        backdrop.style.top = top;
         const noteNode = document.createElement('button');
         noteNode.type = 'button';
         noteNode.className = 'v3-note';
@@ -343,7 +320,7 @@ export class SparseScoreRenderer {
         const displayValue = displayValueForNote(note);
         noteNode.textContent = displayValue;
         noteNode.setAttribute('aria-label', `第 ${Number(note.string) + 1} 弦 ${displayValue} 品`);
-        eventNode.append(backdrop, noteNode);
+        eventNode.appendChild(noteNode);
       }
       staff.appendChild(eventNode);
     }
@@ -479,10 +456,7 @@ export class SparseScoreRenderer {
 
   cursorValueAt(measureId, at, string) {
     const note = this.noteAt(measureId, at, string);
-    if (!note) return '';
-    const harmonic = harmonicTechnique(note);
-    if (harmonic) return String(Math.max(12, Math.trunc(Number(harmonic.touchFret) || 12)));
-    return noteDisplayValue(note);
+    return note ? noteDisplayValue(note) : '';
   }
 
   handlePointerDown(event) {
