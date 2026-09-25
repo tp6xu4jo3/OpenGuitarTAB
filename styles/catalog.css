@@ -10,21 +10,21 @@
 .library-hero-controls{min-width:min(390px,100%);display:flex;flex:0 1 390px;align-items:center;justify-content:flex-end;gap:10px}
 .library-search{flex:1 1 auto;min-width:0;margin:0}
 .library-hero-controls .primary-action{flex:0 0 auto;margin-top:0;white-space:nowrap}
-.catalog-section-head{display:flex;align-items:end;justify-content:space-between;margin-bottom:18px}
-.catalog-section-head h2{margin:0;font-size:26px}
-.catalog-count{color:#a7a7a7;font-size:14px}
+.catalog-count{color:#a7a7a7;font-size:14px;white-space:nowrap}
 
 .song-browser-section-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:8px 0 12px}
 .song-browser-section-heading h3{margin:0;color:#fff;font-size:23px;font-weight:850;letter-spacing:-.02em}
+.song-browser-heading-actions{display:flex;align-items:center;gap:16px;margin-left:auto}
 .song-browser-artist-heading{margin-top:24px}
 .song-browser-show-all{padding:0;border:0;background:transparent;color:#b3b3b3;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
 .song-browser-show-all:hover,.song-browser-show-all:focus-visible{color:#fff;outline:none}
 .song-browser-rail-shell{position:relative;min-width:0}
-.song-browser-next{position:absolute;right:10px;top:50%;z-index:30;width:42px;height:42px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#08170d;box-shadow:0 10px 24px rgba(0,0,0,.34);cursor:pointer;opacity:0;pointer-events:none;transform:translateY(-50%);transition:transform .15s ease,background .15s ease,opacity .15s ease}
-.song-browser-next svg{width:24px;height:24px;display:block;overflow:visible;fill:none;stroke:currentColor;stroke-width:2.35;stroke-linecap:round;stroke-linejoin:round}
-.song-browser-rail-shell:hover>.song-browser-next,.song-browser-rail-shell:focus-within>.song-browser-next{opacity:1;pointer-events:auto}
-.song-browser-next:hover,.song-browser-next:focus-visible{background:#3be477;transform:translateY(-50%) scale(1.05);outline:none}
-.song-browser-next[hidden]{display:none!important}
+.song-browser-nav{position:absolute;top:50%;z-index:30;width:42px;height:42px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#08170d;box-shadow:0 10px 24px rgba(0,0,0,.34);cursor:pointer;opacity:0;pointer-events:none;transform:translateY(-50%);transition:transform .15s ease,background .15s ease,opacity .15s ease}
+.song-browser-nav-prev{left:10px}.song-browser-nav-next{right:10px}
+.song-browser-nav svg{width:24px;height:24px;display:block;overflow:visible;fill:none;stroke:currentColor;stroke-width:2.35;stroke-linecap:round;stroke-linejoin:round}
+.song-browser-rail-shell:hover>.song-browser-nav:not([hidden]),.song-browser-rail-shell:focus-within>.song-browser-nav:not([hidden]){opacity:1;pointer-events:auto}
+.song-browser-nav:hover,.song-browser-nav:focus-visible{background:#3be477;transform:translateY(-50%) scale(1.05);outline:none}
+.song-browser-nav[hidden]{display:none!important}
 
 .song-browser-artist-rail,.song-browser-rail{scrollbar-width:thin;scrollbar-color:#6e6e6e #202020}
 .song-browser-artist-rail::-webkit-scrollbar,.song-browser-rail::-webkit-scrollbar{height:11px}
@@ -50,8 +50,10 @@
 .work-card-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .56s cubic-bezier(.2,.72,.2,1)}
 .work-card.is-expanded .work-card-inner{transform:rotateY(180deg)}
 .work-card-face{position:absolute;inset:0;box-sizing:border-box;overflow:hidden;border-radius:14px;background:#181818;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-shadow:0 10px 28px rgba(0,0,0,.16)}
-.work-card-front{display:flex;flex-direction:column;padding:14px 14px 18px}
-.work-card-back{display:grid;grid-template-rows:auto minmax(0,1fr);padding:14px;transform:rotateY(180deg);background:#202020}
+.work-card-front{display:flex;flex-direction:column;padding:14px 14px 18px;pointer-events:auto}
+.work-card-back{display:grid;grid-template-rows:auto minmax(0,1fr);padding:14px;transform:rotateY(180deg);background:#202020;pointer-events:none}
+.work-card.is-expanded .work-card-front{pointer-events:none}
+.work-card.is-expanded .work-card-back{pointer-events:auto}
 .song-card-art{position:relative;overflow:hidden;width:100%;aspect-ratio:1;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;background:linear-gradient(145deg,rgba(30,215,96,.9),rgba(15,105,57,.25)),#202020;color:rgba(255,255,255,.92);font-size:40px;font-weight:900;letter-spacing:-.04em;box-shadow:0 14px 28px rgba(0,0,0,.28)}
 .song-card-art-fallback{position:relative;z-index:0}
 .song-card-art-image{position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;object-fit:cover;opacity:0;transition:opacity .2s ease}
@@ -64,8 +66,6 @@
 .song-card-meta span{padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.07)}
 .work-card-front .work-card-style-badges{margin-bottom:12px}
 .work-card-flip-hint{margin-top:auto!important;padding-top:3px;color:#777!important;font-size:11px!important}
-.work-card-toggle{width:auto;min-width:72px;min-height:30px;margin-top:6px;padding:0 12px;border:1px solid #535353;border-radius:999px;background:transparent;color:#fff;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
-.work-card-toggle:hover,.work-card-toggle:focus-visible{border-color:#fff;outline:none}
 
 .work-card.is-expanded{filter:none}
 .work-card-back-summary{display:grid;grid-template-columns:70px minmax(0,1fr);gap:12px;align-items:start}
@@ -78,7 +78,7 @@
 .work-card-arrangement-info{min-width:0;flex:1 1 auto}
 .work-card-arrangement-title{display:block;color:#fff;font-size:13px}
 .work-card-arrangement-meta{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#a7a7a7;font-size:10px}
-.work-card-arrangement-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;gap:5px}
+.work-card-arrangement-actions{position:relative;display:flex;flex:0 0 auto;align-items:center;justify-content:flex-end;gap:5px}
 .work-card-action{min-height:29px;padding:0 9px;border:1px solid #606060;border-radius:999px;background:transparent;color:#fff;font:inherit;font-size:10px;font-weight:800;cursor:pointer}
 .work-card-action:hover,.work-card-action:focus-visible{border-color:#fff;outline:none}
 .work-card-action.primary{border-color:#1ed760;background:#1ed760;color:#000}
@@ -87,6 +87,15 @@
 .work-card-action.is-adding{cursor:wait;opacity:.65}
 .work-card-action.is-added{color:#1ed760}
 .work-card-action.is-added.just-added{animation:catalog-added-pop .42s cubic-bezier(.2,.9,.25,1.35)}
+.work-card-action-icon{box-sizing:border-box;width:31px;min-width:31px;height:31px;min-height:31px;padding:0;display:grid;place-items:center;border-radius:50%}
+.work-card-action-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.work-card-action-more svg{fill:currentColor;stroke:none}
+.work-card-action-menu-shell{position:relative;flex:0 0 auto}
+.work-card-action-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:80;display:none;min-width:92px;padding:5px;border:1px solid #444;border-radius:10px;background:#181818;box-shadow:0 12px 28px rgba(0,0,0,.4)}
+.work-card-action-menu.open{display:block}
+.work-card-action-menu-item{width:100%;min-height:30px;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:#fff;font:inherit;font-size:11px;font-weight:800;text-align:left;cursor:pointer}
+.work-card-action-menu-item:hover,.work-card-action-menu-item:focus-visible{background:#303030;outline:none}
+.work-card-action-menu-item.danger{color:#ff9f9f}
 @keyframes catalog-added-pop{0%{transform:scale(.72)}60%{transform:scale(1.14)}100%{transform:scale(1)}}
 
 .primary-action,.back-button,.add-preview-button{border:0;cursor:pointer;font-weight:800}
@@ -108,13 +117,14 @@
   .catalog-hero,.library-hero{align-items:stretch;flex-direction:column}
   .catalog-search,.library-search{width:100%;flex-basis:auto;margin-left:0}
   .library-hero-controls{width:100%;max-width:none;flex-basis:auto}
+  .song-browser-heading-actions{gap:10px}
   .song-browser-rail{grid-template-rows:repeat(2,324px);grid-auto-columns:200px;min-height:666px}
   .song-browser-artist-rail{grid-auto-columns:142px}
   .artist-filter-avatar{width:116px;height:116px}
   .artist-filter-label{width:130px;font-size:14px}
   .work-card-back-summary{grid-template-columns:62px minmax(0,1fr);gap:10px}
   .work-card-back-art{width:62px}
-  .work-card-arrangement{flex-direction:column}
-  .work-card-arrangement-actions{justify-content:flex-start}
-  .song-browser-next{right:8px}
+  .work-card-arrangement{align-items:center}
+  .work-card-arrangement-info{max-width:calc(100% - 74px)}
+  .song-browser-nav-prev{left:8px}.song-browser-nav-next{right:8px}
 }
