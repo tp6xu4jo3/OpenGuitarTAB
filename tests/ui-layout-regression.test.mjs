@@ -68,8 +68,11 @@ assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width mus
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey\)/,'score renderer must draw rhythm stems and beams');
 assert.match(renderer,/v3-rhythm-tuplet-number/,'triplet number belongs to the beamed rhythm layer');
 assert.match(renderer,/harmonicTechnique\(note\)/,'harmonic display must distinguish edit and score modes');
-assert.match(renderer,/this\.cursor\.blur\(\)/,'clicking another cell must commit the active editor before opening the next cell');
 assert.match(renderer,/initialValue: this\.cursorValueAt/,'arrow navigation must preserve existing note values');
+const cursorSource=renderer.slice(renderer.indexOf('showCursor({'),renderer.lastIndexOf('\n}'));
+assert.ok(cursorSource.indexOf('this.cursor.blur()')>=0,'continuous editing must commit an existing cell before switching');
+assert.ok(cursorSource.indexOf('this.cursor.blur()')<cursorSource.indexOf('const measureNode ='),'continuous editing must resolve the next cell from the live DOM after the previous commit rerenders');
+assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\s\S]*const nextValue = normalizeFret\(input\.value\)[\s\S]*if \(nextValue === originalValue\) return;/,'unchanged keyboard navigation must not rewrite or erase existing notes');
 assert.doesNotMatch(notation,/appendRhythmBracket/,'triplet and 32nd subdivision must not render separate bracket labels');
 assert.match(notation,/staffTopInSystem/,'chord labels must use a dedicated lane above string one');
 assert.match(scoreCss,/\.content\.score-view \.score-density-line\{[^}]*gap:0/s,'compact score segments must join without horizontal gaps');
