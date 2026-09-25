@@ -94,6 +94,55 @@ function actionButton(text, className = 'work-card-action') {
   return button;
 }
 
+function iconButton(className, label, svg) {
+  const button = actionButton('', className);
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.innerHTML = svg;
+  return button;
+}
+
+function closeArrangementMenus(except = null) {
+  document.querySelectorAll('.work-card-action-menu.open').forEach(menu => {
+    if (menu !== except) menu.classList.remove('open');
+  });
+}
+
+function createArrangementMenu(items) {
+  const shell = document.createElement('div');
+  shell.className = 'work-card-action-menu-shell';
+  const trigger = iconButton(
+    'work-card-action work-card-action-icon work-card-action-more',
+    '更多操作',
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>'
+  );
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+  const menu = document.createElement('div');
+  menu.className = 'work-card-action-menu';
+  menu.setAttribute('role', 'menu');
+  items.forEach(item => {
+    const button = actionButton(item.label, `work-card-action-menu-item${item.danger ? ' danger' : ''}`);
+    button.setAttribute('role', 'menuitem');
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      menu.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+      await item.run();
+    });
+    menu.appendChild(button);
+  });
+  trigger.addEventListener('click', event => {
+    event.stopPropagation();
+    const opening = !menu.classList.contains('open');
+    closeArrangementMenus(menu);
+    menu.classList.toggle('open', opening);
+    trigger.setAttribute('aria-expanded', String(opening));
+  });
+  shell.append(trigger, menu);
+  return shell;
+}
+
 async function editCatalogArrangement(arrangement) {
   if (!catalogArrangementCanManage(arrangement)) return;
   let local = localSongForArrangement(arrangement);
@@ -171,23 +220,29 @@ async function addCatalogArrangement(arrangement, button = null) {
 }
 
 function renderCatalogArrangementActions({ arrangement, container }) {
-  const preview = actionButton('預覽', 'work-card-action primary');
-  preview.addEventListener('click', () => setRoute(`#/preview/${encodeURIComponent(arrangement.arrangementId || arrangement.songId)}`));
+  const preview = iconButton(
+    'work-card-action primary work-card-action-icon work-card-preview-icon',
+    '預覽',
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 12s3.4-5.2 9.2-5.2S21.2 12 21.2 12 17.8 17.2 12 17.2 2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>'
+  );
+  preview.addEventListener('click', event => {
+    event.stopPropagation();
+    setRoute(`#/preview/${encodeURIComponent(arrangement.arrangementId || arrangement.songId)}`);
+  });
   container.appendChild(preview);
+
   if (catalogArrangementCanManage(arrangement)) {
-    const edit = actionButton('編輯');
-    edit.addEventListener('click', () => editCatalogArrangement(arrangement));
-    container.appendChild(edit);
+    const menuItems = [{ label: '編輯', run: () => editCatalogArrangement(arrangement) }];
     if (dataSource.capabilities?.visibility && arrangement.public === true) {
-      const unlist = actionButton('下架');
-      unlist.addEventListener('click', () => unlistCatalogArrangement(arrangement));
-      container.appendChild(unlist);
+      menuItems.push({ label: '下架', danger: true, run: () => unlistCatalogArrangement(arrangement) });
     }
+    container.appendChild(createArrangementMenu(menuItems));
     return;
   }
+
   const add = actionButton('＋ 加入');
   if (catalogArrangementIsAdded(arrangement)) markAddButtonAdded(add);
-  else add.addEventListener('click', () => addCatalogArrangement(arrangement, add));
+  else add.addEventListener('click', event => { event.stopPropagation(); void addCatalogArrangement(arrangement, add); });
   container.appendChild(add);
 }
 
@@ -197,17 +252,17 @@ function renderLibraryArrangementActions({ arrangement, container }) {
   const permissions = libraryActionsFor(song);
   if (permissions.edit) {
     const edit = actionButton('編輯', 'work-card-action primary');
-    edit.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.id)}`));
+    edit.addEventListener('click', event => { event.stopPropagation(); setRoute(`#/editor/${encodeURIComponent(song.id)}`); });
     container.appendChild(edit);
   }
   if (permissions.visibility) {
     const visibility = actionButton(songIsPublic(song) ? '下架' : '重新上架');
-    visibility.addEventListener('click', async () => { await toggleSongPublic(song); });
+    visibility.addEventListener('click', async event => { event.stopPropagation(); await toggleSongPublic(song); });
     container.appendChild(visibility);
   }
   if (permissions.delete) {
     const del = actionButton('刪除', 'work-card-action danger');
-    del.addEventListener('click', () => requestDeleteSong(song.id));
+    del.addEventListener('click', event => { event.stopPropagation(); requestDeleteSong(song.id); });
     container.appendChild(del);
   }
 }
@@ -427,7 +482,13 @@ addPreviewSongButton.addEventListener('click', () => {
   const found = findCatalogArrangement(fileId);
   if (found) addCatalogArrangement(found.arrangement);
 });
-document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMobileMenu(); });
+document.addEventListener('click', event => { if (!event.target.closest('.work-card-action-menu-shell')) closeArrangementMenus(); });
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    closeMobileMenu();
+    closeArrangementMenus();
+  }
+});
 mobileQuery.addEventListener('change', event => { if (!event.matches) closeMobileMenu(); });
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
