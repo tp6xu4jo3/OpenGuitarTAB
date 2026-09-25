@@ -69,7 +69,9 @@ assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey\)/,'score ren
 assert.match(renderer,/v3-rhythm-tuplet-number/,'triplet number belongs to the beamed rhythm layer');
 assert.match(renderer,/harmonicTechnique\(note\)/,'harmonic display must distinguish edit and score modes');
 assert.match(renderer,/initialValue: this\.cursorValueAt/,'arrow navigation must preserve existing note values');
-const cursorSource=renderer.slice(renderer.indexOf('showCursor({'),renderer.lastIndexOf('\n}'));
+const cursorStart=renderer.lastIndexOf('\n  showCursor({');
+const cursorSource=renderer.slice(cursorStart);
+assert.ok(cursorStart>=0,'renderer must expose one showCursor implementation');
 assert.ok(cursorSource.indexOf('this.cursor.blur()')>=0,'continuous editing must commit an existing cell before switching');
 assert.ok(cursorSource.indexOf('this.cursor.blur()')<cursorSource.indexOf('const measureNode ='),'continuous editing must resolve the next cell from the live DOM after the previous commit rerenders');
 assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\s\S]*const nextValue = normalizeFret\(input\.value\)[\s\S]*if \(nextValue === originalValue\) return;/,'unchanged keyboard navigation must not rewrite or erase existing notes');
