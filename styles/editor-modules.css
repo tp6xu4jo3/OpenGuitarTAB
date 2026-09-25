@@ -13,7 +13,7 @@
 .row-module-handle:active{cursor:grabbing}
 .editor-row-module.is-selected .row-module-handle,.editor-row-module.is-selected .visual-row-handle{background:#ccefd8;border-color:#38c76e;box-shadow:0 0 0 3px rgba(30,215,96,.10)}
 .row-drag-grip{font-size:18px;line-height:1;color:#45a867;letter-spacing:-2px;user-select:none}
-.row-module-label{font-size:12px;font-weight:800;color:#39724d;white-space:nowrap;user-select:none;writing-mode:vertical-rl;text-orientation:upright;letter-spacing:.08em}
+.row-module-label{width:1.7em;font-size:12px;font-weight:800;line-height:1.15;color:#39724d;white-space:normal;word-break:keep-all;text-align:center;user-select:none;writing-mode:horizontal-tb;letter-spacing:0}
 .row-module-more{width:28px;height:28px;display:grid;place-items:center;padding:0;border:0;border-radius:999px;background:rgba(255,255,255,.72);color:#163b24;font-size:18px;line-height:1;cursor:pointer;transition:background .15s ease,transform .15s ease}
 .row-module-more:hover,.row-module-more:focus-visible{background:#fff;transform:scale(1.06);outline:none}
 .content.edit-view .tab-grid{overflow:visible;border-radius:12px;transition:box-shadow .18s ease}
