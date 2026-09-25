@@ -33,11 +33,16 @@ function setSelected(target) {
   selected = target || null;
   document.querySelectorAll('.editor-row-module.is-selected,.measure-module-hitbox.is-selected').forEach(node => node.classList.remove('is-selected'));
   if (!selected) return;
-  const node = selected.type === 'row'
-    ? document.querySelector(`.editor-row-module[data-row="${selected.rowIndex}"]`)
-    : document.querySelector(`.measure-module-hitbox[data-row="${selected.rowIndex}"][data-measure="${selected.measureIndex}"]`);
+  if (selected.type === 'row') {
+    const nodes = [...document.querySelectorAll(`.editor-row-module[data-row="${selected.rowIndex}"]`)];
+    nodes.forEach(node => node.classList.add('is-selected'));
+    const focusTarget = nodes.find(node => node.querySelector('.row-module-handle')) || nodes[0];
+    focusNode(focusTarget?.querySelector('.row-module-handle,.visual-row-handle') || focusTarget);
+    return;
+  }
+  const node = document.querySelector(`.measure-module-hitbox[data-row="${selected.rowIndex}"][data-measure="${selected.measureIndex}"]`);
   node?.classList.add('is-selected');
-  focusNode(selected.type === 'row' ? node?.querySelector('.row-module-handle') || node : node);
+  focusNode(node);
 }
 
 function closeMenu() {
@@ -152,6 +157,20 @@ function openMenu(target, x, y) {
   menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
 }
 
+function makeRowMoreButton(rowIndex, visualRowIndex) {
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'row-module-more';
+  more.textContent = '…';
+  more.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列操作`);
+  more.addEventListener('click', event => {
+    event.stopPropagation();
+    const rect = more.getBoundingClientRect();
+    openMenu({ type: 'row', rowIndex }, rect.right + 6, rect.top);
+  });
+  return more;
+}
+
 function makeRowHandle(rowIndex, visualRowIndex = rowIndex) {
   const handle = document.createElement('div');
   handle.className = 'system-label row-module-handle';
@@ -164,17 +183,7 @@ function makeRowHandle(rowIndex, visualRowIndex = rowIndex) {
   const label = document.createElement('span');
   label.className = 'row-module-label';
   label.textContent = `第 ${visualRowIndex + 1} 列`;
-  const more = document.createElement('button');
-  more.type = 'button';
-  more.className = 'row-module-more';
-  more.textContent = '…';
-  more.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列操作`);
-  more.addEventListener('click', event => {
-    event.stopPropagation();
-    const rect = more.getBoundingClientRect();
-    openMenu({ type: 'row', rowIndex }, rect.right + 6, rect.top);
-  });
-  handle.append(grip, label, more);
+  handle.append(grip, label, makeRowMoreButton(rowIndex, visualRowIndex));
   handle.addEventListener('click', event => { if (!event.target.closest('button')) setSelected({ type: 'row', rowIndex }); });
   handle.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'row', rowIndex }, event.clientX, event.clientY); });
   handle.addEventListener('dragstart', event => {
@@ -185,14 +194,17 @@ function makeRowHandle(rowIndex, visualRowIndex = rowIndex) {
   return handle;
 }
 
-function makeVisualRowLabel(visualRowIndex) {
+function makeVisualRowLabel(rowIndex, visualRowIndex) {
   const label = document.createElement('div');
   label.className = 'system-label visual-row-handle';
+  label.dataset.row = String(rowIndex);
   label.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列，自動換行`);
   const text = document.createElement('span');
   text.className = 'row-module-label';
   text.textContent = `第 ${visualRowIndex + 1} 列`;
-  label.appendChild(text);
+  label.append(text, makeRowMoreButton(rowIndex, visualRowIndex));
+  label.addEventListener('click', event => { if (!event.target.closest('button')) setSelected({ type: 'row', rowIndex }); });
+  label.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'row', rowIndex }, event.clientX, event.clientY); });
   return label;
 }
 
@@ -283,7 +295,7 @@ function decorateEditor() {
     system.dataset.visualRow = String(visualRowIndex);
     system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
     system.querySelector('.layout-rail-placeholder')?.remove();
-    system.prepend(sourceStart ? makeRowHandle(rowIndex, visualRowIndex) : makeVisualRowLabel(visualRowIndex));
+    system.prepend(sourceStart ? makeRowHandle(rowIndex, visualRowIndex) : makeVisualRowLabel(rowIndex, visualRowIndex));
     system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
     if (sourceStart) tabArea.insertBefore(makeInsertZone(rowIndex), system);
   });
