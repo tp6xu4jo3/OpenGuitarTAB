@@ -8,6 +8,10 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function defaultFetch(...args) {
+  return globalThis.fetch(...args);
+}
+
 function emptyState() {
   return { version: 1, records: {}, deleted: [] };
 }
@@ -31,7 +35,7 @@ function catalogMetaFromSong(song) {
 
 export class LocalTestDataSource {
   constructor({
-    fetchImpl = globalThis.fetch,
+    fetchImpl = defaultFetch,
     storage = globalThis.localStorage,
     baseHref = globalThis.document?.baseURI || 'http://localhost/',
     now = () => new Date()

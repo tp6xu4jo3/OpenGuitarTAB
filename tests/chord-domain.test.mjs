@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   CHORD_CATEGORIES,
   CHORD_LIBRARY,
@@ -99,7 +100,7 @@ const manuallyEdited = applyCommand(applied.document, {
 }, { idFactory });
 assert.equal(manuallyEdited.document.measures[0].events[0].chord, undefined, 'manual pitch edits must clear stale chord metadata');
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const dragController = readFileSync(join(root, 'src/editor/chord-drag-controller.js'), 'utf8');
 const notationRenderer = readFileSync(join(root, 'src/editor/notation-renderer.js'), 'utf8');
 assert.match(dragController, /type:\s*'chord\/apply'/);

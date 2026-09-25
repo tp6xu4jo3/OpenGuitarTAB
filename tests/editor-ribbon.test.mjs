@@ -3,6 +3,7 @@ import { CHORD_CATEGORIES, CHORD_LIBRARY, CHORD_ROOTS } from '../src/editor/chor
 import { nextRibbonSection, RIBBON_SECTIONS } from '../src/editor/ribbon.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 assert.equal(nextRibbonSection(null,RIBBON_SECTIONS.TECHNIQUE),RIBBON_SECTIONS.TECHNIQUE);
 assert.equal(nextRibbonSection(RIBBON_SECTIONS.TECHNIQUE,RIBBON_SECTIONS.TECHNIQUE),null);
@@ -10,7 +11,7 @@ assert.equal(nextRibbonSection(RIBBON_SECTIONS.TECHNIQUE,RIBBON_SECTIONS.CHORD),
 assert.deepEqual(CHORD_CATEGORIES.map(item=>item.id),['major','minor','dominant','suspended','other']);
 assert.equal(CHORD_ROOTS.length,12);
 assert.equal(CHORD_LIBRARY.length,216);
-const root=new URL('..',import.meta.url).pathname;
+const root=fileURLToPath(new URL('..',import.meta.url));
 const controller=readFileSync(join(root,'src/editor/controller.js'),'utf8');
 const ribbon=readFileSync(join(root,'src/editor/ribbon.js'),'utf8');
 const styles=readFileSync(join(root,'styles/editor-tools.css'),'utf8');

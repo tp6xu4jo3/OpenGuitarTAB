@@ -358,7 +358,6 @@ export class SparseScoreRenderer {
 
     groups.forEach(groupPoints => {
       groupPoints.sort((left, right) => left.at - right.at);
-      const explicit = groupPoints.find(point => point.group)?.group || null;
       const maxBeams = Math.max(0, ...groupPoints.map(point => point.beams));
       for (let level = 1; level <= maxBeams; level++) {
         groupPoints.forEach((point, index) => {
@@ -379,15 +378,29 @@ export class SparseScoreRenderer {
           layer.appendChild(flag);
         });
       }
-      if (explicit?.type === 'tuplet' && groupPoints.length) {
-        const first = groupPoints[0];
-        const last = groupPoints.at(-1);
-        const label = div('v3-rhythm-tuplet-number');
-        label.textContent = '3';
-        label.style.left = `${(first.x + last.x) / 2}%`;
-        layer.appendChild(label);
-      }
     });
+
+    for (const group of measure.groups || []) {
+      if (group?.type !== 'tuplet') continue;
+      const slots = Array.isArray(group.slots) ? group.slots : [];
+      if (slots.length < 2) continue;
+      const slotX = slot => {
+        const visualTime = visualTimeByKey.get(fractionKey(slot));
+        return visualPercentageForTime(slot, visualTime?.duration || group.duration || BASE_GRID_STEP, measure);
+      };
+      const left = slotX(slots[0]);
+      const right = slotX(slots.at(-1));
+      const bracket = div('v3-rhythm-tuplet-bracket');
+      bracket.style.left = `${left}%`;
+      bracket.style.width = `${Math.max(1, right - left)}%`;
+      bracket.setAttribute('aria-label', '三連音');
+      bracket.append(
+        div('v3-rhythm-tuplet-segment v3-rhythm-tuplet-segment-left'),
+        Object.assign(div('v3-rhythm-tuplet-number'), { textContent: '3' }),
+        div('v3-rhythm-tuplet-segment v3-rhythm-tuplet-segment-right')
+      );
+      layer.appendChild(bracket);
+    }
     return layer;
   }
 
