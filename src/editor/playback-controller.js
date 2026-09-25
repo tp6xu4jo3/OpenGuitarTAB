@@ -6,12 +6,13 @@ let installed = false;
 const state = {
   playing: false,
   timer: null,
+  eventTimers: [],
   currentIndex: 0,
+  startOffsetBeats: 0,
   playbackIndex: null,
   document: null,
   dirty: true,
-  currentNodes: [],
-  currentColumn: null,
+  beatBar: null,
   lastCenteredKey: null
 };
 
@@ -47,10 +48,13 @@ function ensureIndex({ force = false } = {}) {
 }
 
 function clearPlayhead() {
-  state.currentNodes.forEach(node => node.classList?.remove('is-playing'));
-  state.currentNodes = [];
-  state.currentColumn?.classList?.remove('is-playing-column');
-  state.currentColumn = null;
+  state.beatBar?.remove?.();
+  state.beatBar = null;
+}
+
+function clearEventTimers() {
+  state.eventTimers.forEach(timer => clearTimeout(timer));
+  state.eventTimers = [];
 }
 
 function followPlaybackLine(node, key) {
@@ -68,11 +72,14 @@ function followPlaybackLine(node, key) {
   state.lastCenteredKey = key;
 }
 
+function measureNodeForEntry(entry) {
+  if (!entry?.measureId) return null;
+  return document.querySelector(`.v3-measure[data-measure-id="${CSS.escape(String(entry.measureId))}"]`);
+}
+
 function entryColumn(entry) {
-  const eventId = CSS.escape(String(entry.eventId || ''));
-  const byEvent = document.querySelector(`.v3-column-target[data-event-id="${eventId}"]`);
-  if (byEvent) return byEvent;
-  const measureId = CSS.escape(String(entry.measureId || ''));
+  if (!entry?.measureId) return null;
+  const measureId = CSS.escape(String(entry.measureId));
   const at = CSS.escape(`${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}`);
   return document.querySelector(`.v3-column-target[data-measure-id="${measureId}"][data-at="${at}"]`);
 }
@@ -80,15 +87,19 @@ function entryColumn(entry) {
 function highlightEntry(entry) {
   clearPlayhead();
   if (!entry) return;
-  const eventNode = document.querySelector(`.v3-event[data-event-id="${CSS.escape(String(entry.eventId))}"]`);
-  state.currentNodes = eventNode ? [...eventNode.querySelectorAll('.v3-note')] : [];
-  state.currentNodes.forEach(node => node.classList.add('is-playing'));
-  const column = entryColumn(entry);
-  if (column) {
-    column.classList.add('is-playing-column');
-    state.currentColumn = column;
-  }
-  followPlaybackLine(eventNode?.closest('.tab-system') || column?.closest('.tab-system') || eventNode || column, `event:${entry.eventId}`);
+  const measureNode = measureNodeForEntry(entry);
+  const staff = measureNode?.querySelector('.v3-staff');
+  if (!staff) return;
+  const duration = Math.max(0.001, Number(entry.measureDurationBeats) || 1);
+  const left = clamp(Number(entry.atBeats) || 0, 0, duration) / duration * 100;
+  const width = clamp(Number(entry.durationBeats) || 1, 0, duration) / duration * 100;
+  const bar = document.createElement('div');
+  bar.className = 'v3-playback-beat';
+  bar.style.left = `${left}%`;
+  bar.style.width = `${width}%`;
+  staff.appendChild(bar);
+  state.beatBar = bar;
+  followPlaybackLine(measureNode.closest('.tab-system') || measureNode, `beat:${entry.measureId}:${entry.atBeats}`);
 }
 
 function entryForIndex(index) {
@@ -98,15 +109,14 @@ function entryForIndex(index) {
 }
 
 function formatBeat(entry) {
-  const beat = entry.atBeats + 1;
-  return Number.isInteger(beat) ? String(beat) : beat.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return String(Math.floor(Number(entry?.atBeats) || 0) + 1);
 }
 
 function visualLocationForEntry(entry) {
   const column = entryColumn(entry);
-  const system = column?.closest?.('.tab-system');
+  const system = column?.closest?.('.tab-system') || measureNodeForEntry(entry)?.closest?.('.tab-system');
   const visualRow = Number(system?.dataset.visualRow);
-  const grid = column?.closest?.('.v3-grid');
+  const grid = column?.closest?.('.v3-grid') || measureNodeForEntry(entry)?.closest?.('.v3-grid');
   const ids = String(grid?.dataset.measureIds || '').split(',').filter(Boolean);
   const localMeasure = ids.indexOf(String(entry.measureId));
   return {
@@ -120,7 +130,7 @@ function updateProgressLabel(index) {
   if (!label) return;
   const entry = entryForIndex(index);
   if (!entry) {
-    label.textContent = '尚無音符';
+    label.textContent = '尚無曲譜';
     return;
   }
   const location = visualLocationForEntry(entry);
@@ -134,6 +144,7 @@ function totalSlots() {
 function setProgressIndex(index, updateSlider = true, highlight = true) {
   const playback = ensureIndex();
   state.currentIndex = clamp(Number(index) || 0, 0, Math.max(0, playback.entries.length - 1));
+  state.startOffsetBeats = 0;
   const slider = document.getElementById('playProgress');
   if (slider && updateSlider) slider.value = String(state.currentIndex);
   updateProgressLabel(state.currentIndex);
@@ -152,16 +163,26 @@ function updateProgressRange() {
   setProgressIndex(state.currentIndex, true, false);
 }
 
+function fractionNumber(value) {
+  const [numerator, denominator] = String(value || '').split('/').map(Number);
+  return Number.isFinite(numerator) && Number.isFinite(denominator) && denominator ? numerator / denominator : null;
+}
+
 function jumpToTarget(target, highlight = true) {
   if (!target) return;
   const measureId = String(target.dataset?.measureId || '');
-  const at = String(target.dataset?.at || '');
-  if (!measureId || !at) return;
+  const targetBeat = fractionNumber(target.dataset?.at);
+  if (!measureId || targetBeat == null) return;
   const playback = ensureIndex();
-  const exact = playback.entries.find(entry =>
-    String(entry.measureId) === measureId && `${entry.at?.[0] ?? 0}/${entry.at?.[1] ?? 1}` === at
-  );
-  if (exact) setProgressIndex(exact.index, true, highlight);
+  const entry = playback.entries.find(item => {
+    if (String(item.measureId) !== measureId) return false;
+    const start = Number(item.atBeats) || 0;
+    const end = start + Math.max(0.001, Number(item.durationBeats) || 1);
+    return targetBeat >= start - 1e-9 && targetBeat < end - 1e-9;
+  });
+  if (!entry) return;
+  setProgressIndex(entry.index, true, highlight);
+  state.startOffsetBeats = clamp(targetBeat - entry.atBeats, 0, Math.max(0, entry.durationBeats - 0.001));
 }
 
 function updatePlayButton(playing) {
@@ -172,43 +193,55 @@ function updatePlayButton(playing) {
   button.setAttribute('aria-label', playing ? '停止播放 TAB 譜' : '播放 TAB 譜');
 }
 
-function playEntry(entry) {
-  if (!entry) return;
+function playNotes(notes) {
   const audio = getAudioEngine();
-  entry.notes.forEach(note => {
+  (notes || []).forEach(note => {
     if (!/^x$/i.test(String(note.fret))) audio?.playNote(Number(note.string), note.fret);
   });
+}
+
+function playBeat(entry, beatMs, fromOffset = 0) {
+  if (!entry) return;
+  clearEventTimers();
   state.currentIndex = entry.index;
   const slider = document.getElementById('playProgress');
   if (slider) slider.value = String(entry.index);
   updateProgressLabel(entry.index);
   highlightEntry(entry);
+  (entry.events || []).forEach(event => {
+    if (event.offsetBeats < fromOffset - 1e-9) return;
+    const delay = Math.max(0, (event.offsetBeats - fromOffset) * beatMs);
+    if (delay <= 2) playNotes(event.notes);
+    else state.eventTimers.push(window.setTimeout(() => playNotes(event.notes), delay));
+  });
 }
 
 async function startPlayback() {
   const audio = getAudioEngine();
   if (!audio || !await audio.ensureReady()) return;
-  stopPlayback(false, true);
+  stopPlayback(false, true, false);
   const playback = ensureIndex();
   if (!playback.entries.length) {
-    window.showToast?.('目前沒有可播放的音符');
+    window.showToast?.('目前沒有可播放的拍子');
     updateProgressRange();
     return;
   }
   const slider = document.getElementById('playProgress');
-  state.currentIndex = clamp(Number(slider?.value) || state.currentIndex, 0, playback.entries.length - 1);
+  const sliderIndex = Number(slider?.value);
+  if (Number.isFinite(sliderIndex)) state.currentIndex = clamp(sliderIndex, 0, playback.entries.length - 1);
   state.playing = true;
   state.lastCenteredKey = null;
   updatePlayButton(true);
-  if (state.currentIndex === 0) {
+  if (state.currentIndex === 0 && state.startOffsetBeats === 0) {
     const sheet = document.getElementById('editorView')?.querySelector('.sheet');
     if (sheet) sheet.scrollTop = 0;
   }
   const tempo = typeof window.getTempo === 'function' ? window.getTempo() : 120;
   const beatMs = 60000 / tempo;
-  const first = playback.entries[state.currentIndex];
-  const anchorBeat = first.absoluteBeat;
-  const anchorTime = performance.now();
+  const firstIndex = state.currentIndex;
+  const firstOffset = state.startOffsetBeats;
+  state.startOffsetBeats = 0;
+
   const tick = index => {
     if (!state.playing) return;
     const entry = playback.entries[index];
@@ -216,26 +249,27 @@ async function startPlayback() {
       stopPlayback();
       return;
     }
-    playEntry(entry);
-    const next = playback.entries[index + 1];
-    if (!next) {
-      state.timer = window.setTimeout(() => stopPlayback(true, false), Math.max(0.25, entry.durationBeats || 0.25) * beatMs);
-      return;
-    }
-    const targetTime = anchorTime + (next.absoluteBeat - anchorBeat) * beatMs;
-    state.timer = window.setTimeout(() => tick(index + 1), Math.max(0, targetTime - performance.now()));
+    const fromOffset = index === firstIndex ? firstOffset : 0;
+    playBeat(entry, beatMs, fromOffset);
+    const remaining = Math.max(0.001, (Number(entry.durationBeats) || 1) - fromOffset);
+    state.timer = window.setTimeout(() => {
+      if (index + 1 >= playback.entries.length) stopPlayback(true, false);
+      else tick(index + 1);
+    }, remaining * beatMs);
   };
-  tick(state.currentIndex);
+  tick(firstIndex);
 }
 
-function stopPlayback(resetButton = true, stopVoices = true) {
+function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true) {
   if (state.timer) {
     clearTimeout(state.timer);
     state.timer = null;
   }
+  clearEventTimers();
   state.playing = false;
   state.lastCenteredKey = null;
   clearPlayhead();
+  if (clearOffset) state.startOffsetBeats = 0;
   if (stopVoices) getAudioEngine()?.stopAll();
   if (resetButton) updatePlayButton(false);
 }
