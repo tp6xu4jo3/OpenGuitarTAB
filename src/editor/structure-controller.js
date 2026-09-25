@@ -1,6 +1,7 @@
 import { buildSystems } from './layout.js';
 import {
   deleteMeasureAt,
+  deleteMeasures,
   deleteSystem,
   insertMeasureAt,
   insertSystem,
@@ -34,9 +35,13 @@ function setSelected(target) {
   document.querySelectorAll('.editor-row-module.is-selected,.measure-module-hitbox.is-selected').forEach(node => node.classList.remove('is-selected'));
   if (!selected) return;
   if (selected.type === 'row') {
-    const nodes = [...document.querySelectorAll(`.editor-row-module[data-row="${selected.rowIndex}"]`)];
+    const visualRow = Number(selected.visualRowIndex);
+    const selector = Number.isInteger(visualRow)
+      ? `.editor-row-module[data-visual-row="${visualRow}"]`
+      : `.editor-row-module[data-row="${selected.rowIndex}"]`;
+    const nodes = [...document.querySelectorAll(selector)];
     nodes.forEach(node => node.classList.add('is-selected'));
-    const focusTarget = nodes.find(node => node.querySelector('.row-module-handle')) || nodes[0];
+    const focusTarget = nodes[0];
     focusNode(focusTarget?.querySelector('.row-module-handle,.visual-row-handle') || focusTarget);
     return;
   }
@@ -88,7 +93,12 @@ function structuralAction(target, action) {
   if (target.type === 'row') {
     if (action === 'insert-before') return commitResult(insertSystem(documentModel, target.rowIndex), `已新增第 ${target.rowIndex + 1} 列`, { type: 'row', rowIndex: target.rowIndex });
     if (action === 'insert-after') return commitResult(insertSystem(documentModel, target.rowIndex + 1), `已新增第 ${target.rowIndex + 2} 列`, { type: 'row', rowIndex: target.rowIndex + 1 });
-    if (action === 'delete') return commitResult(deleteSystem(documentModel, target.rowIndex), `已刪除第 ${target.rowIndex + 1} 列`);
+    if (action === 'delete') {
+      const result = target.measureIds?.length
+        ? deleteMeasures(documentModel, target.measureIds)
+        : deleteSystem(documentModel, target.rowIndex);
+      return commitResult(result, `已刪除第 ${Number(target.visualRowIndex ?? target.rowIndex) + 1} 列`);
+    }
   }
 
   if (target.type === 'measure') {
@@ -157,55 +167,42 @@ function openMenu(target, x, y) {
   menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
 }
 
-function makeRowMoreButton(rowIndex, visualRowIndex) {
+function makeRowMoreButton(target) {
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'row-module-more';
   more.textContent = '…';
-  more.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列操作`);
+  more.setAttribute('aria-label', `第 ${Number(target.visualRowIndex) + 1} 列操作`);
   more.addEventListener('click', event => {
     event.stopPropagation();
     const rect = more.getBoundingClientRect();
-    openMenu({ type: 'row', rowIndex }, rect.right + 6, rect.top);
+    openMenu(target, rect.right + 6, rect.top);
   });
   return more;
 }
 
-function makeRowHandle(rowIndex, visualRowIndex = rowIndex) {
+function makeRowHandle(target, { sourceStart = false } = {}) {
   const handle = document.createElement('div');
-  handle.className = 'system-label row-module-handle';
+  handle.className = `system-label ${sourceStart ? 'row-module-handle' : 'visual-row-handle'}`;
   handle.draggable = true;
-  handle.dataset.row = String(rowIndex);
-  handle.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列，可拖曳其來源列排序`);
+  handle.dataset.row = String(target.rowIndex);
+  handle.dataset.visualRow = String(target.visualRowIndex);
+  handle.setAttribute('aria-label', `第 ${Number(target.visualRowIndex) + 1} 列，可拖曳其來源列排序`);
   const grip = document.createElement('span');
   grip.className = 'row-drag-grip';
   grip.textContent = '⠿';
   const label = document.createElement('span');
   label.className = 'row-module-label';
-  label.textContent = `第 ${visualRowIndex + 1} 列`;
-  handle.append(grip, label, makeRowMoreButton(rowIndex, visualRowIndex));
-  handle.addEventListener('click', event => { if (!event.target.closest('button')) setSelected({ type: 'row', rowIndex }); });
-  handle.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'row', rowIndex }, event.clientX, event.clientY); });
+  label.textContent = `第 ${Number(target.visualRowIndex) + 1} 列`;
+  handle.append(grip, label, makeRowMoreButton(target));
+  handle.addEventListener('click', event => { if (!event.target.closest('button')) setSelected(target); });
+  handle.addEventListener('contextmenu', event => { event.preventDefault(); openMenu(target, event.clientX, event.clientY); });
   handle.addEventListener('dragstart', event => {
-    dragState = { type: 'row', rowIndex };
-    event.dataTransfer?.setData('text/plain', `row:${rowIndex}`);
+    dragState = { type: 'row', rowIndex: target.rowIndex };
+    event.dataTransfer?.setData('text/plain', `row:${target.rowIndex}`);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   });
   return handle;
-}
-
-function makeVisualRowLabel(rowIndex, visualRowIndex) {
-  const label = document.createElement('div');
-  label.className = 'system-label visual-row-handle';
-  label.dataset.row = String(rowIndex);
-  label.setAttribute('aria-label', `第 ${visualRowIndex + 1} 列，自動換行`);
-  const text = document.createElement('span');
-  text.className = 'row-module-label';
-  text.textContent = `第 ${visualRowIndex + 1} 列`;
-  label.append(text, makeRowMoreButton(rowIndex, visualRowIndex));
-  label.addEventListener('click', event => { if (!event.target.closest('button')) setSelected({ type: 'row', rowIndex }); });
-  label.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'row', rowIndex }, event.clientX, event.clientY); });
-  return label;
 }
 
 function measureWidths(grid) {
@@ -278,6 +275,11 @@ function makeInsertZone(index) {
   return zone;
 }
 
+function measureIdsForSystem(system) {
+  return [...system.querySelectorAll('.v3-grid')]
+    .flatMap(grid => String(grid.dataset.measureIds || '').split(',').filter(Boolean));
+}
+
 function decorateEditor() {
   if (editingBlocked()) return;
   const tabArea = document.getElementById('tabArea');
@@ -295,7 +297,8 @@ function decorateEditor() {
     system.dataset.visualRow = String(visualRowIndex);
     system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
     system.querySelector('.layout-rail-placeholder')?.remove();
-    system.prepend(sourceStart ? makeRowHandle(rowIndex, visualRowIndex) : makeVisualRowLabel(rowIndex, visualRowIndex));
+    const target = { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
+    system.prepend(makeRowHandle(target, { sourceStart }));
     system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
     if (sourceStart) tabArea.insertBefore(makeInsertZone(rowIndex), system);
   });
