@@ -102,7 +102,7 @@ assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\
 assert.doesNotMatch(notation,/appendRhythmBracket/,'triplet and 32nd subdivision must not render separate bracket labels');
 assert.match(notation,/function chordLaneY\(/,'chord labels need a dedicated lane above the first string');
 assert.match(notation,/\.v3-string-line\[data-string="0"\]/,'chord label position must anchor to string one rather than overlap the staff');
-assert.match(notation,/kind: 'group',[\s\S]*label: '3'/,'edit mode must restore the circled triplet marker for selecting/deleting the group');
+assert.match(notation,/kind: 'group',[\s\S]*label: triplet \? '3' : '32'/,'edit mode must expose both triplet and thirty-second group markers for selection/deletion');
 assert.match(scoreCss,/\.content\.score-view \.score-density-line\{[^}]*gap:0/s,'compact score segments must join without horizontal gaps');
 assert.match(headerCss,/\.preview-badge \{ display:none!important; \}/,'public preview subtitle badge should not be visible');
 console.log('UI layout regression tests passed');
