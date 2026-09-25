@@ -6,6 +6,7 @@ const browser=await readFile(new URL('../src/catalog/song-browser.js',import.met
 const appCatalog=await readFile(new URL('../src/app-catalog.js',import.meta.url),'utf8');
 const catalogCss=await readFile(new URL('../styles/catalog.css',import.meta.url),'utf8');
 const editorCss=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
+const editorScrollCss=await readFile(new URL('../styles/editor-scroll.css',import.meta.url),'utf8');
 const moduleCss=await readFile(new URL('../styles/editor-modules.css',import.meta.url),'utf8');
 const adaptiveCss=await readFile(new URL('../styles/adaptive-measures.css',import.meta.url),'utf8');
 const toolsCss=await readFile(new URL('../styles/editor-tools.css',import.meta.url),'utf8');
@@ -15,6 +16,7 @@ const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'
 const structure=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
 const renderer=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
 const notation=await readFile(new URL('../src/editor/notation-renderer.js',import.meta.url),'utf8');
+const buildScript=await readFile(new URL('../scripts/build-static.mjs',import.meta.url),'utf8');
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
 
 assert.equal(artistProfileFor('周杰倫')?.image,'https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg');
@@ -36,16 +38,35 @@ assert.match(catalogCss,/\.song-browser-rail\s*\{[^}]*grid-template-rows:repeat\
 assert.match(catalogCss,/@media\(max-width:900px\)[\s\S]*\.song-browser-rail\{[^}]*grid-template-rows:repeat\(2,324px\)[^}]*min-height:666px/s,'mobile catalog cards need enough vertical room for the title');
 assert.match(catalogCss,/\.song-card-body h3,\.work-card-back-copy h3\{[^}]*min-height:1\.3em[^}]*flex:0 0 auto[^}]*line-height:1\.3/s,'song title must not shrink into a clipped line');
 assert.match(catalogCss,/\.song-browser-artist-rail\s*\{[^}]*grid-template-rows:1fr/s);
+assert.match(catalogCss,/\.song-browser-artist-rail,\.song-browser-rail\{scrollbar-width:none\}/,'catalog rails keep horizontal scrolling while hiding the scrollbar chrome');
+assert.match(catalogCss,/\.song-browser-artist-rail::\-webkit-scrollbar,\.song-browser-rail::\-webkit-scrollbar\{display:none;width:0;height:0\}/,'catalog webkit horizontal scrollbars must stay hidden');
 assert.doesNotMatch(html,/PUBLIC CATALOG|OPEN TAB LIBRARY|YOUR LIBRARY/,'catalog/library hero should not show redundant English eyebrow labels');
 assert.doesNotMatch(html,/<h2>公共曲譜<\/h2>/,'catalog must not repeat a public-catalog section title');
 assert.match(html,/class="library-hero-copy"/);
 assert.match(html,/class="library-hero-controls"/);
+assert.match(html,/rel="icon" href="\.\/assets\/OpenGuitarTABicon\.ico"/,'uploaded app icon must also be the site icon');
+assert.match(html,/class="brand-mark" aria-hidden="true"><img src="\.\/assets\/OpenGuitarTABicon\.ico"/,'sidebar brand must use the uploaded icon');
+assert.doesNotMatch(html,/<div class="brand-mark">OG<\/div>/,'legacy OG text mark must be removed');
+assert.match(buildScript,/cp\(path\.join\(projectRoot, 'assets'\), path\.join\(outputDir, 'assets'\), \{ recursive: true \}\)/,'production build must copy the app icon assets');
+
 assert.match(editorCss,/\.v3-column-target\{[^}]*z-index:4/s);
-assert.match(editorCss,/\.v3-note-backdrop\{[^}]*z-index:6/s);
-assert.match(editorCss,/\.v3-note\{[^}]*z-index:8/s,'number text must always sit above white note backdrops');
-assert.match(editorCss,/\.content\.score-view \.v3-staff\{[^}]*top:12px[^}]*bottom:calc\(var\(--rhythm-height,36px\) \+ 10px\)[^}]*min-height:0/s,'score staff must reserve a dedicated rhythm lane below the sixth string');
-assert.match(editorCss,/\.v3-playback-beat\{[^}]*border-radius:9px[^}]*background:rgba\(30,215,96,\.16\)/s,'playback cursor must be a rounded light-green beat bar');
-assert.match(editorCss,/\.v3-rhythm-beam-1\{top:20px\}\.v3-rhythm-beam-2\{top:14px\}\.v3-rhythm-beam-3\{top:8px\}/,'eighth, sixteenth and thirty-second notes need one, two and three beam levels');
+assert.doesNotMatch(editorCss,/\.v3-note-backdrop/,'note-number white backdrops must be removed from both edit and score views');
+assert.doesNotMatch(renderer,/v3-note-backdrop/,'renderer must not create white note backdrops');
+assert.match(editorCss,/\.v3-string-line\{[^}]*background:#c6c6c6/s,'six TAB strings should stay light gray');
+assert.match(editorCss,/\.v3-note\{[^}]*z-index:8[^}]*background:transparent[^}]*color:#080808/s,'note numbers should be dark and transparent over the light-gray strings');
+assert.match(editorCss,/\.content\.score-view \.v3-note\{[^}]*background:transparent[^}]*color:#050505/s,'score-view notes must also have no white box');
+assert.match(editorCss,/\.content\.score-view \.v3-staff\{[^}]*top:32px[^}]*bottom:auto[^}]*height:112px[^}]*min-height:112px/s,'normal score view must keep a fixed six-string staff height');
+assert.match(scoreCss,/\.content\.score-view\.score-density-compact\{--rhythm-height:42px;--system-height:204px\}/,'compact mode must keep the same score-system height instead of compressing the staff');
+assert.match(editorCss,/\.score-density-line \.v3-grid\{height:204px\}/,'compact score segments must use the same fixed system height');
+assert.match(editorCss,/\.v3-playback-beat\{[^}]*border-radius:9px[^}]*background:rgba\(30,215,96,\.16\)/s,'playback cursor must be a rounded light-green column bar');
+assert.match(editorCss,/\.v3-rhythm-stem\{[^}]*width:2px/s,'rhythm stems must use the same two-pixel stroke weight');
+assert.match(editorCss,/\.v3-rhythm-beam,\.v3-rhythm-flag\{[^}]*height:2px/s,'rhythm beams and flags must use the same two-pixel stroke weight');
+assert.match(editorCss,/\.v3-rhythm-beam-1\{top:28px\}\.v3-rhythm-beam-2\{top:21px\}\.v3-rhythm-beam-3\{top:14px\}/,'eighth, sixteenth and thirty-second notes need one, two and three beam levels');
+assert.match(editorCss,/\.v3-rhythm-tuplet-number\{[^}]*top:-5px/s,'score triplet number must sit clear of its beam');
+assert.match(editorScrollCss,/\.editor-view \.sheet::\-webkit-scrollbar:horizontal\{height:0\}/,'editor horizontal scrollbar must be visually removed');
+assert.match(toolsCss,/\.editor-ribbon-section\{[^}]*overflow-x:auto[^}]*scrollbar-width:none/s,'ribbon remains swipeable without visible horizontal scrollbar');
+assert.match(toolsCss,/\.editor-ribbon-section::\-webkit-scrollbar\{display:none;width:0;height:0\}/,'ribbon webkit scrollbar must stay hidden');
+
 assert.match(moduleCss,/\.content\.edit-view \.editor-row-module:hover,\.content\.edit-view \.editor-row-module\.is-selected\{border-color:#1ed760/s);
 assert.match(moduleCss,/\.visual-row-handle\{[^}]*flex-direction:column[^}]*gap:7px/s,'wrapped visual rows must expose the same vertical action rail');
 assert.match(moduleCss,/\.row-module-label\{[^}]*width:1\.7em[^}]*white-space:normal[^}]*word-break:keep-all[^}]*writing-mode:horizontal-tb/s,'two-digit row numbers must stay together on one horizontal line');
@@ -67,7 +88,7 @@ assert.match(responsiveCss,/\.catalog-view,\.library-view\{position:relative;pad
 assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width must be capped by the visible viewport');
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey\)/,'score renderer must draw rhythm stems and beams');
 assert.match(renderer,/v3-rhythm-tuplet-number/,'triplet number belongs to the beamed rhythm layer');
-assert.match(renderer,/harmonicTechnique\(note\)/,'harmonic display must distinguish edit and score modes');
+assert.match(renderer,/function displayValueForNote\(note\)[\s\S]*const value = noteDisplayValue\(note\)[\s\S]*isScoreViewActive\(\) \? `<\$\{value\}>` : value/,'harmonic notation must display the entered fret, using angle brackets only in score mode');
 assert.match(renderer,/initialValue: this\.cursorValueAt/,'arrow navigation must preserve existing note values');
 const cursorStart=renderer.lastIndexOf('\n  showCursor({');
 const cursorSource=renderer.slice(cursorStart);
@@ -76,7 +97,9 @@ assert.ok(cursorSource.indexOf('this.cursor.blur()')>=0,'continuous editing must
 assert.ok(cursorSource.indexOf('this.cursor.blur()')<cursorSource.indexOf('const measureNode ='),'continuous editing must resolve the next cell from the live DOM after the previous commit rerenders');
 assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\s\S]*const nextValue = normalizeFret\(input\.value\)[\s\S]*if \(nextValue === originalValue\) return;/,'unchanged keyboard navigation must not rewrite or erase existing notes');
 assert.doesNotMatch(notation,/appendRhythmBracket/,'triplet and 32nd subdivision must not render separate bracket labels');
-assert.match(notation,/staffTopInSystem/,'chord labels must use a dedicated lane above string one');
+assert.match(notation,/function chordLaneY\(/,'chord labels need a dedicated lane above the first string');
+assert.match(notation,/\.v3-string-line\[data-string="0"\]/,'chord label position must anchor to string one rather than overlap the staff');
+assert.match(notation,/kind: 'group',[\s\S]*label: '3'/,'edit mode must restore the circled triplet marker for selecting/deleting the group');
 assert.match(scoreCss,/\.content\.score-view \.score-density-line\{[^}]*gap:0/s,'compact score segments must join without horizontal gaps');
 assert.match(headerCss,/\.preview-badge \{ display:none!important; \}/,'public preview subtitle badge should not be visible');
 console.log('UI layout regression tests passed');
