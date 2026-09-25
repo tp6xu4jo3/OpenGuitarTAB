@@ -59,13 +59,17 @@ function artistInitial(artist) {
   return clean ? [...clean][0].toUpperCase() : '？';
 }
 
-function createNextButton(label, rail) {
-  const button = createElement('button', 'song-browser-next');
+function createRailButton(direction, label, rail) {
+  const button = createElement('button', `song-browser-nav song-browser-nav-${direction}`);
   button.type = 'button';
   button.setAttribute('aria-label', label);
-  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5.5 6.5 6.5L9 18.5"/></svg>';
-  button.addEventListener('click', () => {
-    rail.scrollBy({ left: Math.max(260, rail.clientWidth * 0.82), behavior: 'smooth' });
+  button.innerHTML = direction === 'next'
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5.5 6.5 6.5L9 18.5"/></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5.5-6.5 6.5 6.5 6.5"/></svg>';
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    const distance = Math.max(260, rail.clientWidth * 0.82);
+    rail.scrollBy({ left: direction === 'next' ? distance : -distance, behavior: 'smooth' });
   });
   return button;
 }
@@ -88,32 +92,44 @@ export class SongBrowser {
 
     this.songHeading = createElement('div', 'song-browser-section-heading');
     this.songHeading.appendChild(createElement('h3', '', '曲譜'));
-    this.songShell = createElement('div', 'song-browser-rail-shell song-browser-song-shell');
-    this.container.before(this.songHeading, this.songShell);
-    this.songShell.appendChild(this.container);
-    this.songNext = createNextButton('向右瀏覽更多曲譜', this.container);
-    this.songShell.appendChild(this.songNext);
-
-    this.artistHeading = createElement('div', 'song-browser-section-heading song-browser-artist-heading');
-    this.artistHeading.appendChild(createElement('h3', '', '作者'));
-    this.showAllButton = createElement('button', 'song-browser-show-all', '顯示所有內容');
+    const headingActions = createElement('div', 'song-browser-heading-actions');
+    this.showAllButton = createElement('button', 'song-browser-show-all', '顯示所有曲譜');
     this.showAllButton.type = 'button';
     this.showAllButton.addEventListener('click', () => {
       this.activeArtist = '';
       if (this.searchInput) this.searchInput.value = '';
       this.render();
     });
-    this.artistHeading.appendChild(this.showAllButton);
+    if (this.countElement) headingActions.appendChild(this.countElement);
+    headingActions.appendChild(this.showAllButton);
+    this.songHeading.appendChild(headingActions);
 
+    this.songShell = createElement('div', 'song-browser-rail-shell song-browser-song-shell');
+    this.container.before(this.songHeading, this.songShell);
+    this.songShell.appendChild(this.container);
+    this.songPrev = createRailButton('prev', '向左瀏覽曲譜', this.container);
+    this.songNext = createRailButton('next', '向右瀏覽更多曲譜', this.container);
+    this.songShell.append(this.songPrev, this.songNext);
+
+    this.artistHeading = createElement('div', 'song-browser-section-heading song-browser-artist-heading');
+    this.artistHeading.appendChild(createElement('h3', '', '作者'));
     this.artistRail = createElement('div', 'song-browser-artist-rail');
     this.artistRail.setAttribute('aria-label', '歌手篩選');
     this.artistShell = createElement('div', 'song-browser-rail-shell song-browser-artist-shell');
     this.artistShell.appendChild(this.artistRail);
-    this.artistNext = createNextButton('向右瀏覽更多作者', this.artistRail);
-    this.artistShell.appendChild(this.artistNext);
+    this.artistPrev = createRailButton('prev', '向左瀏覽作者', this.artistRail);
+    this.artistNext = createRailButton('next', '向右瀏覽更多作者', this.artistRail);
+    this.artistShell.append(this.artistPrev, this.artistNext);
     this.songShell.after(this.artistHeading, this.artistShell);
 
+    this.container.addEventListener('scroll', () => this.syncRailControls(), { passive: true });
+    this.artistRail.addEventListener('scroll', () => this.syncRailControls(), { passive: true });
     this.searchInput?.addEventListener('input', () => this.render());
+    if (typeof ResizeObserver === 'function') {
+      this.railResizeObserver = new ResizeObserver(() => this.syncRailControls());
+      this.railResizeObserver.observe(this.container);
+      this.railResizeObserver.observe(this.artistRail);
+    }
   }
 
   setWorks(works = []) {
@@ -259,13 +275,6 @@ export class SongBrowser {
       createElement('h3', '', work.name || '未命名曲譜'),
       createElement('p', 'song-card-artist', work.artist || '未知歌手')
     );
-    const collapse = createElement('button', 'work-card-toggle', '收合');
-    collapse.type = 'button';
-    collapse.addEventListener('click', event => {
-      event.stopPropagation();
-      this.toggleWork(work.workId);
-    });
-    copy.appendChild(collapse);
     summary.append(this.createCover(work, 'work-card-back-art'), copy);
 
     const list = createElement('div', 'work-card-arrangements');
@@ -286,22 +295,29 @@ export class SongBrowser {
     inner.append(this.createFrontFace(work), this.createBackFace(work));
     card.appendChild(inner);
     card.addEventListener('click', event => {
-      if (event.target.closest('button,a,input,select,textarea')) return;
+      if (event.target.closest('button,a,input,select,textarea,[role="menu"]')) return;
       this.toggleWork(work.workId);
     });
     card.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target.closest('button,a,input,select,textarea')) return;
+      if (event.target.closest('button,a,input,select,textarea,[role="menu"]')) return;
       event.preventDefault();
       this.toggleWork(work.workId);
     });
     return card;
   }
 
+  updateRailButtons(rail, prev, next) {
+    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    const hasOverflow = maxScroll > 2;
+    prev.hidden = !hasOverflow || rail.scrollLeft <= 2;
+    next.hidden = !hasOverflow || rail.scrollLeft >= maxScroll - 2;
+  }
+
   syncRailControls() {
     requestAnimationFrame(() => {
-      this.songNext.hidden = this.container.scrollWidth <= this.container.clientWidth + 2;
-      this.artistNext.hidden = this.artistRail.scrollWidth <= this.artistRail.clientWidth + 2;
+      this.updateRailButtons(this.container, this.songPrev, this.songNext);
+      this.updateRailButtons(this.artistRail, this.artistPrev, this.artistNext);
     });
   }
 
