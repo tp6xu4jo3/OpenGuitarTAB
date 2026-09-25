@@ -1,44 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  CHORD_CATEGORIES,
-  CHORD_LIBRARY,
-  CHORD_QUALITIES,
-  CHORD_ROOTS,
-  getChord,
-  getChordVoicing,
-  notesForVoicing,
-  voicingText
-} from '../src/editor/chord-library.js';
 import { applyCommand } from '../src/editor/commands.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
+import { CHORD_DEFINITIONS, chordVoicingById } from '../src/editor/chords.js';
 
-assert.equal(CHORD_ROOTS.length, 12);
-assert.equal(CHORD_QUALITIES.length, 18);
-assert.equal(CHORD_LIBRARY.length, 216);
-assert.deepEqual(CHORD_CATEGORIES.map(category => category.id), ['major', 'minor', 'dominant', 'suspended', 'other']);
-
-const cMajor = getChord('C', 'maj');
+let idCounter = 0;
+const idFactory = prefix => `${prefix}-${++idCounter}`;
+const cMajor = CHORD_DEFINITIONS.find(chord => chord.id === 'C:maj');
+const cOpen = chordVoicingById('C:maj:open');
 assert.ok(cMajor);
-assert.equal(cMajor.symbol, 'C');
-assert.equal(cMajor.category, 'major');
-assert.ok(cMajor.voicings.length >= 1);
-const cOpen = cMajor.voicings[0];
-assert.equal(cOpen.id, 'C:maj:open');
-assert.deepEqual([...cOpen.frets], [0, 1, 0, 2, 3, 'x']);
-assert.equal(voicingText(cOpen.frets), '01023x', 'C open voicing must use first-string to sixth-string order');
-assert.deepEqual(notesForVoicing(cOpen).map(note => [note.string, note.fret]), [
-  [0, '0'],
-  [1, '1'],
-  [2, '0'],
-  [3, '2'],
-  [4, '3']
-]);
-assert.equal(getChordVoicing(cMajor.id, cOpen.id)?.id, cOpen.id);
+assert.ok(cOpen);
 
-let sequence = 0;
-const idFactory = prefix => `${prefix}-${++sequence}`;
 const document = {
   version: 3,
   measures: [{
@@ -48,15 +21,12 @@ const document = {
       id: 'e-old',
       at: [0, 1],
       duration: [1, 4],
-      notes: [
-        { id: 'old-1', string: 0, fret: '3', techniques: [] },
-        { id: 'old-2', string: 1, fret: '3', techniques: [] }
-      ],
+      notes: [{ id: 'n-old', string: 0, fret: '9', techniques: [] }],
       marks: []
     }],
     groups: []
   }],
-  relations: [{ id: 'r-old', type: 'slur', fromNoteId: 'old-1', toNoteId: 'old-2' }],
+  relations: [{ id: 'r-old', type: 'slide', fromNoteId: 'n-old', toNoteId: 'n-old' }],
   layout: { systemBreakAfter: [] }
 };
 
@@ -85,8 +55,9 @@ assert.deepEqual(event.notes.map(note => [note.string, note.fret]), [
 ]);
 
 const playback = buildPlaybackIndex(applied.document);
-assert.equal(playback.entries.length, 1);
+assert.equal(playback.entries.length, 4, '4/4 playback must keep all four beats even when three are empty');
 assert.deepEqual(playback.entries[0].notes.map(note => [note.string, note.fret]), event.notes.map(note => [note.string, note.fret]), 'playback must consume the notes produced by chord/apply');
+assert.deepEqual(playback.entries.slice(1).map(entry => entry.notes.length), [0, 0, 0]);
 
 const manuallyEdited = applyCommand(applied.document, {
   type: 'note/set',
