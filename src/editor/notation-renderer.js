@@ -43,6 +43,16 @@ function centerIn(element, container) {
   };
 }
 
+function markerPointIn(element, container) {
+  const point = centerIn(element, container);
+  if (!element?.classList?.contains('v3-column-target')) return point;
+  const rect = element.getBoundingClientRect();
+  const base = container.getBoundingClientRect();
+  const rawAnchor = Number.parseFloat(element.style.getPropertyValue('--v3-anchor-x'));
+  const anchor = Number.isFinite(rawAnchor) ? Math.max(0, Math.min(100, rawAnchor)) / 100 : 0.5;
+  return { ...point, x: rect.left - base.left + rect.width * anchor };
+}
+
 function visibleMeasureIds(systemElement) {
   const ids = new Set();
   systemElement.querySelectorAll('.v3-grid').forEach(grid => {
@@ -133,13 +143,13 @@ function chordLaneY(node, systemElement) {
   return Math.max(9, rect.top - base.top - 10);
 }
 
-function appendTechniqueMarker(layer, markerOffsets, { node, systemElement, kind, id, label, title }) {
-  if (!node || !id) return;
-  const point = centerIn(node, systemElement);
-  const y = staffBottomInSystem(node, systemElement);
-  const key = `${Math.round(point.x / 4)}:${Math.round(y / 4)}`;
-  const offset = markerOffsets.get(key) || 0;
-  markerOffsets.set(key, offset + 1);
+function appendTechniqueMarker(layer, markerBuckets, { node = null, nodes = null, systemElement, kind, id, label, title }) {
+  const anchors = [...new Set((Array.isArray(nodes) && nodes.length ? nodes : [node]).filter(Boolean))];
+  if (!anchors.length || !id) return;
+  const points = anchors.map(anchor => markerPointIn(anchor, systemElement));
+  const x = (Math.min(...points.map(point => point.x)) + Math.max(...points.map(point => point.x))) / 2;
+  const y = staffBottomInSystem(anchors[0], systemElement);
+  const key = `${Math.round(x / 4)}:${Math.round(y / 4)}`;
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'technique-marker';
@@ -148,9 +158,17 @@ function appendTechniqueMarker(layer, markerOffsets, { node, systemElement, kind
   button.textContent = label;
   button.title = title;
   button.setAttribute('aria-label', `${title}，點選後可按Delete刪除`);
-  button.style.left = `${point.x + offset * 22}px`;
   button.style.top = `${y}px`;
   layer.appendChild(button);
+
+  const bucket = markerBuckets.get(key) || [];
+  bucket.push({ button, x });
+  markerBuckets.set(key, bucket);
+  const centerX = bucket.reduce((sum, entry) => sum + entry.x, 0) / bucket.length;
+  const spacing = 24;
+  bucket.forEach((entry, index) => {
+    entry.button.style.left = `${centerX + (index - (bucket.length - 1) / 2) * spacing}px`;
+  });
 }
 
 function relationMarkerLabel(type) {
@@ -224,7 +242,7 @@ export class NotationRenderer {
     if (!svg) return;
     const markerLayer = ensureMarkerLayer(systemElement);
     markerLayer.replaceChildren();
-    const markerOffsets = new Map();
+    const markerBuckets = new Map();
     const measureSet = new Set(measureIds.map(String));
     const measures = this.document.measures.filter(measure => measureSet.has(String(measure.id)));
 
@@ -252,11 +270,11 @@ export class NotationRenderer {
         for (const mark of event.marks || []) {
           if (mark.type === 'strum') {
             appendStraightSweep(svg, { x: anchor.x - 14, top, bottom, direction: mark.direction === 'up' ? 'up' : 'down', eventId: event.id });
-            appendTechniqueMarker(markerLayer, markerOffsets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? '↑' : '↓', title: mark.direction === 'up' ? '上刷' : '下刷' });
+            appendTechniqueMarker(markerLayer, markerBuckets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? '↑' : '↓', title: mark.direction === 'up' ? '上刷' : '下刷' });
           }
           if (mark.type === 'arpeggio') {
             appendArpeggio(svg, { x: anchor.x - 14, top, bottom, direction: mark.direction === 'up' ? 'up' : 'down', eventId: event.id });
-            appendTechniqueMarker(markerLayer, markerOffsets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? 'A↑' : 'A↓', title: mark.direction === 'up' ? '向上琶音' : '向下琶音' });
+            appendTechniqueMarker(markerLayer, markerBuckets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? 'A↑' : 'A↓', title: mark.direction === 'up' ? '向上琶音' : '向下琶音' });
           }
         }
 
@@ -265,7 +283,7 @@ export class NotationRenderer {
             const harmonic = (note.techniques || []).find(technique => technique.type === 'harmonic');
             if (!harmonic) continue;
             for (const node of noteNodes(systemElement, note.id)) {
-              appendTechniqueMarker(markerLayer, markerOffsets, { node, systemElement, kind: 'technique', id: harmonic.id, label: 'H', title: '泛音' });
+              appendTechniqueMarker(markerLayer, markerBuckets, { node, systemElement, kind: 'technique', id: harmonic.id, label: 'H', title: '泛音' });
             }
           }
         }
@@ -273,16 +291,25 @@ export class NotationRenderer {
 
       if (!isScoreViewActive()) {
         for (const group of measure.groups || []) {
-          if (group?.type !== 'tuplet' || !group?.id) continue;
-          const at = group.slots?.[0] || group.startAt;
-          const node = columnNode(systemElement, measure.id, at);
-          appendTechniqueMarker(markerLayer, markerOffsets, {
-            node,
+          const triplet = group?.type === 'tuplet';
+          const thirtySecond = group?.type === 'subdivision' && group?.subdivision === 'thirty-second';
+          if ((!triplet && !thirtySecond) || !group?.id) continue;
+          const slots = Array.isArray(group.slots) ? group.slots : [];
+          const startAt = slots[0] || group.startAt;
+          const endAt = slots.at(-1) || startAt;
+          const nodes = [
+            columnNode(systemElement, measure.id, startAt),
+            columnNode(systemElement, measure.id, endAt)
+          ].filter(Boolean);
+          appendTechniqueMarker(markerLayer, markerBuckets, {
+            nodes,
             systemElement,
             kind: 'group',
             id: group.id,
-            label: '3',
-            title: group.subdivision === 'sixteenth' ? '十六分三連音' : '三連音'
+            label: triplet ? '3' : '32',
+            title: triplet
+              ? (group.subdivision === 'sixteenth' ? '十六分三連音' : '三連音')
+              : '三十二分音符'
           });
         }
       }
@@ -294,8 +321,11 @@ export class NotationRenderer {
       if (!sourceLocation || !measureSet.has(String(sourceLocation.measureId))) continue;
       const sourceNode = systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(relation.fromNoteId)}"]`);
       if (!sourceNode || isScoreViewActive()) continue;
-      appendTechniqueMarker(markerLayer, markerOffsets, {
-        node: sourceNode,
+      const targetNode = relation.toNoteId
+        ? systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(relation.toNoteId)}"]`)
+        : null;
+      appendTechniqueMarker(markerLayer, markerBuckets, {
+        nodes: [sourceNode, targetNode].filter(Boolean),
         systemElement,
         kind: 'relation',
         id: relation.id,

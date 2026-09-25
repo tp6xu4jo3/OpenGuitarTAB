@@ -6,12 +6,12 @@
 .v3-string-line{position:absolute;left:0;right:0;height:1px;background:#c6c6c6;transform:translateY(-.5px);pointer-events:none}
 .v3-beat-guide{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.075);pointer-events:none}
 .v3-playback-beat{position:absolute;top:0;bottom:0;z-index:3;border-radius:9px;background:rgba(30,215,96,.16);box-shadow:inset 0 0 0 1px rgba(30,215,96,.18);pointer-events:none}
-.v3-column-target{--v3-dot-radius:3px;--v3-dot-fill:#fff;--v3-dot-border:#d1d1d1;position:absolute;top:0;bottom:0;z-index:4;cursor:text;background:transparent;border:0}
-.v3-column-target[data-at$="/1"]{--v3-dot-radius:6px;--v3-dot-fill:#e8e8e8;--v3-dot-border:#b8b8b8}
-.v3-column-target[data-at$="/2"]{--v3-dot-radius:6px;--v3-dot-fill:#fff;--v3-dot-border:#c7c7c7}
-.v3-column-target[data-at$="/4"]{--v3-dot-radius:3px;--v3-dot-fill:#fff;--v3-dot-border:#d1d1d1}
-.v3-column-target::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:1;background:radial-gradient(circle at var(--v3-anchor-x,50%) 8.333%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px)),radial-gradient(circle at var(--v3-anchor-x,50%) 25%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px)),radial-gradient(circle at var(--v3-anchor-x,50%) 41.667%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px)),radial-gradient(circle at var(--v3-anchor-x,50%) 58.333%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px)),radial-gradient(circle at var(--v3-anchor-x,50%) 75%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px)),radial-gradient(circle at var(--v3-anchor-x,50%) 91.667%,var(--v3-dot-fill) 0 var(--v3-dot-radius),var(--v3-dot-border) calc(var(--v3-dot-radius) + .5px) calc(var(--v3-dot-radius) + 1px),transparent calc(var(--v3-dot-radius) + 1.5px));transition:filter .12s ease}
-.v3-column-target:hover::before{filter:drop-shadow(0 0 2px rgba(30,215,96,.5))}
+.v3-column-target{--v3-dot-size:8px;--v3-dot-fill:#fff;--v3-dot-border:#d1d1d1;position:absolute;top:0;bottom:0;z-index:4;cursor:text;background:transparent;border:0}
+.v3-column-target[data-at$="/1"]{--v3-dot-size:14px;--v3-dot-fill:#e8e8e8;--v3-dot-border:#b8b8b8}
+.v3-column-target[data-at$="/2"]{--v3-dot-size:14px;--v3-dot-fill:#fff;--v3-dot-border:#c7c7c7}
+.v3-column-target[data-at$="/4"]{--v3-dot-size:8px;--v3-dot-fill:#fff;--v3-dot-border:#d1d1d1}
+.v3-slot-dot{position:absolute;left:var(--v3-anchor-x,50%);box-sizing:border-box;width:var(--v3-dot-size);height:var(--v3-dot-size);border:1px solid var(--v3-dot-border);border-radius:50%;background:var(--v3-dot-fill);transform:translate(-50%,-50%);pointer-events:none;transition:filter .12s ease}
+.v3-column-target:hover .v3-slot-dot{filter:drop-shadow(0 0 2px rgba(30,215,96,.5))}
 .v3-column-target::after{content:'';position:absolute;left:var(--v3-anchor-x,50%);top:4px;bottom:4px;width:1px;background:transparent;transform:translateX(-.5px);transition:background .1s ease,width .1s ease}
 .content.edit-view .v3-column-target:hover::after{background:rgba(30,215,96,.22)}
 .v3-column-target.tool-range-source::after{background:#1ed760}
@@ -24,7 +24,7 @@
 .content.score-view .v3-grid,.content.score-view .v3-measure{min-height:204px;height:204px}
 .content.score-view .v3-staff{top:32px;bottom:auto;height:112px;min-height:112px}
 .content.score-view .v3-column-target{cursor:default;pointer-events:none}
-.content.score-view .v3-column-target::before{display:none}
+.content.score-view .v3-slot-dot{display:none}
 .content.score-view .v3-column-target:hover::after{background:transparent}
 .content.score-view .v3-note{cursor:default;font-size:var(--score-note-font-size,16px);background:transparent;color:#050505}
 .v3-rhythm-layer{--v3-rhythm-stroke:2px;position:absolute;left:0;right:0;bottom:8px;height:42px;z-index:9;overflow:visible;pointer-events:none;color:#111}
@@ -32,11 +32,12 @@
 .v3-rhythm-beam,.v3-rhythm-flag{position:absolute;box-sizing:border-box;height:var(--v3-rhythm-stroke);border-radius:0;background:currentColor;transform-origin:left center}
 .v3-rhythm-beam-1{top:28px}.v3-rhythm-beam-2{top:21px}.v3-rhythm-beam-3{top:14px}
 .v3-rhythm-flag{width:9px;transform:rotate(5deg)}
-.v3-rhythm-tuplet-bracket{position:absolute;top:-10px;display:grid;grid-template-columns:minmax(6px,1fr) auto minmax(6px,1fr);align-items:start;gap:3px;min-width:28px;height:12px;transform:translateX(-1px)}
+.v3-rhythm-tuplet-bracket{position:absolute;top:-18px;display:grid;grid-template-columns:minmax(6px,1fr) auto minmax(6px,1fr);align-items:start;gap:4px;min-width:28px;height:12px;transform:translateX(-1px)}
 .v3-rhythm-tuplet-segment{position:relative;height:7px;border-top:var(--v3-rhythm-stroke) solid currentColor}
 .v3-rhythm-tuplet-segment-left::before,.v3-rhythm-tuplet-segment-right::after{content:'';position:absolute;top:calc(-1 * var(--v3-rhythm-stroke));height:7px;border-left:var(--v3-rhythm-stroke) solid currentColor}
 .v3-rhythm-tuplet-segment-left::before{left:0}.v3-rhythm-tuplet-segment-right::after{right:0}
 .v3-rhythm-tuplet-number{min-width:13px;color:#111;font:700 11px/12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center}
+.v3-rhythm-tuplet-number-only{position:absolute;top:-18px;transform:translateX(-50%);line-height:12px}
 .score-density-line .v3-system{min-width:0;flex:var(--score-density-weight,1) 1 0}
 .score-density-line .v3-grid{height:204px}
 @media(max-width:900px){.v3-grid{min-height:170px}.v3-staff{inset-block:30px}.v3-note,.v3-note-editor{font-size:16px}.content.score-view .v3-grid,.content.score-view .v3-measure{min-height:204px;height:204px}.content.score-view .v3-staff{top:32px;bottom:auto;height:112px;min-height:112px}}

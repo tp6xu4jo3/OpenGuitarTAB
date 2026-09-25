@@ -47,8 +47,13 @@ function normalizeFret(value) {
   return text.replace(/\D/g, '').slice(0, 2);
 }
 
+function halfFraction(value) {
+  const [numerator, denominator] = normalizeFraction(value || BASE_GRID_STEP);
+  return normalizeFraction([numerator, denominator * 2]);
+}
+
 function visualPercentageForTime(at, duration, measure) {
-  return percentageForTime(addFractions(at, duration || BASE_GRID_STEP), measure);
+  return percentageForTime(addFractions(at, halfFraction(duration || BASE_GRID_STEP)), measure);
 }
 
 function visualPercentageForAt(measure, at) {
@@ -286,6 +291,7 @@ export class SparseScoreRenderer {
       const width = Math.max(0.2, right - left);
       const anchor = Math.max(0, Math.min(100, (current - left) / width * 100));
       const event = eventAt(measure, time.at);
+      const occupiedStrings = new Set((event?.notes || []).map(note => Number(note.string)));
       const target = div('v3-column-target');
       target.dataset.measureId = String(measure.id);
       target.dataset.at = fractionKey(time.at);
@@ -294,6 +300,13 @@ export class SparseScoreRenderer {
       target.style.left = `${left}%`;
       target.style.width = `${width}%`;
       target.style.setProperty('--v3-anchor-x', `${anchor}%`);
+      for (let string = 0; string < this.stringCount; string++) {
+        if (occupiedStrings.has(string)) continue;
+        const dot = div('v3-slot-dot');
+        dot.dataset.string = String(string);
+        dot.style.top = `${((string + 0.5) / this.stringCount) * 100}%`;
+        target.appendChild(dot);
+      }
       target.setAttribute('aria-label', `時間位置 ${target.dataset.at}`);
       staff.appendChild(target);
     });
@@ -337,11 +350,14 @@ export class SparseScoreRenderer {
       .map(event => {
         const visualTime = visualTimeByKey.get(fractionKey(event.at));
         const group = explicitRhythmGroup(measure, event);
+        const groupBeamCount = Number(group?.beamCount);
         return {
           event,
           x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
           at: fractionToNumber(event.at),
-          beams: Math.max(rhythmBeamCount(event.duration || BASE_GRID_STEP), Number(group?.beamCount) || 0),
+          beams: Number.isFinite(groupBeamCount)
+            ? Math.max(0, Math.trunc(groupBeamCount))
+            : rhythmBeamCount(event.duration || BASE_GRID_STEP),
           group
         };
       });
@@ -390,6 +406,16 @@ export class SparseScoreRenderer {
       };
       const left = slotX(slots[0]);
       const right = slotX(slots.at(-1));
+      const groupPoints = points.filter(point => String(point.group?.id || '') === String(group.id || ''));
+      const fullyBeamed = groupPoints.length === slots.length && groupPoints.length > 1 && groupPoints.every(point => point.beams > 0);
+      if (fullyBeamed) {
+        const label = div('v3-rhythm-tuplet-number v3-rhythm-tuplet-number-only');
+        label.textContent = '3';
+        label.style.left = `${(left + right) / 2}%`;
+        label.setAttribute('aria-label', '三連音');
+        layer.appendChild(label);
+        continue;
+      }
       const bracket = div('v3-rhythm-tuplet-bracket');
       bracket.style.left = `${left}%`;
       bracket.style.width = `${Math.max(1, right - left)}%`;
@@ -538,7 +564,7 @@ export class SparseScoreRenderer {
     return {
       measureId,
       at,
-      duration,
+      duration: parseFraction(this.root.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(String(measureId))}"][data-at="${escapeSelector(key)}"]`)?.dataset.duration) || BASE_GRID_STEP,
       string: nextString,
       initialValue: this.cursorValueAt(measureId, at, nextString)
     };
@@ -581,10 +607,12 @@ export class SparseScoreRenderer {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const direction = event.key.replace('Arrow', '').toLowerCase();
-      const next = this.navigateCursor({ measureId, string, at, duration, direction });
+      const navigation = { measureId: String(measureId), string: Number(string), at: cloneValue(at), direction };
       commit();
       this.hideCursor();
-      if (next) requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const next = this.navigateCursor(navigation);
+        if (!next) return;
         const nextTarget = this.root?.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(next.measureId)}"][data-at="${escapeSelector(fractionKey(next.at))}"]`);
         if (nextTarget) window.jumpToInput?.(nextTarget, false);
         this.showCursor(next);
