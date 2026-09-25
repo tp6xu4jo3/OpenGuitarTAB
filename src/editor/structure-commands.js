@@ -75,19 +75,35 @@ export function insertSystem(inputDocument, index, { measureCount = 4, idFactory
   };
 }
 
+export function deleteMeasures(inputDocument, measureIds) {
+  const document = normalizeDocumentV3(inputDocument);
+  const requested = new Set((measureIds || []).map(String).filter(Boolean));
+  if (!requested.size) return { document, changeSet: createChangeSet() };
+  const systems = normalizeSystems(document);
+  const allMeasures = systems.flat();
+  const removedMeasures = allMeasures.filter(measure => requested.has(String(measure.id)));
+  if (!removedMeasures.length || removedMeasures.length >= allMeasures.length) {
+    return { document, changeSet: createChangeSet() };
+  }
+  const keptSystems = systems
+    .map(system => system.filter(measure => !requested.has(String(measure.id))))
+    .filter(system => system.length);
+  const pruned = pruneRelations(document.relations, notesInMeasures(removedMeasures));
+  const next = flattenSystems(document, keptSystems, { relations: pruned.relations });
+  const firstRemovedIndex = Math.max(0, document.measures.findIndex(measure => requested.has(String(measure.id))));
+  const layoutFrom = next.measures[Math.max(0, Math.min(next.measures.length - 1, firstRemovedIndex - 1))]?.id || next.measures[0]?.id || null;
+  return {
+    document: next,
+    changeSet: structureChange(removedMeasures.map(measure => measure.id), layoutFrom, { relations: pruned.removed })
+  };
+}
+
 export function deleteSystem(inputDocument, index) {
   const document = normalizeDocumentV3(inputDocument);
   const systems = normalizeSystems(document);
   if (systems.length <= 1) return { document, changeSet: createChangeSet() };
   const safe = Math.max(0, Math.min(systems.length - 1, Math.trunc(Number(index) || 0)));
-  const removedMeasures = systems.splice(safe, 1)[0] || [];
-  const pruned = pruneRelations(document.relations, notesInMeasures(removedMeasures));
-  const next = flattenSystems(document, systems, { relations: pruned.relations });
-  const layoutFrom = systems[Math.max(0, safe - 1)]?.[0]?.id || systems[0]?.[0]?.id || null;
-  return {
-    document: next,
-    changeSet: structureChange(removedMeasures.map(measure => measure.id), layoutFrom, { relations: pruned.removed })
-  };
+  return deleteMeasures(document, (systems[safe] || []).map(measure => measure.id));
 }
 
 export function moveSystem(inputDocument, fromIndex, insertionIndex) {

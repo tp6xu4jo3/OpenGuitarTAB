@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDocumentV3 } from '../src/editor/model.js';
 import { buildAdaptiveLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
-import { deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
+import { deleteMeasures, deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
 
 function plainMeasure(id,{mark=false,harmonic=false}={}){
   return {id,timeSignature:{numerator:4,denominator:4},groups:[],events:[{id:`${id}-e`,at:[0,1],duration:[1,4],marks:mark?[{id:`${id}-mk`,type:'strum',direction:'up'}]:[],notes:[{id:`${id}-n`,string:0,fret:'5',techniques:harmonic?[{id:`${id}-h`,type:'harmonic',touchFret:17}]:[]}]}]};
@@ -48,6 +48,15 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
   const deleted=deleteSystem(inserted,1).document;
   assert.equal(buildSystems(deleted).length,2,'inserted row must also be deletable');
 }
+{
+  const deleted=deleteMeasures(twoRows(),['m3','m4']).document;
+  assert.deepEqual(buildSystems(deleted).map(row=>row.map(m=>m.id)),[['m1','m2'],['m5','m6','m7','m8']], 'wrapped visual-row deletion must remove only the visible measure segment');
+}
+{
+  const single=createDocumentV3({measures:[plainMeasure('m1'),plainMeasure('m2')]});
+  const unchanged=deleteMeasures(single,['m1','m2']).document;
+  assert.deepEqual(unchanged.measures.map(m=>m.id),['m1','m2'],'deleting the final remaining row must keep at least one row');
+}
 
 const rendererSource=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
 const editorCss=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
@@ -61,6 +70,7 @@ assert.match(editorCss,/data-at\$="\/4"[^}]*--v3-dot-radius:3px[^}]*--v3-dot-fil
 assert.match(chordDragSource,/let activeDragPayload = null/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex, \{ overflowDirection: 'backward' \}\)/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex \+ 1, \{ overflowDirection: 'forward' \}\)/);
+assert.match(structureSource,/deleteMeasures\(documentModel, target\.measureIds\)/);
 assert.doesNotMatch(structureSource,/每列最多4個小節/);
 assert.match(rowCss,/\.row-insert-zone\{[^}]*z-index:40/s);
 console.log('editor grid and structure regression tests passed');
