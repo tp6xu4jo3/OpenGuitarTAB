@@ -6,7 +6,8 @@
 .editor-ribbon-tab.is-active{border-color:#0d7b35;background:#169f48;color:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
 .editor-ribbon-panel{box-sizing:border-box;width:max-content;max-width:100%;min-width:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 8px 22px rgba(0,0,0,.05);overflow:hidden}
 .editor-ribbon-panel[hidden]{display:none}
-.editor-ribbon-section{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;min-width:0;padding:10px 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.editor-ribbon-section{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;min-width:0;padding:10px 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.editor-ribbon-section::-webkit-scrollbar{display:none;width:0;height:0}
 .editor-ribbon-section[hidden]{display:none}
 .editor-continuous-button{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;min-height:36px;padding:6px 12px;border:1px solid #16b94c;border-radius:9px;background:#1ed760;color:#061309;cursor:pointer;font:inherit;font-size:13px;font-weight:900;white-space:nowrap}
 .editor-continuous-button:hover,.editor-continuous-button:focus-visible{background:#3be477;outline:none}

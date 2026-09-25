@@ -46,9 +46,10 @@ const empty = { id:'m-empty', timeSignature:{numerator:4,denominator:4}, events:
   doc = applyCommand(doc,{type:'rhythm/32nd/apply',measureId:'m-empty',startAt:[1,1]},{idFactory}).document;
   doc = applyCommand(doc,{type:'note/set',measureId:'m-empty',at:[9,8],duration:[1,8],string:0,fret:'3'},{idFactory}).document;
   const playback = buildPlaybackIndex(doc);
-  const event = playback.entries.flatMap(entry => entry.events).find(item => fractionKey(item.at)==='9/8');
-  assert.ok(event,'32nd midpoint must be playable after filling it');
-  assert.equal(event.offsetBeats,1/8,'32nd midpoint must retain its exact fractional timing inside the beat');
+  const entry = playback.entries.find(item => fractionKey(item.at)==='9/8');
+  assert.ok(entry,'32nd midpoint must have its own playback column');
+  assert.equal(entry.durationBeats,1/8,'32nd midpoint playback column must keep its exact fractional duration');
+  assert.equal(entry.events[0]?.offsetBeats,0,'event timing is relative to its exact playback column');
 }
 
 {

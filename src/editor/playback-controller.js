@@ -87,19 +87,25 @@ function entryColumn(entry) {
 function highlightEntry(entry) {
   clearPlayhead();
   if (!entry) return;
+  const column = entryColumn(entry);
   const measureNode = measureNodeForEntry(entry);
-  const staff = measureNode?.querySelector('.v3-staff');
+  const staff = column?.closest('.v3-staff') || measureNode?.querySelector('.v3-staff');
   if (!staff) return;
-  const duration = Math.max(0.001, Number(entry.measureDurationBeats) || 1);
-  const left = clamp(Number(entry.atBeats) || 0, 0, duration) / duration * 100;
-  const width = clamp(Number(entry.durationBeats) || 1, 0, duration) / duration * 100;
   const bar = document.createElement('div');
   bar.className = 'v3-playback-beat';
-  bar.style.left = `${left}%`;
-  bar.style.width = `${width}%`;
+  if (column) {
+    bar.style.left = column.style.left || '0%';
+    bar.style.width = column.style.width || '0%';
+  } else {
+    const duration = Math.max(0.001, Number(entry.measureDurationBeats) || 1);
+    const left = clamp(Number(entry.atBeats) || 0, 0, duration) / duration * 100;
+    const width = clamp(Number(entry.durationBeats) || 0.25, 0, duration) / duration * 100;
+    bar.style.left = `${left}%`;
+    bar.style.width = `${width}%`;
+  }
   staff.appendChild(bar);
   state.beatBar = bar;
-  followPlaybackLine(measureNode.closest('.tab-system') || measureNode, `beat:${entry.measureId}:${entry.atBeats}`);
+  followPlaybackLine(measureNode?.closest('.tab-system') || measureNode, `slot:${entry.measureId}:${entry.atBeats}`);
 }
 
 function entryForIndex(index) {
@@ -174,15 +180,16 @@ function jumpToTarget(target, highlight = true) {
   const targetBeat = fractionNumber(target.dataset?.at);
   if (!measureId || targetBeat == null) return;
   const playback = ensureIndex();
-  const entry = playback.entries.find(item => {
+  const exact = playback.entries.find(item => String(item.measureId) === measureId && Math.abs((Number(item.atBeats) || 0) - targetBeat) < 1e-9);
+  const entry = exact || playback.entries.find(item => {
     if (String(item.measureId) !== measureId) return false;
     const start = Number(item.atBeats) || 0;
-    const end = start + Math.max(0.001, Number(item.durationBeats) || 1);
+    const end = start + Math.max(0.001, Number(item.durationBeats) || 0.25);
     return targetBeat >= start - 1e-9 && targetBeat < end - 1e-9;
   });
   if (!entry) return;
   setProgressIndex(entry.index, true, highlight);
-  state.startOffsetBeats = clamp(targetBeat - entry.atBeats, 0, Math.max(0, entry.durationBeats - 0.001));
+  state.startOffsetBeats = exact ? 0 : clamp(targetBeat - entry.atBeats, 0, Math.max(0, entry.durationBeats - 0.001));
 }
 
 function updatePlayButton(playing) {
@@ -251,7 +258,7 @@ async function startPlayback() {
     }
     const fromOffset = index === firstIndex ? firstOffset : 0;
     playBeat(entry, beatMs, fromOffset);
-    const remaining = Math.max(0.001, (Number(entry.durationBeats) || 1) - fromOffset);
+    const remaining = Math.max(0.001, (Number(entry.durationBeats) || 0.25) - fromOffset);
     state.timer = window.setTimeout(() => {
       if (index + 1 >= playback.entries.length) stopPlayback(true, false);
       else tick(index + 1);

@@ -1,4 +1,4 @@
-import { indexDocument } from './model.js';
+import { fractionKey, indexDocument } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 import { isScoreViewActive } from './view-state.js';
 
@@ -21,6 +21,11 @@ function noteNodes(root, noteId) {
 
 function eventNodes(root, eventId) {
   return [...root.querySelectorAll(`.v3-event[data-event-id="${escapeSelector(eventId)}"]`)];
+}
+
+function columnNode(root, measureId, at) {
+  if (!measureId || !Array.isArray(at)) return null;
+  return root.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(measureId)}"][data-at="${escapeSelector(fractionKey(at))}"]`);
 }
 
 function eventNoteNodes(root, event) {
@@ -115,12 +120,17 @@ function staffBottomInSystem(node, systemElement) {
   return Math.min(base.height - 8, rect.bottom - base.top + 18);
 }
 
-function staffTopInSystem(node, systemElement) {
+function chordLaneY(node, systemElement) {
   const staff = node?.closest?.('.v3-staff');
   const base = systemElement.getBoundingClientRect();
-  if (!staff) return 16;
+  const firstString = staff?.querySelector?.('.v3-string-line[data-string="0"]');
+  if (firstString) {
+    const rect = firstString.getBoundingClientRect();
+    return Math.max(9, rect.top - base.top - 16);
+  }
+  if (!staff) return 12;
   const rect = staff.getBoundingClientRect();
-  return Math.max(13, rect.top - base.top - 12);
+  return Math.max(9, rect.top - base.top - 10);
 }
 
 function appendTechniqueMarker(layer, markerOffsets, { node, systemElement, kind, id, label, title }) {
@@ -232,7 +242,7 @@ export class NotationRenderer {
         if (event.chord?.symbol) {
           appendText(svg, {
             x: anchor.x,
-            y: staffTopInSystem(anchorNode, systemElement),
+            y: chordLaneY(anchorNode, systemElement),
             text: String(event.chord.symbol),
             className: 'notation-chord-symbol',
             eventId: event.id
@@ -258,6 +268,22 @@ export class NotationRenderer {
               appendTechniqueMarker(markerLayer, markerOffsets, { node, systemElement, kind: 'technique', id: harmonic.id, label: 'H', title: '泛音' });
             }
           }
+        }
+      }
+
+      if (!isScoreViewActive()) {
+        for (const group of measure.groups || []) {
+          if (group?.type !== 'tuplet' || !group?.id) continue;
+          const at = group.slots?.[0] || group.startAt;
+          const node = columnNode(systemElement, measure.id, at);
+          appendTechniqueMarker(markerLayer, markerOffsets, {
+            node,
+            systemElement,
+            kind: 'group',
+            id: group.id,
+            label: '3',
+            title: group.subdivision === 'sixteenth' ? '十六分三連音' : '三連音'
+          });
         }
       }
     }

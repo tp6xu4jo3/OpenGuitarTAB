@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createDocumentV3, fractionKey } from '../src/editor/model.js';
 import { ensureSongDocumentV3 } from '../src/editor/migrate-v2.js';
-import { editableTimesForMeasure } from '../src/editor/renderer.js';
+import { editableTimesForMeasure } from '../src/editor/rhythm-grid.js';
 
 {
   const measure = {

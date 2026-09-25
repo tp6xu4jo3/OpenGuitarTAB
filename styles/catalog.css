@@ -26,11 +26,8 @@
 .song-browser-nav:hover,.song-browser-nav:focus-visible{background:#3be477;transform:translateY(-50%) scale(1.05);outline:none}
 .song-browser-nav[hidden]{display:none!important}
 
-.song-browser-artist-rail,.song-browser-rail{scrollbar-width:thin;scrollbar-color:#6e6e6e #202020}
-.song-browser-artist-rail::-webkit-scrollbar,.song-browser-rail::-webkit-scrollbar{height:11px}
-.song-browser-artist-rail::-webkit-scrollbar-track,.song-browser-rail::-webkit-scrollbar-track{background:#202020;border-radius:999px}
-.song-browser-artist-rail::-webkit-scrollbar-thumb,.song-browser-rail::-webkit-scrollbar-thumb{border:2px solid #202020;border-radius:999px;background:#6e6e6e}
-.song-browser-artist-rail::-webkit-scrollbar-thumb:hover,.song-browser-rail::-webkit-scrollbar-thumb:hover{background:#8b8b8b}
+.song-browser-artist-rail,.song-browser-rail{scrollbar-width:none}
+.song-browser-artist-rail::-webkit-scrollbar,.song-browser-rail::-webkit-scrollbar{display:none;width:0;height:0}
 
 .song-browser-artist-rail{display:grid;grid-template-rows:1fr;grid-auto-flow:column;grid-auto-columns:168px;gap:18px;overflow-x:auto;overflow-y:hidden;padding:4px 4px 18px;scroll-snap-type:x proximity}
 .artist-filter-button{display:grid;justify-items:center;gap:9px;padding:0;border:0;background:transparent;color:#b3b3b3;cursor:pointer;scroll-snap-align:start}

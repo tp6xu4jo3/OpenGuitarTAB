@@ -26,6 +26,12 @@ function divisionSlots(startAt, duration, count) {
   return Array.from({ length: count }, (_, index) => addFractions(startAt, multiplyFraction(duration, index)));
 }
 
+function measureDurationFraction(measure) {
+  const numerator = Math.max(1, Math.trunc(Number(measure?.timeSignature?.numerator) || 4));
+  const denominator = Math.max(1, Math.trunc(Number(measure?.timeSignature?.denominator) || 4));
+  return normalizeFraction([numerator * 4, denominator]);
+}
+
 export function inHalfOpenRange(at, startAt, endExclusive) {
   return compareFractions(at, startAt) >= 0 && compareFractions(at, endExclusive) < 0;
 }
@@ -214,6 +220,26 @@ export function isTimeReplacedByFractionalGrid(measure, at) {
     if (event?.rhythmAnchor && compareFractions(event.at, at) === 0) return true;
   }
   return false;
+}
+
+export function editableTimesForMeasure(measure, { baseStep = SIXTEENTH } = {}) {
+  const step = normalizeFraction(baseStep, SIXTEENTH);
+  const end = measureDurationFraction(measure);
+  const result = new Map();
+  const add = (at, duration = step) => {
+    if (!Array.isArray(at) || compareFractions(at, [0, 1]) < 0 || compareFractions(at, end) >= 0) return;
+    const normalizedAt = normalizeFraction(at);
+    const key = fractionKey(normalizedAt);
+    if (!result.has(key)) result.set(key, { at: normalizedAt, duration: normalizeFraction(duration || step, step) });
+  };
+
+  for (let at = [0, 1]; compareFractions(at, end) < 0; at = addFractions(at, step)) {
+    if (!isTimeReplacedByFractionalGrid(measure, at)) add(at, step);
+  }
+  for (const time of fractionalGridTimes(measure)) add(time.at, time.duration || step);
+  for (const event of measure?.events || []) add(event.at, event.duration || step);
+
+  return [...result.values()].sort((left, right) => compareFractions(left.at, right.at));
 }
 
 export function rhythmRangeFitsMeasure(measure, range) {
