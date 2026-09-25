@@ -18,7 +18,7 @@ const notation=await readFile(new URL('../src/editor/notation-renderer.js',impor
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
 
 assert.equal(artistProfileFor('周杰倫')?.image,'https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg');
-assert.doesNotMatch(browser,/installHorizontalWheel|preventDefault\(\).*scrollLeft/s,'rails must not hijack vertical wheel scrolling');
+assert.doesNotMatch(browser,/installHorizontalWheel|addEventListener\(['"]wheel['"]/,'rails must not hijack vertical wheel scrolling');
 assert.match(browser,/work-card-inner/);
 assert.match(browser,/work-card-front/);
 assert.match(browser,/work-card-back/);
