@@ -48,7 +48,7 @@ dispatch({type:'note/set',measureId:'m-regression-2',at:[9,8],duration:[1,8],str
   const playback=buildPlaybackIndex(documentModel);
   const harmonicEntry=playback.entries.find(entry=>entry.eventId==='e-chord');
   assert.equal(harmonicEntry.notes.find(note=>note.id==='n-harmonic').fret,'17');
-  assert.ok(playback.entries.some(entry=>fractionKey(entry.at)==='9/8'));
+  assert.ok(playback.entries.flatMap(entry=>entry.events).some(event=>fractionKey(event.at)==='9/8'));
 }
 
 const song={id:'song-regression',name:'Regression',tempo:120,capo:0,document:documentModel};
