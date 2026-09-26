@@ -60,12 +60,12 @@ assert.match(editorCss,/\.content\.score-view \.v3-staff\{[^}]*top:32px[^}]*bott
 assert.match(scoreCss,/\.content\.score-view\.score-density-compact\{--rhythm-height:42px;--system-height:204px\}/,'compact mode must keep the same score-system height instead of compressing the staff');
 assert.match(editorCss,/\.score-density-line \.v3-grid\{height:204px\}/,'compact score segments must use the same fixed system height');
 assert.match(editorCss,/\.v3-playback-beat\{[^}]*border-radius:9px[^}]*background:rgba\(30,215,96,\.16\)/s,'playback cursor must be a rounded light-green column bar');
-assert.match(editorCss,/\.v3-rhythm-layer\{--v3-rhythm-stroke:2px/s,'the rhythm layer must define one shared stroke weight');
-assert.match(editorCss,/\.v3-rhythm-stem\{[^}]*width:var\(--v3-rhythm-stroke\)/s,'rhythm stems must use the shared stroke weight');
-assert.match(editorCss,/\.v3-rhythm-beam,\.v3-rhythm-flag\{[^}]*height:var\(--v3-rhythm-stroke\)/s,'rhythm beams and flags must use the shared stroke weight');
-assert.match(editorCss,/\.v3-rhythm-beam-1\{top:28px\}\.v3-rhythm-beam-2\{top:21px\}\.v3-rhythm-beam-3\{top:14px\}/,'eighth, sixteenth and thirty-second notes need one, two and three beam levels');
+assert.match(editorCss,/\.v3-rhythm-layer\{--v3-rhythm-stroke:2px;--v3-rhythm-beam-thickness:5px/s,'the rhythm layer must distinguish stem stroke from heavier beam thickness');
+assert.match(editorCss,/\.v3-rhythm-stem\{[^}]*width:var\(--v3-rhythm-stroke\)/s,'rhythm stems must use the stem stroke weight');
+assert.match(editorCss,/\.v3-rhythm-beam,\.v3-rhythm-flag\{[^}]*height:var\(--v3-rhythm-beam-thickness\)/s,'rhythm beams and beamlets must use the heavier beam thickness');
+assert.match(editorCss,/\.v3-rhythm-beam-1\{top:25px\}\.v3-rhythm-beam-2\{top:16px\}\.v3-rhythm-beam-3\{top:7px\}/,'eighth, sixteenth and thirty-second notes need one, two and three separated beam levels');
 assert.match(editorCss,/\.v3-rhythm-tuplet-bracket\{[^}]*grid-template-columns:minmax\(6px,1fr\) auto minmax\(6px,1fr\)/s,'score triplets need a real split bracket around the number');
-assert.match(editorCss,/\.v3-rhythm-tuplet-segment\{[^}]*border-top:var\(--v3-rhythm-stroke\) solid currentColor/s,'triplet brackets must use the same rhythm stroke weight');
+assert.match(editorCss,/\.v3-rhythm-tuplet-segment\{[^}]*border-top:var\(--v3-rhythm-stroke\) solid currentColor/s,'triplet brackets must use the stem stroke weight');
 assert.match(editorScrollCss,/\.editor-view \.sheet::\-webkit-scrollbar:horizontal\{height:0\}/,'editor horizontal scrollbar must be visually removed');
 assert.match(toolsCss,/\.editor-ribbon-section\{[^}]*overflow-x:auto[^}]*scrollbar-width:none/s,'ribbon remains swipeable without visible horizontal scrollbar');
 assert.match(toolsCss,/\.editor-ribbon-section::\-webkit-scrollbar\{display:none;width:0;height:0\}/,'ribbon webkit scrollbar must stay hidden');
