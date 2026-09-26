@@ -25,11 +25,12 @@
 .song-menu-action { width: 100%; display: block; text-align: left; border-radius: 8px; padding: 9px 10px; background: transparent; color: #fff; font-size: 14px; }
 .song-menu-action:hover { background: #333; }
 .song-menu-action.danger { color: #ffb4b4; }
-.brand-row { width:100%; display:flex; align-items:center; justify-content:center; gap:11px; padding:4px 0 12px; }
-.brand-mark { width:46px; height:42px; flex:0 0 46px; display:block; overflow:hidden; border-radius:10px; background:transparent; }
-.brand-mark img { width:46px; height:46px; max-width:none; display:block; object-fit:contain; object-position:center top; }
-.brand-name { font-size: 17px; font-weight: 900; }
-.brand-subtitle { margin-top: 2px; color: #8f8f8f; font-size: 11px; }
+.brand-row { width:100%; display:flex; align-items:center; justify-content:flex-start; gap:0; padding:4px 0 12px; }
+.brand-mark { width:54px; height:48px; flex:0 0 54px; display:block; overflow:hidden; border-radius:12px; background:#151515; }
+.brand-mark img { width:54px; height:54px; max-width:none; display:block; object-fit:contain; object-position:center top; }
+.brand-copy { min-width:0; margin-left:auto; }
+.brand-name { font-size: 20px; line-height:1.05; font-weight: 900; white-space:nowrap; }
+.brand-subtitle { margin-top: 3px; color: #8f8f8f; font-size: 12px; white-space:nowrap; }
 .primary-nav { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.09); }
 .nav-button { min-height:42px; display:grid; grid-template-columns:22px minmax(0,1fr); align-items:center; column-gap:10px; border:0; border-radius:8px; padding:0 12px; background:transparent; color:#b3b3b3; cursor:pointer; font-weight:750; text-align:left; }
 .nav-button:hover,.nav-button.active { background:#252525; color:#fff; }
