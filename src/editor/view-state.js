@@ -39,41 +39,38 @@ export function isEditingBlocked() {
 }
 
 function ensureScoreDensityControl() {
-  const toggle = document.getElementById('rhythmToggleButton');
-  if (!toggle) return null;
+  const scoreToggle = document.getElementById('rhythmToggleButton');
+  if (!scoreToggle) return null;
 
   let control = document.getElementById('scoreDensityControl');
   if (control) return control;
 
-  control = document.createElement('div');
+  control = document.createElement('button');
   control.id = 'scoreDensityControl';
-  control.className = 'score-density-control';
-  control.setAttribute('role', 'group');
-  control.setAttribute('aria-label', '看譜排版密度');
+  control.type = 'button';
+  control.className = 'mode-toggle-button score-density-toggle';
+  control.setAttribute('aria-label', '緊湊看譜已關閉，開啟緊湊看譜');
+  control.setAttribute('aria-pressed', 'false');
 
   const label = document.createElement('span');
-  label.className = 'score-density-label';
-  label.textContent = '排版';
+  label.className = 'mode-toggle-label';
+  label.textContent = '緊湊';
   control.appendChild(label);
 
-  [
-    { value: 'normal', label: '一般', aria: '一般看譜排版' },
-    { value: 'compact', label: '緊湊', aria: '緊湊看譜排版，自動在一列放入更多小節' }
-  ].forEach(option => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'score-density-option';
-    button.dataset.scoreDensity = option.value;
-    button.textContent = option.label;
-    button.setAttribute('aria-label', option.aria);
-    button.addEventListener('click', event => {
-      event.preventDefault();
-      setScoreDensityMode(option.value);
-    });
-    control.appendChild(button);
+  const switchTrack = document.createElement('span');
+  switchTrack.className = 'mode-switch';
+  switchTrack.setAttribute('aria-hidden', 'true');
+  const switchThumb = document.createElement('span');
+  switchThumb.className = 'mode-switch-thumb';
+  switchTrack.appendChild(switchThumb);
+  control.appendChild(switchTrack);
+
+  control.addEventListener('click', event => {
+    event.preventDefault();
+    setScoreDensityMode(scoreDensity === 'compact' ? 'normal' : 'compact');
   });
 
-  toggle.insertAdjacentElement('afterend', control);
+  scoreToggle.insertAdjacentElement('afterend', control);
   return control;
 }
 
@@ -82,13 +79,14 @@ function syncDensityUi() {
   const control = ensureScoreDensityControl();
   if (!editorView || !control) return;
 
-  editorView.classList.toggle('score-density-compact', scoreDensity === 'compact');
+  const compact = scoreDensity === 'compact';
+  editorView.classList.toggle('score-density-compact', compact);
   control.hidden = !isScoreViewActive();
-  control.querySelectorAll('[data-score-density]').forEach(button => {
-    const active = button.dataset.scoreDensity === scoreDensity;
-    button.classList.toggle('is-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+  control.setAttribute('aria-pressed', String(compact));
+  control.setAttribute(
+    'aria-label',
+    compact ? '緊湊看譜已開啟，關閉緊湊看譜' : '緊湊看譜已關閉，開啟緊湊看譜'
+  );
 }
 
 function syncModeUi(active) {
