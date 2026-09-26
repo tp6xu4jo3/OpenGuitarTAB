@@ -126,11 +126,11 @@ export class RelationRenderer {
     });
   }
 
-  render(documentModel, systemElement, measureIds) {
+  render(documentModel, systemElement, measureIds, documentIndex = null) {
     if (!systemElement) return;
     const svg = this.ensureOverlay(systemElement);
     svg.replaceChildren();
-    const index = indexDocument(documentModel);
+    const index = documentIndex || indexDocument(documentModel);
     const measureSet = new Set((measureIds || []).map(String));
 
     for (const relation of documentModel.relations || []) {
