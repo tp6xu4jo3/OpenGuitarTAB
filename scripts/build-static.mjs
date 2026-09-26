@@ -47,7 +47,8 @@ await rm(outputDir, { recursive: true, force: true });
 await mkdir(outputDir, { recursive: true });
 
 await Promise.all([
-  cp(path.join(projectRoot, 'index.html'), path.join(outputDir, 'index.html')),\n  cp(path.join(projectRoot, 'privacy.html'), path.join(outputDir, 'privacy.html')),
+  cp(path.join(projectRoot, 'index.html'), path.join(outputDir, 'index.html')),
+  cp(path.join(projectRoot, 'privacy.html'), path.join(outputDir, 'privacy.html')),
   cp(path.join(projectRoot, 'src'), path.join(outputDir, 'src'), { recursive: true }),
   cp(path.join(projectRoot, 'assets'), path.join(outputDir, 'assets'), { recursive: true })
 ]);
