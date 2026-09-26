@@ -6,10 +6,14 @@ const songBrowser = await readFile(new URL('../src/catalog/song-browser.js', imp
 const editorCss = await readFile(new URL('../styles/editor-v3.css', import.meta.url), 'utf8');
 const responsiveCss = await readFile(new URL('../styles/responsive.css', import.meta.url), 'utf8');
 const sidebarCss = await readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8');
+const indexHtml = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
-assert.match(sidebarCss, /\.brand-row\s*\{[^}]*justify-content:center/s, 'brand block should be horizontally centered in the sidebar');
-assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:46px[^}]*height:42px[^}]*overflow:hidden/s, 'sidebar icon should be enlarged while cropping the damaged bottom edge');
-assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:46px[^}]*height:46px/s, 'brand image should render larger than its cropped viewport');
+assert.match(indexHtml, /class="brand-copy"/, 'brand copy needs its own alignment box');
+assert.match(sidebarCss, /\.brand-row\s*\{[^}]*justify-content:flex-start[^}]*gap:0/s, 'brand row should use the full nav width rather than centering a narrow group');
+assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:54px[^}]*height:48px[^}]*overflow:hidden/s, 'sidebar icon should be enlarged with a tighter crop that removes the damaged bottom edge');
+assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:54px[^}]*height:54px/s, 'brand image should render larger than its cropped viewport');
+assert.match(sidebarCss, /\.brand-copy\s*\{[^}]*margin-left:auto/s, 'brand text should align its right edge with the nav button width');
+assert.match(sidebarCss, /\.brand-name\s*\{[^}]*font-size:\s*20px/s, 'brand title should scale with the enlarged icon');
 
 assert.match(responsiveCss, /@media \(min-width:761px\) and \(max-width:980px\)[\s\S]*\.play-panel\{display:grid;grid-template-columns:auto auto auto minmax\(180px,1fr\) auto/s, 'tablet playback controls should stay on one ordered row');
 assert.match(responsiveCss, /\.play-panel \.mode-toggle-button\{position:static;grid-column:auto/s, 'score mode toggle must remain directly before capo instead of being absolutely wrapped away');
