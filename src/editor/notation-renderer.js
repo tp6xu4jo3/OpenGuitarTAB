@@ -227,17 +227,32 @@ export class NotationRenderer {
   render(documentModel, changeSet = null) {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
-    const full = !changeSet || changeSet.document || changeSet.layoutFrom;
+    const full = !changeSet || changeSet.document;
     const dirty = new Set((changeSet?.measures || []).map(String));
+    const layoutRows = new Set();
+    if (changeSet?.layoutFrom) {
+      const layoutMeasures = new Set([String(changeSet.layoutFrom), ...dirty]);
+      for (const measureId of layoutMeasures) {
+        const measureNode = this.root.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
+        const sourceRow = measureNode?.closest?.('.tab-system')?.dataset.sourceRow;
+        if (sourceRow != null) layoutRows.add(String(sourceRow));
+      }
+    }
+    const index = indexDocument(this.document);
     [...this.root.querySelectorAll('.tab-system')].forEach(systemElement => {
       const measureIds = visibleMeasureIds(systemElement);
-      if (!full && dirty.size && !measureIds.some(id => dirty.has(String(id)))) return;
-      this.renderSystem(systemElement, measureIds);
+      if (!full && (dirty.size || layoutRows.size)) {
+        const sourceRow = String(systemElement.dataset.sourceRow ?? '');
+        const layoutAffected = layoutRows.has(sourceRow);
+        const measureAffected = measureIds.some(id => dirty.has(String(id)));
+        if (!layoutAffected && !measureAffected) return;
+      }
+      this.renderSystem(systemElement, measureIds, index);
     });
   }
 
-  renderSystem(systemElement, measureIds = visibleMeasureIds(systemElement)) {
-    this.relationRenderer.render(this.document, systemElement, measureIds);
+  renderSystem(systemElement, measureIds = visibleMeasureIds(systemElement), index = indexDocument(this.document)) {
+    this.relationRenderer.render(this.document, systemElement, measureIds, index);
     const svg = systemElement.querySelector(':scope > svg.notation-overlay');
     if (!svg) return;
     const markerLayer = ensureMarkerLayer(systemElement);
@@ -315,7 +330,6 @@ export class NotationRenderer {
       }
     }
 
-    const index = indexDocument(this.document);
     for (const relation of this.document.relations || []) {
       const sourceLocation = index.noteLocation.get(String(relation.fromNoteId || ''));
       if (!sourceLocation || !measureSet.has(String(sourceLocation.measureId))) continue;
