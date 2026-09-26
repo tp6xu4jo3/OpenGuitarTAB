@@ -39,6 +39,11 @@ function bindStore(store) {
   if (!store || boundStores.has(store)) return store;
   boundStores.add(store);
   store.subscribe((documentModel, changeSet) => {
+    if (changeSet?.document || changeSet?.playback?.length) {
+      window.editorPlayback?.invalidate?.({
+        timeline: Boolean(changeSet?.document || changeSet?.layoutKind === 'grid' || changeSet?.layoutKind === 'structure')
+      });
+    }
     scoreRenderer?.render(documentModel, changeSet);
     notationRenderer?.schedule(documentModel, changeSet);
   });
@@ -461,7 +466,7 @@ function installRenderers() {
   scoreRenderer = new SparseScoreRenderer(tabArea, {
     onCommitNote: payload => dispatchCommand({ type: 'note/set', ...payload }),
     onRendered: detail => {
-      if (!detail?.layout && !detail?.full && detail?.sourceSystemIndex == null) return;
+      if (!detail?.full) return;
       const store = ensureStore();
       if (store) notationRenderer?.schedule(store.getDocument(), { document: true });
     }
@@ -536,7 +541,6 @@ export function installEditorV3() {
   };
 
   window.editorV3 = api;
-  window.renderRows = () => renderCurrentSong();
   ensureStore();
   renderCurrentSong();
   syncEditorRibbon();

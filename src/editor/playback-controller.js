@@ -12,12 +12,24 @@ const state = {
   playbackIndex: null,
   document: null,
   dirty: true,
+  timelineDirty: true,
   beatBar: null,
   lastCenteredKey: null
 };
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function syncProgressRangeFromIndex(playback) {
+  const entries = playback?.entries || [];
+  state.currentIndex = clamp(state.currentIndex, 0, Math.max(0, entries.length - 1));
+  const slider = document.getElementById('playProgress');
+  if (!slider) return;
+  slider.min = '0';
+  slider.max = String(Math.max(0, entries.length - 1));
+  slider.step = '1';
+  slider.value = String(state.currentIndex);
 }
 
 function currentSongSafe() {
@@ -37,14 +49,23 @@ function ensureIndex({ force = false } = {}) {
     state.playbackIndex = { document: null, entries: [], totalBeats: 0 };
     state.document = null;
     state.dirty = false;
+    state.timelineDirty = false;
+    syncProgressRangeFromIndex(state.playbackIndex);
     return state.playbackIndex;
   }
   if (!force && !state.dirty && state.document === documentModel && state.playbackIndex) return state.playbackIndex;
   state.playbackIndex = buildPlaybackIndex(documentModel);
   state.document = documentModel;
   state.dirty = false;
+  state.timelineDirty = false;
   state.currentIndex = clamp(state.currentIndex, 0, Math.max(0, state.playbackIndex.entries.length - 1));
+  syncProgressRangeFromIndex(state.playbackIndex);
   return state.playbackIndex;
+}
+
+function navigationPlaybackIndex() {
+  if (state.playbackIndex && !state.timelineDirty) return state.playbackIndex;
+  return ensureIndex();
 }
 
 function clearPlayhead() {
@@ -108,10 +129,10 @@ function highlightEntry(entry) {
   followPlaybackLine(measureNode?.closest('.tab-system') || measureNode, `slot:${entry.measureId}:${entry.atBeats}`);
 }
 
-function entryForIndex(index) {
-  const playback = ensureIndex();
-  if (!playback.entries.length) return null;
-  return playback.entries[clamp(Number(index) || 0, 0, playback.entries.length - 1)] || null;
+function entryForIndex(index, playback = null) {
+  const source = playback || ensureIndex();
+  if (!source.entries.length) return null;
+  return source.entries[clamp(Number(index) || 0, 0, source.entries.length - 1)] || null;
 }
 
 function formatBeat(entry) {
@@ -131,10 +152,10 @@ function visualLocationForEntry(entry) {
   };
 }
 
-function updateProgressLabel(index) {
+function updateProgressLabel(index, playback = null) {
   const label = document.getElementById('progressLabel');
   if (!label) return;
-  const entry = entryForIndex(index);
+  const entry = entryForIndex(index, playback);
   if (!entry) {
     label.textContent = '尚無曲譜';
     return;
@@ -147,26 +168,23 @@ function totalSlots() {
   return Math.max(1, ensureIndex().entries.length);
 }
 
-function setProgressIndex(index, updateSlider = true, highlight = true) {
-  const playback = ensureIndex();
+function applyProgressIndex(playback, index, updateSlider = true, highlight = true) {
   state.currentIndex = clamp(Number(index) || 0, 0, Math.max(0, playback.entries.length - 1));
   state.startOffsetBeats = 0;
   const slider = document.getElementById('playProgress');
   if (slider && updateSlider) slider.value = String(state.currentIndex);
-  updateProgressLabel(state.currentIndex);
+  updateProgressLabel(state.currentIndex, playback);
   if (highlight) highlightEntry(playback.entries[state.currentIndex] || null);
+}
+
+function setProgressIndex(index, updateSlider = true, highlight = true) {
+  applyProgressIndex(ensureIndex(), index, updateSlider, highlight);
 }
 
 function updateProgressRange() {
   const playback = ensureIndex();
-  const slider = document.getElementById('playProgress');
-  if (slider) {
-    slider.min = '0';
-    slider.max = String(Math.max(0, playback.entries.length - 1));
-    slider.step = '1';
-  }
-  state.currentIndex = clamp(state.currentIndex, 0, Math.max(0, playback.entries.length - 1));
-  setProgressIndex(state.currentIndex, true, false);
+  syncProgressRangeFromIndex(playback);
+  applyProgressIndex(playback, state.currentIndex, true, false);
 }
 
 function fractionNumber(value) {
@@ -179,7 +197,7 @@ function jumpToTarget(target, highlight = true) {
   const measureId = String(target.dataset?.measureId || '');
   const targetBeat = fractionNumber(target.dataset?.at);
   if (!measureId || targetBeat == null) return;
-  const playback = ensureIndex();
+  const playback = navigationPlaybackIndex();
   const exact = playback.entries.find(item => String(item.measureId) === measureId && Math.abs((Number(item.atBeats) || 0) - targetBeat) < 1e-9);
   const entry = exact || playback.entries.find(item => {
     if (String(item.measureId) !== measureId) return false;
@@ -188,7 +206,7 @@ function jumpToTarget(target, highlight = true) {
     return targetBeat >= start - 1e-9 && targetBeat < end - 1e-9;
   });
   if (!entry) return;
-  setProgressIndex(entry.index, true, highlight);
+  applyProgressIndex(playback, entry.index, true, highlight);
   state.startOffsetBeats = exact ? 0 : clamp(targetBeat - entry.atBeats, 0, Math.max(0, entry.durationBeats - 0.001));
 }
 
@@ -213,7 +231,7 @@ function playBeat(entry, beatMs, fromOffset = 0) {
   state.currentIndex = entry.index;
   const slider = document.getElementById('playProgress');
   if (slider) slider.value = String(entry.index);
-  updateProgressLabel(entry.index);
+  updateProgressLabel(entry.index, state.playbackIndex);
   highlightEntry(entry);
   (entry.events || []).forEach(event => {
     if (event.offsetBeats < fromOffset - 1e-9) return;
@@ -281,8 +299,9 @@ function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true)
   if (resetButton) updatePlayButton(false);
 }
 
-function invalidatePlaybackIndex() {
+function invalidatePlaybackIndex({ timeline = false } = {}) {
   state.dirty = true;
+  state.timelineDirty ||= Boolean(timeline);
 }
 
 export function installPlaybackController() {
@@ -298,7 +317,7 @@ export function installPlaybackController() {
     clearPlayhead,
     startPlayback,
     stopPlayback,
-    invalidateRowPlaybackLayout: invalidatePlaybackIndex
+    invalidateRowPlaybackLayout: () => invalidatePlaybackIndex({ timeline: true })
   });
   const api = {
     rebuild: () => ensureIndex({ force: true }),
