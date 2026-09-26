@@ -27,9 +27,12 @@ function apply(command){const result=applyCommand(documentModel,command,{idFacto
 }
 
 {
-  const note=apply({type:'note/set',measureId:'m-technique',at:[1,4],duration:[1,4],string:1,fret:'12'});
-  assert.equal(note.changeSet.layoutFrom,'m-technique','note edits recalc metrics because adjacent double digits may need room');
-  assert.equal(note.changeSet.layoutKind,'metrics');
+  const ordinary=apply({type:'note/set',measureId:'m-technique',at:[1,4],duration:[1,4],string:1,fret:'12'});
+  assert.equal(ordinary.changeSet.layoutFrom,null,'a multi-digit fret alone must not trigger layout when spacing complexity is unchanged');
+  assert.equal(ordinary.changeSet.layoutKind,null);
+  const closePair=apply({type:'note/set',measureId:'m-technique',at:[0,1],duration:[1,4],string:0,fret:'12'});
+  assert.equal(closePair.changeSet.layoutFrom,'m-technique','creating a close pair of multi-digit fret events should recalc layout metrics');
+  assert.equal(closePair.changeSet.layoutKind,'metrics');
 }
 
 {
