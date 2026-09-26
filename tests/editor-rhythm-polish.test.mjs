@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { inflateSync } from 'node:zlib';
 
 const renderer = await readFile(new URL('../src/editor/renderer.js', import.meta.url), 'utf8');
 const songBrowser = await readFile(new URL('../src/catalog/song-browser.js', import.meta.url), 'utf8');
@@ -7,13 +8,43 @@ const editorCss = await readFile(new URL('../styles/editor-v3.css', import.meta.
 const responsiveCss = await readFile(new URL('../styles/responsive.css', import.meta.url), 'utf8');
 const sidebarCss = await readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8');
 const indexHtml = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const brandIcon = await readFile(new URL('../assets/OpenGuitarTABicon.ico', import.meta.url));
 
 assert.match(indexHtml, /class="brand-copy"/, 'brand copy needs its own alignment box');
-assert.match(sidebarCss, /\.brand-row\s*\{[^}]*justify-content:flex-start[^}]*gap:0/s, 'brand row should use the full nav width rather than centering a narrow group');
-assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:54px[^}]*height:48px[^}]*overflow:hidden/s, 'sidebar icon should be enlarged with a tighter crop that removes the damaged bottom edge');
-assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:54px[^}]*height:54px/s, 'brand image should render larger than its cropped viewport');
-assert.match(sidebarCss, /\.brand-copy\s*\{[^}]*margin-left:auto/s, 'brand text should align its right edge with the nav button width');
+assert.match(sidebarCss, /\.brand-row\s*\{[^}]*justify-content:flex-start[^}]*gap:8px/s, 'brand copy should sit closer to the icon instead of being pushed to the far edge');
+assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:54px[^}]*height:54px/s, 'sidebar icon should use the repaired square asset without a CSS crop');
+assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:54px[^}]*height:54px[^}]*object-position:center/s, 'brand image should render the full repaired square asset');
+assert.match(sidebarCss, /\.brand-copy\s*\{[^}]*margin-left:0/s, 'brand text should move left toward the icon');
 assert.match(sidebarCss, /\.brand-name\s*\{[^}]*font-size:\s*20px/s, 'brand title should scale with the enlarged icon');
+
+assert.equal(brandIcon.readUInt16LE(0), 0, 'ICO reserved field should be zero');
+assert.equal(brandIcon.readUInt16LE(2), 1, 'brand asset should remain an ICO file');
+assert.equal(brandIcon.readUInt16LE(4), 1, 'brand ICO should contain one 64px image');
+const iconWidth = brandIcon[6] || 256;
+const iconHeight = brandIcon[7] || 256;
+const iconByteLength = brandIcon.readUInt32LE(14);
+const iconOffset = brandIcon.readUInt32LE(18);
+assert.equal(iconWidth, 64, 'brand icon width should remain 64px');
+assert.equal(iconHeight, 64, 'brand icon height should remain 64px');
+const embeddedPng = brandIcon.subarray(iconOffset, iconOffset + iconByteLength);
+assert.deepEqual([...embeddedPng.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], 'ICO image should be an embedded PNG');
+const idat = [];
+let pngOffset = 8;
+while (pngOffset + 12 <= embeddedPng.length) {
+  const chunkLength = embeddedPng.readUInt32BE(pngOffset);
+  const chunkType = embeddedPng.toString('ascii', pngOffset + 4, pngOffset + 8);
+  const dataStart = pngOffset + 8;
+  const dataEnd = dataStart + chunkLength;
+  assert.ok(dataEnd + 4 <= embeddedPng.length, `PNG chunk ${chunkType} should fit inside the icon payload`);
+  if (chunkType === 'IDAT') idat.push(embeddedPng.subarray(dataStart, dataEnd));
+  pngOffset = dataEnd + 4;
+  if (chunkType === 'IEND') break;
+}
+const scanlines = inflateSync(Buffer.concat(idat));
+assert.equal(scanlines.length, 64 * (1 + 64 * 4), 'brand PNG should decode into 64 complete RGBA scanlines');
+for (let row = 0; row < 64; row += 1) {
+  assert.ok(scanlines[row * 257] <= 4, `brand PNG row ${row} should start with a valid PNG filter byte`);
+}
 
 assert.match(responsiveCss, /@media \(min-width:761px\) and \(max-width:980px\)[\s\S]*\.play-panel\{display:grid;grid-template-columns:auto auto auto minmax\(180px,1fr\) auto/s, 'tablet playback controls should stay on one ordered row');
 assert.match(responsiveCss, /\.play-panel \.mode-toggle-button\{position:static;grid-column:auto/s, 'score mode toggle must remain directly before capo instead of being absolutely wrapped away');
