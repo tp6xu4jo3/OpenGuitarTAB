@@ -1,4 +1,4 @@
-import { fractionToNumber, isDocumentV3, normalizeDocumentV3, normalizeFraction } from './model.js';
+import { fractionToNumber, harmonicTechnique, isDocumentV3, normalizeDocumentV3, normalizeFraction, noteDisplayValue } from './model.js';
 
 export const MAX_MEASURES_PER_SYSTEM = 4;
 export const DEFAULT_LAYOUT_WIDTH = 1120;
@@ -43,9 +43,35 @@ function closeTwoDigitPairs(measure) {
   return pairs;
 }
 
+function textWidthUnits(value) {
+  return [...String(value ?? '').trim()].reduce((units, character) => {
+    if (/[MW@#%&]/.test(character)) return units + 1.35;
+    if (/[ilI1|'`]/.test(character)) return units + 0.55;
+    return units + 1;
+  }, 0);
+}
+
+function chordSymbolPressure(event) {
+  const symbol = String(event?.chord?.symbol ?? '').trim();
+  if (!symbol) return 0;
+  return Math.min(4.5, 0.8 + Math.max(0, textWidthUnits(symbol) - 2) * 0.55);
+}
+
+function harmonicTextPressure(event) {
+  let pressure = 0;
+  for (const note of event?.notes || []) {
+    if (!harmonicTechnique(note)) continue;
+    const scoreText = `<${noteDisplayValue(note)}>`;
+    pressure += Math.min(2.25, 0.85 + Math.max(0, textWidthUnits(scoreText) - 3) * 0.45);
+  }
+  return pressure;
+}
+
 function spacingPressureForMeasure(measure) {
   let pressure = 1;
   for (const event of measure?.events || []) {
+    pressure += chordSymbolPressure(event);
+    pressure += harmonicTextPressure(event);
     for (const mark of event.marks || []) {
       if (mark?.type === 'strum' || mark?.type === 'arpeggio') pressure += 2.5;
     }
@@ -71,17 +97,23 @@ export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = 
   return minimumWidthForComplexity(measureComplexity(documentModel, measure), minMeasureWidth);
 }
 
-function buildMetrics(document, minMeasureWidth) {
+function metricForMeasure(measure, minMeasureWidth) {
+  const complexity = spacingPressureForMeasure(measure);
+  return {
+    complexity,
+    minimumWidth: minimumWidthForComplexity(complexity, minMeasureWidth),
+    weight: Math.sqrt(complexity)
+  };
+}
+
+function buildMetricsForMeasures(measures, minMeasureWidth) {
   const metrics = new Map();
-  for (const measure of document.measures || []) {
-    const complexity = spacingPressureForMeasure(measure);
-    metrics.set(measure.id, {
-      complexity,
-      minimumWidth: minimumWidthForComplexity(complexity, minMeasureWidth),
-      weight: Math.sqrt(complexity)
-    });
-  }
+  for (const measure of measures || []) metrics.set(measure.id, metricForMeasure(measure, minMeasureWidth));
   return metrics;
+}
+
+function buildMetrics(document, minMeasureWidth) {
+  return buildMetricsForMeasures(document.measures || [], minMeasureWidth);
 }
 
 function allocateWidths(measures, availableWidth, metrics) {
@@ -102,6 +134,7 @@ function allocateWidths(measures, availableWidth, metrics) {
 function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeasuresPerSystem, metrics) {
   const result = [];
   let cursor = 0;
+  const sourceMeasureCount = measures.length;
   const maxMeasures = Math.max(1, Math.min(MAX_MEASURES_PER_SYSTEM, Number(maxMeasuresPerSystem) || MAX_MEASURES_PER_SYSTEM));
   while (cursor < measures.length) {
     let count = 0;
@@ -120,6 +153,7 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
     const allocation = allocateWidths(slice, availableWidth, metrics);
     result.push({
       sourceSystemIndex,
+      sourceMeasureCount,
       startMeasure: cursor,
       measures: slice,
       measureIds: slice.map(measure => measure.id),
@@ -132,6 +166,19 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
   return result;
 }
 
+export function buildAdaptiveSystemLayout(measures, {
+  sourceSystemIndex = 0,
+  availableWidth = DEFAULT_LAYOUT_WIDTH,
+  maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM,
+  minMeasureWidth = MIN_MEASURE_WIDTH
+} = {}) {
+  const sourceMeasures = Array.isArray(measures) ? measures : [];
+  if (!sourceMeasures.length) return [];
+  const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
+  const metrics = buildMetricsForMeasures(sourceMeasures, minMeasureWidth);
+  return splitLogicalSystem(sourceMeasures, Number(sourceSystemIndex) || 0, width, maxMeasuresPerSystem, metrics);
+}
+
 export function buildAdaptiveLayout(documentModel, {
   availableWidth = DEFAULT_LAYOUT_WIDTH,
   maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM,
@@ -140,10 +187,14 @@ export function buildAdaptiveLayout(documentModel, {
   const document = sourceDocument(documentModel);
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
-  const metrics = buildMetrics(document, minMeasureWidth);
   const systems = [];
   logicalSystems.forEach((measures, sourceSystemIndex) => {
-    systems.push(...splitLogicalSystem(measures, sourceSystemIndex, width, maxMeasuresPerSystem, metrics));
+    systems.push(...buildAdaptiveSystemLayout(measures, {
+      sourceSystemIndex,
+      availableWidth: width,
+      maxMeasuresPerSystem,
+      minMeasureWidth
+    }));
   });
   return { availableWidth: width, systems, logicalSystems };
 }
@@ -161,6 +212,7 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
     const pixelTotal = pixels.reduce((sum, value) => sum + value, 0) || 1;
     return {
       ...segment,
+      sourceMeasureCount: segment.sourceMeasureCount || count,
       measureIds: segment.measures.map(measure => measure.id),
       measureWidthsPx: pixels,
       measureWidths: pixels.map(value => value / pixelTotal * 100),
@@ -198,7 +250,7 @@ export function buildCompactScoreLayout(documentModel, {
       let segment = row.segments[row.segments.length - 1];
       if (!segment || segment.sourceSystemIndex !== sourceSystemIndex) {
         if (row.segments.length) row.minimumWidth += gap;
-        segment = { sourceSystemIndex, startMeasure: measureIndex, measures: [] };
+        segment = { sourceSystemIndex, sourceMeasureCount: measures.length, startMeasure: measureIndex, measures: [] };
         row.segments.push(segment);
       }
       segment.measures.push(measure);
