@@ -113,4 +113,15 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   assert.ok(narrow.rows.every(row=>row.measureCount<=8));
 }
 
+{
+  const thirty=measure('compact-thirty',{group:{type:'subdivision',subdivision:'thirty-second',slots:[[0,1],[1,8]],duration:[1,8]}});
+  const digits=measure('compact-digits',{doubleDigits:true});
+  const doc=createDocumentV3({measures:[measure('compact-plain-1'),digits,thirty,measure('compact-plain-2')]});
+  const compact=buildCompactScoreLayout(doc,{availableWidth:1200,minMeasureWidth:100});
+  assert.equal(compact.rows.length,1);
+  assert.equal(compact.rows[0].plainNotation,true,'dense rhythm/fret content without chord or technique annotations must stay uniform in compact mode');
+  const widths=compact.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
+  assert.ok(widths.every(width=>Math.abs(width-widths[0])<0.001),'annotation-free compact measures must not receive elastic per-measure widths');
+}
+
 console.log('editor layout tests passed');
