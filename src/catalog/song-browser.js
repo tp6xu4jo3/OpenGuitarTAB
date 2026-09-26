@@ -308,10 +308,19 @@ export class SongBrowser {
   }
 
   updateRailButtons(rail, prev, next) {
-    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
-    const hasOverflow = maxScroll > 2;
-    prev.hidden = !hasOverflow || rail.scrollLeft <= 2;
-    next.hidden = !hasOverflow || rail.scrollLeft >= maxScroll - 2;
+    const hasOverflow = rail.scrollWidth - rail.clientWidth > 2;
+    const items = [...rail.children].filter(item => item instanceof HTMLElement && !item.hidden);
+    if (!hasOverflow || !items.length) {
+      prev.hidden = true;
+      next.hidden = true;
+      return;
+    }
+    const railRect = rail.getBoundingClientRect();
+    const firstRect = items[0].getBoundingClientRect();
+    const lastRect = items.at(-1).getBoundingClientRect();
+    const edgeTolerance = 1;
+    prev.hidden = firstRect.left >= railRect.left - edgeTolerance;
+    next.hidden = lastRect.right <= railRect.right + edgeTolerance;
   }
 
   syncRailControls() {

@@ -64,9 +64,10 @@ const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controlle
 const structureSource=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
 const rowCss=await readFile(new URL('../styles/editor-row-controls.css',import.meta.url),'utf8');
 assert.match(rendererSource,/layoutKind === 'structure'/,'structural edits must rebuild row DOM immediately');
-assert.match(editorCss,/data-at\$="\/1"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#e8e8e8/s);
-assert.match(editorCss,/data-at\$="\/2"[^}]*--v3-dot-radius:6px[^}]*--v3-dot-fill:#fff/s);
-assert.match(editorCss,/data-at\$="\/4"[^}]*--v3-dot-radius:3px[^}]*--v3-dot-fill:#fff/s);
+assert.match(editorCss,/data-at\$="\/1"[^}]*--v3-dot-size:14px[^}]*--v3-dot-fill:#e8e8e8/s);
+assert.match(editorCss,/data-at\$="\/2"[^}]*--v3-dot-size:14px[^}]*--v3-dot-fill:#fff/s);
+assert.match(editorCss,/data-at\$="\/4"[^}]*--v3-dot-size:8px[^}]*--v3-dot-fill:#fff/s);
+assert.match(editorCss,/\.v3-slot-dot\{[^}]*border-radius:50%[^}]*background:var\(--v3-dot-fill\)/s,'slot affordances must remain circular when rendered per string');
 assert.match(chordDragSource,/let activeDragPayload = null/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex, \{ overflowDirection: 'backward' \}\)/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex \+ 1, \{ overflowDirection: 'forward' \}\)/);
