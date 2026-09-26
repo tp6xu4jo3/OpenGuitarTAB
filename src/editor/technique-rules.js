@@ -32,6 +32,10 @@ function measureForColumn(index, target) {
   return index.measureById.get(String(target?.measureId || ''))?.measure || null;
 }
 
+function eventAt(measure, at) {
+  return (measure?.events || []).find(event => compareFractions(event.at, at) === 0) || null;
+}
+
 export function resolveTechniqueTarget(toolId, target, documentModel) {
   const id = String(toolId || '');
   const index = indexDocument(documentModel);
@@ -52,38 +56,44 @@ export function resolveTechniqueTarget(toolId, target, documentModel) {
     return { ok: true, target: { ...target, eventId: event.id } };
   }
 
-  if (id === 'slide' || id === 'arc') {
+  if (id === 'arc' || id === 'arcDown') {
+    const measure = measureForColumn(index, target);
+    if (!measure || !Array.isArray(target?.startAt) || !Array.isArray(target?.endAt)) {
+      return invalid('請選擇同一小節內的弧線起點與終點');
+    }
+    if (compareFractions(target.startAt, target.endAt) >= 0) return invalid('弧線終點必須位於起點之後');
+    const sourceEvent = eventAt(measure, target.startAt);
+    const fromNote = sourceEvent?.notes?.[0];
+    if (!fromNote) return invalid('弧線起點需要有音符；終點可以是空格');
+    return {
+      ok: true,
+      target: {
+        measureId: measure.id,
+        startAt: [...target.startAt],
+        endAt: [...target.endAt],
+        fromNoteId: fromNote.id
+      }
+    };
+  }
+
+  if (id === 'slide') {
     const from = noteContext(index, target?.fromNoteId);
     const to = noteContext(index, target?.toNoteId);
     if (!from || !to) return invalid('請依序點選兩個有效音符');
     const order = compareNoteTime(from, to);
     if (order == null || order <= 0) return invalid('第二個音符必須位於第一個音符之後');
-
-    if (id === 'slide') {
-      if (Number(from.note.string) !== Number(to.note.string)) {
-        return invalid('滑音必須連接同一條弦上的兩個音符');
-      }
-      if (noteBaseFret(from.note) === noteBaseFret(to.note)) {
-        return invalid('滑音的起點與終點需要不同品位');
-      }
-      return {
-        ok: true,
-        target: {
-          fromNoteId: from.note.id,
-          toNoteId: to.note.id,
-          relationType: 'slide'
-        }
-      };
+    if (Number(from.note.string) !== Number(to.note.string)) {
+      return invalid('滑音必須連接同一條弦上的兩個音符');
     }
-
-    const sameString = Number(from.note.string) === Number(to.note.string);
-    const sameFret = noteBaseFret(from.note) === noteBaseFret(to.note);
+    if (noteBaseFret(from.note) === noteBaseFret(to.note)) {
+      return invalid('滑音的起點與終點需要不同品位');
+    }
     return {
       ok: true,
       target: {
         fromNoteId: from.note.id,
         toNoteId: to.note.id,
-        relationType: sameString && sameFret ? 'tie' : 'slur'
+        relationType: 'slide'
       }
     };
   }
