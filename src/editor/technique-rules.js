@@ -62,8 +62,8 @@ export function resolveTechniqueTarget(toolId, target, documentModel) {
       return invalid('請選擇同一小節內的弧線起點與終點');
     }
     if (compareFractions(target.startAt, target.endAt) >= 0) return invalid('弧線終點必須位於起點之後');
-    const sourceEvent = eventAt(measure, target.startAt);
-    const fromNote = sourceEvent?.notes?.[0];
+    const sourceNotes = eventAt(measure, target.startAt)?.notes || [];
+    const fromNote = id === 'arcDown' ? sourceNotes.at(-1) : sourceNotes[0];
     if (!fromNote) return invalid('弧線起點需要有音符；終點可以是空格');
     return {
       ok: true,
