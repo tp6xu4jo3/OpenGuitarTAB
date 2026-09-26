@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { normalizeDocumentV3 } from '../src/editor/model.js';
 
 const renderer = await readFile(new URL('../src/editor/renderer.js', import.meta.url), 'utf8');
 const notation = await readFile(new URL('../src/editor/notation-renderer.js', import.meta.url), 'utf8');
+const model = await readFile(new URL('../src/editor/model.js', import.meta.url), 'utf8');
+const store = await readFile(new URL('../src/editor/store.js', import.meta.url), 'utf8');
+const songBrowser = await readFile(new URL('../src/catalog/song-browser.js', import.meta.url), 'utf8');
 const editorCss = await readFile(new URL('../styles/editor-v3.css', import.meta.url), 'utf8');
 const responsiveCss = await readFile(new URL('../styles/responsive.css', import.meta.url), 'utf8');
 const sidebarCss = await readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8');
@@ -22,8 +26,49 @@ assert.match(editorCss, /\.content\.score-view \.v3-slot-dot\{display:none\}/, '
 
 assert.match(renderer, /const groupBeamCount = Number\(group\?\.beamCount\)[\s\S]*Number\.isFinite\(groupBeamCount\)[\s\S]*rhythmBeamCount/s, 'explicit triplet/subdivision beam counts must override duration inference');
 assert.match(renderer, /const fullyBeamed = [\s\S]*groupPoints\.length === slots\.length[\s\S]*v3-rhythm-tuplet-number v3-rhythm-tuplet-number-only/s, 'fully beamed tuplets should show only the centered numeral');
-assert.match(editorCss, /\.v3-rhythm-tuplet-number-only\{[^}]*top:-18px/s, 'tuplet numeral must sit above stems instead of overlapping the center stem');
-assert.match(editorCss, /\.v3-rhythm-tuplet-bracket\{[^}]*top:-18px/s, 'unbeamed/incomplete tuplets should keep a raised split bracket');
+assert.match(editorCss, /\.v3-rhythm-tuplet-number-only\{[^}]*top:32px/s, 'beamed tuplet numerals should sit outside the downward stems and beam');
+assert.match(editorCss, /\.v3-rhythm-tuplet-bracket\{[^}]*top:32px/s, 'unbeamed or incomplete tuplets should place their split bracket on the stem side without crossing stems');
+
+const ordinaryRhythm = normalizeDocumentV3({
+  version: 3,
+  measures: [{
+    id: 'm1',
+    timeSignature: { numerator: 4, denominator: 4 },
+    groups: [],
+    events: [
+      { id: 'e1', at: [0, 1], duration: [1, 4], notes: [], marks: [] },
+      { id: 'e2', at: [1, 1], duration: [1, 4], notes: [], marks: [] },
+      { id: 'e3', at: [3, 2], duration: [1, 4], notes: [], marks: [] }
+    ]
+  }]
+});
+assert.deepEqual(ordinaryRhythm.measures[0].events.map(event => event.duration), [[1, 1], [1, 2], [5, 2]], 'ordinary score durations should follow the distance to the next rhythmic onset or bar end');
+
+const tripletRhythm = normalizeDocumentV3({
+  version: 3,
+  measures: [{
+    id: 'm1',
+    timeSignature: { numerator: 4, denominator: 4 },
+    groups: [{
+      id: 'g1', type: 'tuplet', ratio: [3, 2], subdivision: 'eighth', beamCount: 1,
+      startAt: [0, 1], endExclusive: [1, 1], duration: [1, 3],
+      slots: [[0, 1], [1, 3], [2, 3]], eventIds: ['e1', 'e2', 'e3']
+    }],
+    events: [
+      { id: 'e1', at: [0, 1], duration: [1, 4], notes: [], marks: [] },
+      { id: 'e2', at: [1, 3], duration: [1, 4], notes: [], marks: [] },
+      { id: 'e3', at: [2, 3], duration: [1, 4], notes: [], marks: [] }
+    ]
+  }]
+});
+assert.deepEqual(tripletRhythm.measures[0].events.map(event => event.duration), [[1, 3], [1, 3], [1, 3]], 'explicit tuplet duration must stay authoritative over ordinary onset spacing');
+assert.match(model, /function normalizeEventDurations\([\s\S]*rhythmGroupForEvent[\s\S]*nextRhythmicBoundary/s, 'model normalization should own one canonical duration flow for grouped and ordinary rhythm');
+assert.match(store, /this\.document = normalizeDocumentV3\(nextDocument\)/, 'every editor commit should re-establish canonical rhythmic durations');
+
+assert.match(songBrowser, /const firstRect = items\[0\]\.getBoundingClientRect\(\)[\s\S]*const lastRect = items\.at\(-1\)\.getBoundingClientRect\(\)/s, 'rail boundaries should be derived from the visible first and last cards');
+assert.match(songBrowser, /prev\.hidden = firstRect\.left >= railRect\.left - edgeTolerance/, 'left arrow should stay hidden while the first card remains fully visible after scroll snapping');
+assert.match(songBrowser, /next\.hidden = lastRect\.right <= railRect\.right \+ edgeTolerance/, 'right arrow should hide when the last card is fully visible');
+assert.doesNotMatch(songBrowser, /rail\.scrollLeft <= 2/, 'rail arrows must not depend on a fragile raw scrollLeft threshold');
 
 assert.match(renderer, /const navigation = \{ measureId:[\s\S]*requestAnimationFrame\(\(\) => \{\s*const next = this\.navigateCursor\(navigation\)/s, 'arrow navigation should resolve its destination from the live DOM after commit rerenders');
 
