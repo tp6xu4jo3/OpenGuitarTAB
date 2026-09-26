@@ -68,6 +68,15 @@ function harmonicTextPressure(event) {
   return pressure;
 }
 
+function hasFlexibleScoreNotation(measure) {
+  for (const event of measure?.events || []) {
+    if (String(event?.chord?.symbol ?? '').trim()) return true;
+    if ((event.notes || []).some(note => harmonicTechnique(note))) return true;
+    if ((event.marks || []).some(mark => mark?.type === 'strum' || mark?.type === 'arpeggio')) return true;
+  }
+  return false;
+}
+
 function spacingPressureForMeasure(measure) {
   let pressure = 1;
   let previousChordSymbol = null;
@@ -106,7 +115,8 @@ function metricForMeasure(measure, minMeasureWidth) {
   return {
     complexity,
     minimumWidth: minimumWidthForComplexity(complexity, minMeasureWidth),
-    weight: Math.sqrt(complexity)
+    weight: Math.sqrt(complexity),
+    flexibleNotation: hasFlexibleScoreNotation(measure)
   };
 }
 
@@ -219,7 +229,7 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
   if (!row?.segments?.length) return null;
   const measures = row.segments.flatMap(segment => segment.measures);
   const usableWidth = Math.max(1, availableWidth - gap * Math.max(0, row.segments.length - 1));
-  const plainNotation = measures.every(measure => (metrics.get(measure.id)?.complexity || 1) <= 1 + 1e-9);
+  const plainNotation = measures.every(measure => !metrics.get(measure.id)?.flexibleNotation);
   const allocation = plainNotation
     ? equalCompactWidths(measures, usableWidth, metrics)
     : allocateWidths(measures, usableWidth, metrics);
@@ -262,12 +272,23 @@ export function buildCompactScoreLayout(documentModel, {
   };
   logicalSystems.forEach((measures, sourceSystemIndex) => {
     measures.forEach((measure, measureIndex) => {
-      const minimumWidth = metrics.get(measure.id)?.minimumWidth || minMeasureWidth;
+      const metric = metrics.get(measure.id);
+      const minimumWidth = metric?.minimumWidth || minMeasureWidth;
+      const flexibleNotation = Boolean(metric?.flexibleNotation);
       const lastSegment = row?.segments?.[row.segments.length - 1] || null;
       const startsSegment = !lastSegment || lastSegment.sourceSystemIndex !== sourceSystemIndex;
       const extraGap = row?.segments?.length && startsSegment ? gap : 0;
-      if (row?.measureCount && (row.measureCount >= maxPerRow || row.minimumWidth + extraGap + minimumWidth > width)) flush();
-      if (!row) row = { segments: [], measureCount: 0, minimumWidth: 0 };
+      const candidateMeasureCount = (row?.measureCount || 0) + 1;
+      const candidateSegmentCount = row
+        ? row.segments.length + (startsSegment ? 1 : 0)
+        : 1;
+      const candidateHasFlexibleNotation = Boolean(row?.hasFlexibleNotation || flexibleNotation);
+      const candidateMaxMinimum = Math.max(row?.maxMeasureMinimum || 0, minimumWidth);
+      const candidateMinimumWidth = candidateHasFlexibleNotation
+        ? (row?.minimumWidth || 0) + extraGap + minimumWidth
+        : candidateMaxMinimum * candidateMeasureCount + gap * Math.max(0, candidateSegmentCount - 1);
+      if (row?.measureCount && (row.measureCount >= maxPerRow || candidateMinimumWidth > width)) flush();
+      if (!row) row = { segments: [], measureCount: 0, minimumWidth: 0, maxMeasureMinimum: 0, hasFlexibleNotation: false };
       let segment = row.segments[row.segments.length - 1];
       if (!segment || segment.sourceSystemIndex !== sourceSystemIndex) {
         if (row.segments.length) row.minimumWidth += gap;
@@ -277,6 +298,8 @@ export function buildCompactScoreLayout(documentModel, {
       segment.measures.push(measure);
       row.measureCount += 1;
       row.minimumWidth += minimumWidth;
+      row.maxMeasureMinimum = Math.max(row.maxMeasureMinimum, minimumWidth);
+      row.hasFlexibleNotation ||= flexibleNotation;
     });
   });
   flush();
