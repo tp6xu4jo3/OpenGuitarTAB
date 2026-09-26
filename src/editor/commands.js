@@ -1,4 +1,5 @@
 import { getChordById, getChordVoicing, notesForVoicing } from './chord-library.js';
+import { measureComplexity } from './layout.js';
 import {
   ARTIFICIAL_HARMONIC_OFFSET,
   cloneValue,
@@ -92,6 +93,10 @@ function changedMeasure(measureId, { playback = true, relations = [], layoutFrom
   });
 }
 
+function measureMetricsChanged(document, beforeMeasure, afterMeasure) {
+  return Math.abs(measureComplexity(document, beforeMeasure) - measureComplexity(document, afterMeasure)) > 1e-9;
+}
+
 function pruneRelationsForMissingNotes(document, noteIds) {
   if (!noteIds?.size) return { relations: document.relations, removedRelationIds: [] };
   const removedRelationIds = [];
@@ -131,7 +136,8 @@ function setExistingNoteFret(note, fret) {
 function noteSet(document, command, idFactory) {
   const measureIndex = findMeasureIndex(document, command.measureId);
   if (measureIndex < 0) return { document, changeSet: createChangeSet() };
-  const measure = cloneValue(document.measures[measureIndex]);
+  const sourceMeasure = document.measures[measureIndex];
+  const measure = cloneValue(sourceMeasure);
   const at = normalizeFraction(command.at, [0, 1]);
   let eventIndex = eventAt(measure, at);
   const fret = String(command.fret ?? '').trim();
@@ -177,12 +183,13 @@ function noteSet(document, command, idFactory) {
   let next = withMeasure(document, measureIndex, measure);
   const pruned = pruneRelationsForMissingNotes(next, removedNotes);
   if (pruned.relations !== next.relations) next = { ...next, relations: pruned.relations };
+  const layoutChanged = measureMetricsChanged(document, sourceMeasure, measure);
   return {
     document: next,
     changeSet: changedMeasure(measure.id, {
       relations: pruned.removedRelationIds,
-      layoutFrom: measure.id,
-      layoutKind: LAYOUT_INVALIDATION.METRICS
+      layoutFrom: layoutChanged ? measure.id : null,
+      layoutKind: layoutChanged ? LAYOUT_INVALIDATION.METRICS : null
     })
   };
 }
@@ -282,13 +289,14 @@ function deleteNote(document, noteId) {
       let next = withMeasure(document, measureIndex, measure);
       const pruned = pruneRelationsForMissingNotes(next, new Set([String(noteId)]));
       next = { ...next, relations: pruned.relations };
+      const layoutChanged = measureMetricsChanged(document, sourceMeasure, measure);
       return {
         document: next,
         changeSet: changedMeasure(measure.id, {
           playback: true,
           relations: pruned.removedRelationIds,
-          layoutFrom: measure.id,
-          layoutKind: LAYOUT_INVALIDATION.METRICS
+          layoutFrom: layoutChanged ? measure.id : null,
+          layoutKind: layoutChanged ? LAYOUT_INVALIDATION.METRICS : null
         })
       };
     }
