@@ -42,12 +42,6 @@ export function addFractions(left, right) {
   return normalizeFraction([a * d + c * b, b * d]);
 }
 
-function subtractFractions(left, right) {
-  const [a, b] = normalizeFraction(left);
-  const [c, d] = normalizeFraction(right);
-  return normalizeFraction([a * d - c * b, b * d]);
-}
-
 export function compareFractions(left, right) {
   const [a, b] = normalizeFraction(left);
   const [c, d] = normalizeFraction(right);
@@ -73,11 +67,6 @@ function normalizeTimeSignature(value) {
   const numerator = Math.max(1, Math.trunc(Number(value?.numerator) || 4));
   const denominator = Math.max(1, Math.trunc(Number(value?.denominator) || 4));
   return { numerator, denominator };
-}
-
-function measureDurationFraction(timeSignature) {
-  const signature = normalizeTimeSignature(timeSignature);
-  return normalizeFraction([signature.numerator * 4, signature.denominator]);
 }
 
 function normalizeOwnedEntity(value, prefix, idFactory) {
@@ -163,60 +152,15 @@ function normalizeGroup(group, idFactory) {
   return normalized;
 }
 
-function rhythmGroupForEvent(event, groups) {
-  const eventId = String(event?.id || '');
-  const atKey = fractionKey(event?.at || [0, 1]);
-  return (groups || []).find(group => {
-    if (!['tuplet', 'subdivision'].includes(group?.type)) return false;
-    if ((group.eventIds || []).map(String).includes(eventId)) return true;
-    return (group.slots || []).some(slot => fractionKey(slot) === atKey);
-  }) || null;
-}
-
-function nextRhythmicBoundary(events, groups, eventIndex, measureEnd) {
-  const currentAt = events[eventIndex]?.at || [0, 1];
-  let boundary = measureEnd;
-  for (let index = eventIndex + 1; index < events.length; index++) {
-    const candidate = events[index]?.at;
-    if (compareFractions(candidate, currentAt) <= 0) continue;
-    if (compareFractions(candidate, boundary) < 0) boundary = candidate;
-    break;
-  }
-  for (const group of groups || []) {
-    if (!['tuplet', 'subdivision'].includes(group?.type)) continue;
-    const startAt = Array.isArray(group.startAt) ? group.startAt : group.slots?.[0];
-    if (!Array.isArray(startAt) || compareFractions(startAt, currentAt) <= 0) continue;
-    if (compareFractions(startAt, boundary) < 0) boundary = startAt;
-  }
-  return boundary;
-}
-
-function normalizeEventDurations(events, groups, timeSignature) {
-  const measureEnd = measureDurationFraction(timeSignature);
-  return events.map((event, eventIndex) => {
-    const group = rhythmGroupForEvent(event, groups);
-    if (group) {
-      const groupDuration = normalizeFraction(group.duration, event.duration);
-      return groupDuration[0] > 0 ? { ...event, duration: groupDuration } : event;
-    }
-    if (event.rhythmAnchor || event.rhythmOnly) return event;
-    const boundary = nextRhythmicBoundary(events, groups, eventIndex, measureEnd);
-    const duration = subtractFractions(boundary, event.at);
-    return compareFractions(duration, [0, 1]) > 0 ? { ...event, duration } : event;
-  });
-}
-
 function normalizeMeasure(measure, idFactory) {
-  const timeSignature = normalizeTimeSignature(measure?.timeSignature);
-  const groups = Array.isArray(measure?.groups) ? measure.groups.map(group => normalizeGroup(group, idFactory)) : [];
   const events = Array.isArray(measure?.events) ? measure.events.map(event => normalizeEvent(event, idFactory)) : [];
   events.sort((left, right) => compareFractions(left.at, right.at) || String(left.id).localeCompare(String(right.id)));
   return {
     ...(measure && typeof measure === 'object' ? cloneValue(measure) : {}),
     id: String(measure?.id || idFactory('m')),
-    timeSignature,
-    events: normalizeEventDurations(events, groups, timeSignature),
-    groups
+    timeSignature: normalizeTimeSignature(measure?.timeSignature),
+    events,
+    groups: Array.isArray(measure?.groups) ? measure.groups.map(group => normalizeGroup(group, idFactory)) : []
   };
 }
 
