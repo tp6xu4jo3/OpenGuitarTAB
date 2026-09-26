@@ -12,8 +12,8 @@ const brandIcon = await readFile(new URL('../assets/OpenGuitarTABicon.ico', impo
 
 assert.match(indexHtml, /class="brand-copy"/, 'brand copy needs its own alignment box');
 assert.match(sidebarCss, /\.brand-row\s*\{[^}]*justify-content:flex-start[^}]*gap:8px/s, 'brand copy should sit closer to the icon instead of being pushed to the far edge');
-assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:54px[^}]*height:54px/s, 'sidebar icon should use the repaired square asset without a CSS crop');
-assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:54px[^}]*height:54px[^}]*object-position:center/s, 'brand image should render the full repaired square asset');
+assert.match(sidebarCss, /\.brand-mark\s*\{[^}]*width:54px[^}]*height:54px[^}]*aspect-ratio:1\/1/s, 'sidebar icon box should stay square without cropping');
+assert.match(sidebarCss, /\.brand-mark img\s*\{[^}]*width:100%[^}]*height:100%[^}]*aspect-ratio:1\/1[^}]*object-fit:contain[^}]*object-position:center/s, 'brand image should preserve the source aspect ratio');
 assert.match(sidebarCss, /\.brand-copy\s*\{[^}]*margin-left:0/s, 'brand text should move left toward the icon');
 assert.match(sidebarCss, /\.brand-name\s*\{[^}]*font-size:\s*20px/s, 'brand title should scale with the enlarged icon');
 
