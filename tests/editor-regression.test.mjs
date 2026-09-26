@@ -24,8 +24,9 @@ function dispatch(command){documentModel=applyCommand(documentModel,command,{idF
 
 dispatch(registry.createCommand('harmonic',{noteId:'n-harmonic'}));
 dispatch(registry.createCommand('strumUp',{eventId:'e-chord'}));
-const arc=resolveTechniqueTarget('arc',{fromNoteId:'n-harmonic',toNoteId:'n-tie'},documentModel);
-assert.equal(arc.target.relationType,'tie');
+const arc=resolveTechniqueTarget('arc',{measureId:'m-regression-1',startAt:[0,1],endAt:[1,2]},documentModel);
+assert.equal(arc.ok,true);
+assert.equal(arc.target.fromNoteId,'n-harmonic');
 dispatch(registry.createCommand('arc',arc.target));
 const slide=resolveTechniqueTarget('slide',{fromNoteId:'n-tie',toNoteId:'n-slide'},documentModel);
 assert.equal(slide.ok,true);
@@ -40,7 +41,10 @@ dispatch({type:'note/set',measureId:'m-regression-2',at:[9,8],duration:[1,8],str
   assert.equal(noteDisplayValue(harmonic),'5');
   assert.equal(harmonic.techniques[0].touchFret,17);
   assert.equal(index.eventById.get('e-chord').marks[0].type,'strum');
-  assert.deepEqual(documentModel.relations.map(relation=>relation.type).sort(),['slide','tie']);
+  assert.deepEqual(documentModel.relations.map(relation=>relation.type).sort(),['arc','slide']);
+  const storedArc=documentModel.relations.find(relation=>relation.type==='arc');
+  assert.deepEqual(storedArc.toPosition,{measureId:'m-regression-1',at:[1,2]});
+  assert.equal(storedArc.direction,'up');
   assert.deepEqual(documentModel.measures[1].groups.map(group=>group.type).sort(),['subdivision','tuplet']);
 }
 
@@ -61,7 +65,9 @@ const reloaded=new ScoreStore(reloadedSong).getDocument();
   assert.equal(index.noteById.get('n-harmonic').fret,'5');
   assert.equal(noteDisplayValue(index.noteById.get('n-harmonic')),'5');
   assert.equal(index.noteById.get('n-harmonic').techniques[0].touchFret,17);
-  assert.deepEqual(reloaded.relations.map(relation=>relation.type).sort(),['slide','tie']);
+  assert.deepEqual(reloaded.relations.map(relation=>relation.type).sort(),['arc','slide']);
+  const storedArc=reloaded.relations.find(relation=>relation.type==='arc');
+  assert.deepEqual(storedArc.toPosition,{measureId:'m-regression-1',at:[1,2]});
   assert.equal(reloadedSong.tempo,132);
   assert.equal(reloadedSong.capo,2);
 }
@@ -71,7 +77,7 @@ const reloaded=new ScoreStore(reloadedSong).getDocument();
   assert.deepEqual(buildSystems(inserted.document).map(system=>system.length),[1,2]);
   const restored=deleteMeasureAt(inserted.document,1,1).document;
   assert.deepEqual(buildSystems(restored).map(system=>system.length),[1,1]);
-  assert.deepEqual(restored.relations.map(relation=>relation.type).sort(),['slide','tie']);
+  assert.deepEqual(restored.relations.map(relation=>relation.type).sort(),['arc','slide']);
 }
 
 console.log('editor integration regression tests passed');
