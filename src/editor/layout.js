@@ -5,6 +5,7 @@ export const DEFAULT_LAYOUT_WIDTH = 1120;
 export const MIN_MEASURE_WIDTH = 205;
 export const COMPACT_SCORE_MIN_MEASURE_WIDTH = 112;
 export const COMPACT_SCORE_SEGMENT_GAP = 12;
+export const COMPACT_SCORE_MAX_MEASURES_PER_ROW = 8;
 
 function sourceDocument(document) {
   return isDocumentV3(document) ? document : normalizeDocumentV3(document);
@@ -69,8 +70,11 @@ function harmonicTextPressure(event) {
 
 function spacingPressureForMeasure(measure) {
   let pressure = 1;
+  let previousChordSymbol = null;
   for (const event of measure?.events || []) {
-    pressure += chordSymbolPressure(event);
+    const chordSymbol = String(event?.chord?.symbol ?? '').trim();
+    if (chordSymbol && chordSymbol !== previousChordSymbol) pressure += chordSymbolPressure(event);
+    if (chordSymbol) previousChordSymbol = chordSymbol;
     pressure += harmonicTextPressure(event);
     for (const mark of event.marks || []) {
       if (mark?.type === 'strum' || mark?.type === 'arpeggio') pressure += 2.5;
@@ -123,6 +127,18 @@ function allocateWidths(measures, availableWidth, metrics) {
   const remaining = Math.max(0, availableWidth - minimumTotal);
   const weightTotal = weights.reduce((sum, value) => sum + value, 0) || 1;
   const pixels = minimums.map((minimum, index) => minimum + remaining * (weights[index] / weightTotal));
+  const pixelTotal = pixels.reduce((sum, value) => sum + value, 0) || 1;
+  return {
+    minimums,
+    pixels,
+    percentages: pixels.map(value => value / pixelTotal * 100)
+  };
+}
+
+function equalCompactWidths(measures, availableWidth, metrics) {
+  const minimums = measures.map(measure => metrics.get(measure.id)?.minimumWidth || COMPACT_SCORE_MIN_MEASURE_WIDTH);
+  const width = Math.max(...minimums, availableWidth / Math.max(1, measures.length));
+  const pixels = measures.map(() => width);
   const pixelTotal = pixels.reduce((sum, value) => sum + value, 0) || 1;
   return {
     minimums,
@@ -203,7 +219,10 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
   if (!row?.segments?.length) return null;
   const measures = row.segments.flatMap(segment => segment.measures);
   const usableWidth = Math.max(1, availableWidth - gap * Math.max(0, row.segments.length - 1));
-  const allocation = allocateWidths(measures, usableWidth, metrics);
+  const plainNotation = measures.every(measure => (metrics.get(measure.id)?.complexity || 1) <= 1 + 1e-9);
+  const allocation = plainNotation
+    ? equalCompactWidths(measures, usableWidth, metrics)
+    : allocateWidths(measures, usableWidth, metrics);
   let cursor = 0;
   const segments = row.segments.map(segment => {
     const count = segment.measures.length;
@@ -219,17 +238,19 @@ function finalizeCompactRow(row, availableWidth, gap, metrics) {
       widthWeight: pixelTotal
     };
   });
-  return { segments, measureCount: measures.length, minimumWidth: row.minimumWidth };
+  return { segments, measureCount: measures.length, minimumWidth: row.minimumWidth, plainNotation };
 }
 
 export function buildCompactScoreLayout(documentModel, {
   availableWidth = DEFAULT_LAYOUT_WIDTH,
   minMeasureWidth = COMPACT_SCORE_MIN_MEASURE_WIDTH,
-  segmentGap = COMPACT_SCORE_SEGMENT_GAP
+  segmentGap = COMPACT_SCORE_SEGMENT_GAP,
+  maxMeasuresPerRow = COMPACT_SCORE_MAX_MEASURES_PER_ROW
 } = {}) {
   const document = sourceDocument(documentModel);
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const gap = Math.max(0, Number(segmentGap) || 0);
+  const maxPerRow = Math.max(1, Math.min(COMPACT_SCORE_MAX_MEASURES_PER_ROW, Math.trunc(Number(maxMeasuresPerRow) || COMPACT_SCORE_MAX_MEASURES_PER_ROW)));
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
   const metrics = buildMetrics(document, minMeasureWidth);
   const rows = [];
@@ -245,7 +266,7 @@ export function buildCompactScoreLayout(documentModel, {
       const lastSegment = row?.segments?.[row.segments.length - 1] || null;
       const startsSegment = !lastSegment || lastSegment.sourceSystemIndex !== sourceSystemIndex;
       const extraGap = row?.segments?.length && startsSegment ? gap : 0;
-      if (row?.measureCount && row.minimumWidth + extraGap + minimumWidth > width) flush();
+      if (row?.measureCount && (row.measureCount >= maxPerRow || row.minimumWidth + extraGap + minimumWidth > width)) flush();
       if (!row) row = { segments: [], measureCount: 0, minimumWidth: 0 };
       let segment = row.segments[row.segments.length - 1];
       if (!segment || segment.sourceSystemIndex !== sourceSystemIndex) {
