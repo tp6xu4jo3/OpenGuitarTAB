@@ -140,6 +140,8 @@ export class SparseScoreRenderer {
     this.layoutFrame = 0;
     this.cursor = null;
     this.observedWidth = -1;
+    this.navigationEntries = [];
+    this.navigationLookup = new Map();
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handleLayoutRequest = this.handleLayoutRequest.bind(this);
     this.root?.addEventListener('pointerdown', this.handlePointerDown);
@@ -187,6 +189,12 @@ export class SparseScoreRenderer {
 
   render(documentModel, changeSet = null) {
     this.document = isDocumentV3(documentModel) ? documentModel : normalizeDocumentV3(documentModel);
+    const navigationChanged = !changeSet
+      || changeSet.document
+      || changeSet.layoutKind === 'grid'
+      || changeSet.layoutKind === 'structure'
+      || !this.navigationEntries.length;
+    if (navigationChanged) this.rebuildNavigationIndex();
     if (!this.root) return;
     const full = !this.root.querySelector('.v3-grid') || !changeSet || changeSet.document;
     if (full || changeSet?.layoutKind === 'structure') {
@@ -496,10 +504,26 @@ export class SparseScoreRenderer {
 
   publishRendered(detail = {}) {
     window.editorLayoutPlan = detail.layout || this.layoutPlan;
-    window.editorPlayback?.invalidate?.();
-    window.updateProgressRange?.();
     this.onRendered?.(detail);
     window.dispatchEvent(new CustomEvent('opentab:editor-rendered', { detail }));
+  }
+
+  rebuildNavigationIndex() {
+    const entries = [];
+    const lookup = new Map();
+    for (const measure of this.document?.measures || []) {
+      for (const time of editableTimesForMeasure(measure)) {
+        const entry = {
+          measureId: String(measure.id),
+          at: cloneValue(time.at),
+          duration: cloneValue(time.duration || BASE_GRID_STEP)
+        };
+        lookup.set(`${entry.measureId}:${fractionKey(entry.at)}`, entries.length);
+        entries.push(entry);
+      }
+    }
+    this.navigationEntries = entries;
+    this.navigationLookup = lookup;
   }
 
   noteAt(measureId, at, string) {
@@ -552,37 +576,30 @@ export class SparseScoreRenderer {
   }
 
   navigateCursor({ measureId, string, at, direction }) {
-    const columns = [...this.root.querySelectorAll('.v3-column-target[data-measure-id][data-at]')];
-    const measureOrder = new Map(this.document.measures.map((measure, index) => [String(measure.id), index]));
-    columns.sort((left, right) => {
-      const measureDelta = (measureOrder.get(left.dataset.measureId) ?? 0) - (measureOrder.get(right.dataset.measureId) ?? 0);
-      if (measureDelta) return measureDelta;
-      return fractionToNumber(parseFraction(left.dataset.at) || [0, 1]) - fractionToNumber(parseFraction(right.dataset.at) || [0, 1]);
-    });
-    const key = fractionKey(at);
-    const index = columns.findIndex(node => node.dataset.measureId === String(measureId) && node.dataset.at === key);
-    if (index < 0) return null;
+    const index = this.navigationLookup.get(`${String(measureId)}:${fractionKey(at)}`);
+    if (!Number.isInteger(index)) return null;
+    const current = this.navigationEntries[index];
+    if (!current) return null;
     if (direction === 'left' || direction === 'right') {
-      const next = columns[Math.max(0, Math.min(columns.length - 1, index + (direction === 'left' ? -1 : 1)))];
+      const nextIndex = Math.max(0, Math.min(this.navigationEntries.length - 1, index + (direction === 'left' ? -1 : 1)));
+      const next = this.navigationEntries[nextIndex];
       if (!next) return null;
-      const nextAt = parseFraction(next.dataset.at);
-      const nextDuration = parseFraction(next.dataset.duration) || BASE_GRID_STEP;
       return {
-        measureId: next.dataset.measureId,
-        at: nextAt,
-        duration: nextDuration,
+        measureId: next.measureId,
+        at: cloneValue(next.at),
+        duration: cloneValue(next.duration || BASE_GRID_STEP),
         string,
-        initialValue: this.cursorValueAt(next.dataset.measureId, nextAt, string)
+        initialValue: this.cursorValueAt(next.measureId, next.at, string)
       };
     }
     const nextString = string + (direction === 'up' ? -1 : 1);
     if (nextString < 0 || nextString >= this.stringCount) return null;
     return {
-      measureId,
-      at,
-      duration: parseFraction(this.root.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(String(measureId))}"][data-at="${escapeSelector(key)}"]`)?.dataset.duration) || BASE_GRID_STEP,
+      measureId: current.measureId,
+      at: cloneValue(current.at),
+      duration: cloneValue(current.duration || BASE_GRID_STEP),
       string: nextString,
-      initialValue: this.cursorValueAt(measureId, at, nextString)
+      initialValue: this.cursorValueAt(current.measureId, current.at, nextString)
     };
   }
 
