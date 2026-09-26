@@ -1,87 +1,101 @@
 # Editor V3 Architecture
 
-Editor V3 uses the V3 document as the authoritative music model. UI grids, playback, persistence, and compatibility rows are views or projections of that model; they must not overwrite the document implicitly.
+Editor V3 uses the V3 document as the authoritative music model. Rendering, playback, persistence, tools, and responsive layout all read from that document; DOM state is never promoted back into music data.
 
 ## Data model
 
 `Song -> document -> measures -> events -> notes`
 
-- `model.js` — schema, fractions, IDs, normalization, document indexes.
-- `migrate-v2.js` — one-way V2 loading/migration plus explicit legacy projection for the current grid UI.
-- `store.js` — owns the current V3 document and emits `ChangeSet` updates.
+- `model.js` — schema, fractions, IDs, normalization, and document indexes.
+- `migrate-v2.js` — one-way loading of older row-based songs into V3. Once a song enters the V3 Store, legacy `rows`, `rhythmRows`, and `rowMeasureCounts` are removed from the live song object.
+- `store.js` — owns the current V3 document and emits typed `ChangeSet` updates.
 - `commands.js` — pure music-data commands.
 - `structure-commands.js` — pure system/measure structure commands.
 
-V2 migration happens when a song without a V3 document enters a `ScoreStore`. Generic metadata changes such as rename or publish must never trigger V2 rows -> V3 reconciliation.
+V2 migration happens when an older song without a V3 document enters a `ScoreStore`. Generic metadata changes such as rename or publish must never reconstruct the V3 document from legacy row data.
 
 ## Controllers
 
-- `controller.js` — composition root for Store, Clipboard, Tools, and renderer factory. Keep this file orchestration-only.
-- `tool-session.js` — click-only tool state machine. It owns `idle -> selected -> selecting target -> commit -> idle` state and the Note/Column/NotePair/Range target shapes.
-- `technique-rules.js` — pure guitar-domain validation for harmonics, chord sweeps, merged arcs, slides, and rhythm-range constraints before Commands are dispatched.
-- `rhythm-grid.js` — pure fractional-time transforms for regional triplet (3:2) and 32nd subdivisions; empty 32nd positions persist as rhythm anchors while triplet slots remain sparse group data.
-- `input-controller.js` — note input orchestration. It dispatches V3 note commands and delegates navigation/presentation work to dedicated modules.
-- `grid-navigation.js` — arrow-only score navigation over real fractional time positions. Enter is consumed but never moves the cursor.
-- `legacy-grid-compat.js` — the only production-grid compatibility boundary for legacy rows, rhythm rows, row counts, and explicit V3 -> V2 projection.
-- `structure-controller.js` — row/system/measure selection, menu, insertion, deletion, and structure drag/drop.
-- `view-state.js` — the single owner of edit/score mode switching plus presentation-only score density (normal/compact). Density changes never modify the song document.
-- `playback-controller.js` — the single owner of playback UI state, play-button behavior, progress index, and event scheduling.
-- `song-actions.js` — editor Save and Publish actions.
+- `controller.js` — composition root plus editor interaction coordination for Store, Clipboard, Tools, chord placement, technique selection, renderers, and ribbon integration.
+- `tool-session.js` — click-only tool state machine and target-selection state.
+- `technique-rules.js` — pure guitar-domain validation before Commands are dispatched.
+- `rhythm-grid.js` — pure fractional-time transforms for triplet and 32nd-note regions plus the canonical editable-time projection.
+- `structure-controller.js` — system/measure selection, menus, insertion, deletion, and structure drag/drop.
+- `view-state.js` — the single owner of edit/score mode and presentation-only density state.
+- `playback-controller.js` — playback UI state, lazy playback-index lifetime, playhead/progress, and event scheduling.
+- `song-actions.js` — Save and Publish actions.
 
-Ordinary note entry is a local Store/DOM update and never triggers adaptive reflow on blur. Layout invalidation is typed: `metrics` recomputes adaptive widths for technique/mark/relation notation, `grid` rebuilds only visual rows belonging to the affected source system when editable time positions change, and `structure` is reserved for document/system structure changes. `layoutFrom` is a measure anchor, never a boolean alias for full `renderRows`.
+The production write path remains:
 
-Technique tools are click-only. Clicking a tool activates it, a successful target command returns the session to idle, invalid targets keep the tool active, and Escape or clicking the active tool again cancels it. Structure drag/drop remains a separate editor interaction.
+`UI -> Command -> Store -> ChangeSet -> Renderer`
 
-## Rendering and layout
+Controller code may coordinate interactions, but it must not create a second data flow or mutate the document outside Commands/Store commits.
 
-- `grid-renderer.js` — current production TAB grid and adaptive visual-system composition. Each adaptive wrap is rendered as a first-class visual row; source-system identity remains attached to the row so responsive wrapping never mutates song structure. It does not own keyboard navigation or projection rules.
-- `grid-geometry.js` — shared measure-width and time-position geometry used by grid rendering, playback, structure UI, and presentation.
-- `renderer.js` — sparse V3 renderer for the full V3 visual cutover.
-- `relation-renderer.js` — SVG relation layer for slide/tie/slur-style relations. Relations are Note-ID based; adaptive line/system breaks render continuation segments at grid edges instead of storing or connecting stale screen coordinates.
-- `layout.js` — the shared adaptive V3 layout engine for edit and score views. Normal layout balances four-measure wraps so a 3+1 orphan becomes 2+2; compact score mode greedily packs source-system segments by available width and notation complexity, so the visual measure count is not a fixed 4/8 preset.
-- `presentation.js` — note backgrounds and density fitting.
+## Production rendering
 
-Rendering must not become a data source. DOM scanning is not a persistence path. Tool targets may read stable IDs and fractional time attributes projected by the renderer, but commands always resolve against the Store document.
+- `renderer.js` — the production `SparseScoreRenderer`. It renders sparse V3 events directly, owns the visible TAB grid, adaptive visual rows, local measure updates, and a document-derived navigation index.
+- `notation-renderer.js` — notation/technique/chord overlay rendering. A render pass builds one V3 document index and shares it with relation rendering.
+- `relation-renderer.js` — SVG slide/tie/slur rendering. Relations are Note-ID based and use continuation segments when endpoints cross visual grids/systems.
+- `layout.js` — shared adaptive layout for edit and score views. Normal layout wraps source systems responsively; compact score mode packs source-system segments by available width and notation complexity.
 
-`ChangeSet.measures` drives local notation updates. `ChangeSet.layoutFrom` anchors layout work at a measure and `ChangeSet.layoutKind` defines its scope. Harmonic, strum/arpeggio, slide, tie, slur, and their deletion paths use `metrics`: if visual grouping is unchanged, only adaptive measure widths and local notation are refreshed; if grouping changes, only that source system's visual rows are rebuilt. Triplet/32nd subdivision, tuplet-group grid changes, and measure content replacement use `grid` and rebuild only that source system. Structural edits use `structure` and may request a full render.
+Sparse V3 is the only production renderer. The removed Dense Grid modules are not compatibility surfaces and must not be recreated.
+
+Rendering is projection only. Tool targets may read stable IDs and fractional-time attributes emitted by the renderer, but Commands always resolve those targets against the Store document.
+
+## ChangeSet invalidation scopes
+
+`ChangeSet` separates music-data changes from visual-layout changes:
+
+- `measures` — locally re-render the affected measure content and notation.
+- `playback` — playback/music content changed. The controller marks the playback index dirty; the renderer does not decide playback invalidation.
+- `layoutKind: metrics` — notation spacing complexity changed without changing editable time positions. Adaptive widths may be recomputed for the affected source system.
+- `layoutKind: grid` — editable time positions changed, for example triplet or 32nd-note subdivision. The affected source system may need rebuilt visual rows and the navigation/playback timeline topology is dirty.
+- `layoutKind: structure` — measure/system structure changed and a broader render is allowed.
+- `document` — whole-document replacement/full invalidation.
+
+Ordinary fret entry does not request `metrics` layout work unless the measure's actual spacing complexity changes. For example, changing one ordinary single-digit fret to another is a local measure + playback content update; a change that creates or removes a close pair of multi-digit frets can change layout metrics.
+
+`layoutFrom` is a measure anchor. Notation uses it to identify the affected source system and redraws only that system's current visual segments rather than treating it as a full-document flag.
+
+## Navigation
+
+Keyboard navigation is derived from:
+
+`document.measures -> editableTimesForMeasure()`
+
+The renderer builds an ordered navigation index when grid/document structure changes. Arrow-key movement then uses that index directly; it must not rescan and sort every `.v3-column-target` in the DOM on each key press.
 
 ## Playback and audio
 
-- `playback-index.js` — builds an event timeline directly from V3 fractions.
-- `playback-controller.js` — schedules timeline entries and controls playhead/progress.
+- `playback-index.js` — builds the playable timeline directly from V3 fractions and editable times.
+- `playback-controller.js` — owns playback-index invalidation/rebuild policy, scheduling, progress, and playhead state.
 - `audio-engine.js` — Web Audio guitar synthesis only.
 
-Playback must read V3 Events, never legacy slots or `.note-input` values.
+Playback invalidation is driven by `ChangeSet.playback`, not render completion. Playback-index rebuilding is lazy: ordinary note-content edits may keep the existing timeline topology for navigation/progress until playback actually needs fresh event/note data, while grid/structure changes mark the timeline topology dirty immediately.
 
-## Tools and notation
+Playback reads V3 Events only; it never reads legacy slots or editor input DOM values.
 
-- `tools.js` — Tool Registry metadata and command factories. It contains no drag payload transport.
+## Tools and notation ownership
+
+- `tools.js` — Tool Registry metadata and command factories.
 - `tool-session.js` — interaction state only; it never writes song data.
-- note-local behavior belongs in `note.techniques`. Artificial harmonics keep the actual fretted note in `note.fret`; the technique stores only its own `touchFret` metadata.
-- event-local notation belongs in `event.marks`. Sweep symbols derive their vertical span from the event's actual note strings, never from all six UI inputs in the column.
-- grouped rhythm belongs in `measure.groups`.
-- note-to-note notation such as slide/tie/slur belongs in `document.relations`.
+- Note-local behavior belongs in `note.techniques`.
+- Event-local notation belongs in `event.marks`.
+- Grouped rhythm belongs in `measure.groups`.
+- Note-to-note notation such as slide/tie/slur belongs in `document.relations`.
 
-New notation should be implemented through Commands + Renderer/Relation Renderer, not through a new patch script. Technique graphics stay display-only and noninteractive; stable markers below the sixth string are the selection/deletion surface for note techniques, event marks, groups, and relations.
+Artificial harmonics keep the actual fretted note in `note.fret`; harmonic metadata stores its own `touchFret`. Sweep symbols derive their span from the event's real notes. Fractional rhythm is authoritative in V3 and is scheduled directly by playback.
 
-## Compatibility boundary
+## Migration boundary
 
-Legacy `rows`, `rhythmRows`, and `rowMeasureCounts` currently exist only so the production grid and older stored songs remain usable during the sparse-renderer cutover.
+The only legacy direction is:
 
-Allowed direction:
+`older stored song -> migrate-v2 -> V3 Store`
 
-`V2 stored song -> migrate-v2 -> V3 Store`
-
-`V3 Store -> explicit projection -> current grid compatibility view`
-
-Disallowed direction after Store creation:
-
-`DOM or generic legacy rows -> silently overwrite V3 Store`
-
-When the sparse renderer fully replaces the current grid, the compatibility projection can be removed without changing the music model, commands, playback, or persistence architecture.
-
-Fractional rhythm editing is authoritative in V3: triplet and 32nd positions are stored as reduced fractions, rendered as dynamic inputs, and scheduled directly by Playback. The legacy 1/16 projection remains compatibility-only and is not used to quantize fractional rhythm.
+After Store creation, there is no production V3-to-Dense-Grid compatibility projection and no legacy grid renderer. DOM or legacy row structures must never silently overwrite the V3 Store.
 
 ## Structural rule
 
-Compatibility code may translate between the current grid surface and V3, but it must stay inside named compatibility modules. App/library scripts must not reintroduce DOM-to-song reads, duplicate playback state, or duplicate score-mode handlers. Do not add runtime monkey patches, wrapper overrides, duplicate geometry parsers, or cross-module `window.*` calls when a direct module dependency exists. The production editor remains Store -> Command -> ChangeSet -> Render; DOM state is never promoted back to authoritative music data.
+Do not add runtime monkey patches, wrapper overrides, duplicate renderer/data paths, or modules named as emergency interception layers. Fix the owning module and preserve a single clear flow. In particular, removed Dense Grid modules such as `grid-renderer.js`, `grid-geometry.js`, `grid-navigation.js`, `input-controller.js`, `legacy-grid-compat.js`, and `presentation.js` must stay removed.
+
+Avoid new cross-module `window.*` APIs when a direct module dependency fits. Existing global bridges are transition/application integration surfaces only and must not become a second source of truth.
