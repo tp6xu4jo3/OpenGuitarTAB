@@ -171,11 +171,20 @@ function appendTechniqueMarker(layer, markerBuckets, { node = null, nodes = null
   });
 }
 
-function relationMarkerLabel(type) {
-  if (type === 'slide') return '/';
-  if (type === 'tie') return 'T';
-  if (type === 'slur') return 'L';
+function relationMarkerLabel(relation) {
+  if (relation?.type === 'slide') return '/';
+  if (relation?.type === 'tie') return 'T';
+  if (relation?.type === 'slur') return 'L';
+  if (relation?.type === 'arc') return relation.direction === 'down' ? '⌣' : '⌒';
   return '↔';
+}
+
+function relationMarkerTitle(relation) {
+  if (relation?.type === 'slide') return '滑音';
+  if (relation?.type === 'tie') return '延音線';
+  if (relation?.type === 'slur') return '圓滑線';
+  if (relation?.type === 'arc') return relation.direction === 'down' ? '下弧線' : '上弧線';
+  return '關聯標記';
 }
 
 export class NotationRenderer {
@@ -262,6 +271,7 @@ export class NotationRenderer {
     const measures = this.document.measures.filter(measure => measureSet.has(String(measure.id)));
 
     for (const measure of measures) {
+      let previousChordSymbol = null;
       for (const event of measure.events || []) {
         const nodes = eventNodes(systemElement, event.id);
         const noteTargets = eventNoteNodes(systemElement, event);
@@ -272,14 +282,16 @@ export class NotationRenderer {
         const top = notePoints.length ? Math.min(...notePoints.map(point => point.y)) - 5 : anchor.y - 5;
         const bottom = notePoints.length ? Math.max(...notePoints.map(point => point.y)) + 5 : anchor.y + 5;
 
-        if (event.chord?.symbol) {
+        const chordSymbol = String(event.chord?.symbol ?? '').trim();
+        if (chordSymbol && chordSymbol !== previousChordSymbol) {
           appendText(svg, {
             x: anchor.x,
             y: chordLaneY(anchorNode, systemElement),
-            text: String(event.chord.symbol),
+            text: chordSymbol,
             className: 'notation-chord-symbol',
             eventId: event.id
           });
+          previousChordSymbol = chordSymbol;
         }
 
         for (const mark of event.marks || []) {
@@ -337,14 +349,16 @@ export class NotationRenderer {
       if (!sourceNode || isScoreViewActive()) continue;
       const targetNode = relation.toNoteId
         ? systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(relation.toNoteId)}"]`)
-        : null;
+        : relation.toPosition
+          ? columnNode(systemElement, relation.toPosition.measureId, relation.toPosition.at)
+          : null;
       appendTechniqueMarker(markerLayer, markerBuckets, {
         nodes: [sourceNode, targetNode].filter(Boolean),
         systemElement,
         kind: 'relation',
         id: relation.id,
-        label: relationMarkerLabel(relation.type),
-        title: relation.type === 'slide' ? '滑音' : relation.type === 'tie' ? '延音線' : '圓滑線'
+        label: relationMarkerLabel(relation),
+        title: relationMarkerTitle(relation)
       });
     }
   }
