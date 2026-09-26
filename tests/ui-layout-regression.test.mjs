@@ -45,7 +45,7 @@ assert.doesNotMatch(html,/<h2>公共曲譜<\/h2>/,'catalog must not repeat a pub
 assert.match(html,/class="library-hero-copy"/);
 assert.match(html,/class="library-hero-controls"/);
 assert.match(html,/rel="icon" href="\.\/assets\/OpenGuitarTABicon\.ico"/,'uploaded app icon must also be the site icon');
-assert.match(html,/class="brand-mark" aria-hidden="true"><img src="\.\/assets\/OpenGuitarTABicon\.ico"/,'sidebar brand must use the uploaded icon');
+assert.match(html,/class="brand-mark" aria-hidden="true"><img src="\.\/assets\/OpenGuitarTABicon\.ico"/,'sidebar brand must use the original PNG');
 assert.doesNotMatch(html,/<div class="brand-mark">OG<\/div>/,'legacy OG text mark must be removed');
 assert.match(buildScript,/cp\(path\.join\(projectRoot, 'assets'\), path\.join\(outputDir, 'assets'\), \{ recursive: true \}\)/,'production build must copy the app icon assets');
 
