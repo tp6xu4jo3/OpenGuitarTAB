@@ -33,12 +33,12 @@
 .v3-rhythm-beam-1{top:25px}.v3-rhythm-beam-2{top:16px}.v3-rhythm-beam-3{top:7px}
 .v3-rhythm-flag{width:10px;transform:none}
 .v3-rhythm-dot{position:absolute;top:27px;width:5px;height:5px;border-radius:50%;background:currentColor;transform:translate(5px,-50%)}
-.v3-rhythm-tuplet-bracket{position:absolute;top:34px;display:grid;grid-template-columns:minmax(6px,1fr) auto minmax(6px,1fr);align-items:start;gap:4px;min-width:28px;height:12px;transform:translateX(-1px)}
+.v3-rhythm-tuplet-bracket{position:absolute;top:32px;display:grid;grid-template-columns:minmax(6px,1fr) auto minmax(6px,1fr);align-items:start;gap:4px;min-width:28px;height:12px;transform:translateX(-1px)}
 .v3-rhythm-tuplet-segment{position:relative;height:7px;border-top:var(--v3-rhythm-stroke) solid currentColor}
 .v3-rhythm-tuplet-segment-left::before,.v3-rhythm-tuplet-segment-right::after{content:'';position:absolute;top:calc(-1 * var(--v3-rhythm-stroke));height:7px;border-left:var(--v3-rhythm-stroke) solid currentColor}
 .v3-rhythm-tuplet-segment-left::before{left:0}.v3-rhythm-tuplet-segment-right::after{right:0}
 .v3-rhythm-tuplet-number{min-width:13px;color:#111;font:700 11px/12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center}
-.v3-rhythm-tuplet-number-only{position:absolute;top:34px;transform:translateX(-50%);line-height:12px}
+.v3-rhythm-tuplet-number-only{position:absolute;top:32px;transform:translateX(-50%);line-height:12px}
 .score-density-line .v3-system{min-width:0;flex:var(--score-density-weight,1) 1 0}
 .score-density-line .v3-grid{height:204px}
 @media(max-width:900px){.v3-grid{min-height:170px}.v3-staff{inset-block:30px}.v3-note,.v3-note-editor{font-size:16px}.content.score-view .v3-grid,.content.score-view .v3-measure{min-height:204px;height:204px}.content.score-view .v3-staff{top:32px;bottom:auto;height:112px;min-height:112px}}
