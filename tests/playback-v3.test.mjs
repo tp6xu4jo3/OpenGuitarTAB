@@ -133,5 +133,7 @@ assert.equal(
 );
 assert.match(playbackControllerSource, /v3-playback-beat/,'playback must render one rounded column bar rather than note highlights');
 assert.doesNotMatch(playbackControllerSource, /\.classList\.add\('is-playing'\)/,'playback must not highlight individual notes');
+assert.match(playbackControllerSource, /timelineDirty[\s\S]*navigationPlaybackIndex\(\)[\s\S]*state\.playbackIndex && !state\.timelineDirty/s, 'ordinary content edits should reuse the existing playback timeline for navigation until fresh event data is needed');
+assert.match(playbackControllerSource, /function invalidatePlaybackIndex\(\{ timeline = false \} = \{\}\)/s, 'playback invalidation should distinguish content dirtiness from timeline-topology dirtiness');
 
 console.log('editor v3 playback tests passed');
