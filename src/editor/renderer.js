@@ -73,12 +73,28 @@ function layoutAvailableWidth(root) {
   return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + rail) - rail);
 }
 
-function rhythmBeamCount(duration) {
-  const value = fractionToNumber(duration || BASE_GRID_STEP);
+function rhythmBeamCountForValue(value) {
   if (!Number.isFinite(value) || value >= 1) return 0;
   if (value >= 0.5) return 1;
   if (value >= 0.25) return 2;
   return 3;
+}
+
+function rhythmBeamCount(duration) {
+  return rhythmBeamCountForValue(fractionToNumber(duration || BASE_GRID_STEP));
+}
+
+function inferredOrdinaryBeamCount(event, orderedEvents) {
+  const storedDuration = fractionToNumber(event?.duration || BASE_GRID_STEP);
+  if (Math.abs(storedDuration - fractionToNumber(BASE_GRID_STEP)) > 1e-9) return rhythmBeamCountForValue(storedDuration);
+
+  const at = normalizeFraction(event?.at || [0, 1]);
+  const denominator = Math.abs(Number(at[1])) || 1;
+  let impliedDuration = denominator === 1 ? 1 : denominator === 2 ? 0.5 : 0.25;
+  const atValue = fractionToNumber(at);
+  const next = orderedEvents.find(candidate => fractionToNumber(candidate.at) > atValue + 1e-9);
+  if (next) impliedDuration = Math.min(impliedDuration, Math.max(0, fractionToNumber(next.at) - atValue));
+  return rhythmBeamCountForValue(impliedDuration);
 }
 
 function eventAt(measure, at) {
@@ -344,23 +360,23 @@ export class SparseScoreRenderer {
 
   createRhythmLayer(measure, visualTimeByKey) {
     const layer = div('v3-rhythm-layer');
-    const points = (measure.events || [])
+    const orderedEvents = (measure.events || [])
       .filter(event => (event.notes || []).length)
-      .sort((left, right) => fractionToNumber(left.at) - fractionToNumber(right.at))
-      .map(event => {
-        const visualTime = visualTimeByKey.get(fractionKey(event.at));
-        const group = explicitRhythmGroup(measure, event);
-        const groupBeamCount = Number(group?.beamCount);
-        return {
-          event,
-          x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
-          at: fractionToNumber(event.at),
-          beams: Number.isFinite(groupBeamCount)
-            ? Math.max(0, Math.trunc(groupBeamCount))
-            : rhythmBeamCount(event.duration || BASE_GRID_STEP),
-          group
-        };
-      });
+      .sort((left, right) => fractionToNumber(left.at) - fractionToNumber(right.at));
+    const points = orderedEvents.map(event => {
+      const visualTime = visualTimeByKey.get(fractionKey(event.at));
+      const group = explicitRhythmGroup(measure, event);
+      const groupBeamCount = Number(group?.beamCount);
+      return {
+        event,
+        x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
+        at: fractionToNumber(event.at),
+        beams: Number.isFinite(groupBeamCount)
+          ? Math.max(0, Math.trunc(groupBeamCount))
+          : inferredOrdinaryBeamCount(event, orderedEvents),
+        group
+      };
+    });
 
     const groups = new Map();
     points.forEach(point => {
