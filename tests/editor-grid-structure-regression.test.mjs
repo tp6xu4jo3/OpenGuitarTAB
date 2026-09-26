@@ -12,9 +12,9 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 
 {
   const doc=createDocumentV3({measures:[plainMeasure('harmonic',{harmonic:true}),plainMeasure('plain')]});
-  assert.equal(measureComplexity(doc,doc.measures[0]),measureComplexity(doc,doc.measures[1]),'harmonic does not flex layout');
+  assert.ok(measureComplexity(doc,doc.measures[0])>measureComplexity(doc,doc.measures[1]),'score-view harmonic text may flex layout');
   const layout=buildAdaptiveLayout(doc,{availableWidth:900});
-  assert.ok(Math.abs(layout.systems[0].measureWidths[0]-layout.systems[0].measureWidths[1])<0.001);
+  assert.ok(layout.systems[0].measureWidths[0]>layout.systems[0].measureWidths[1],'harmonic notation should receive more adaptive width than a plain measure');
 }
 {
   const doc=createDocumentV3({measures:[plainMeasure('sweep',{mark:true}),plainMeasure('plain')]});
