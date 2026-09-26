@@ -22,6 +22,7 @@ assert.match(renderer, /class SparseScoreRenderer/);
 assert.match(renderer, /v3-column-target/);
 assert.match(renderer, /editableTimesForMeasure/);
 assert.match(renderer, /buildAdaptiveLayout/);
+assert.match(renderer, /buildAdaptiveSystemLayout/);
 assert.match(renderer, /applyLayoutChange/);
 assert.doesNotMatch(renderer, /note-input|song\.rows|rhythmRows|rowMeasureCounts/);
 
@@ -29,6 +30,11 @@ const controller = read('src/editor/controller.js');
 assert.match(controller, /new SparseScoreRenderer/);
 assert.match(controller, /scoreRenderer\?\.render/);
 assert.doesNotMatch(controller, /grid-renderer|input-controller|projectStoreToView|note-input/);
+assert.doesNotMatch(controller, /window\.renderRows\s*=/, 'removed Dense Grid renderRows global must not return as a compatibility entry point');
+
+const editorReadme = read('src/editor/README.md');
+assert.match(editorReadme, /renderer\.js` — the production `SparseScoreRenderer`/, 'architecture documentation must name SparseScoreRenderer as production');
+assert.doesNotMatch(editorReadme, /`grid-renderer\.js` — current production|`legacy-grid-compat\.js` — the only production|`input-controller\.js` — note input orchestration/, 'architecture documentation must not describe removed Dense Grid modules as live production modules');
 
 const migration = read('src/editor/migrate-v2.js');
 assert.match(migration, /migrateSongToDocumentV3/);

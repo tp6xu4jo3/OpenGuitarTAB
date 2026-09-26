@@ -1,12 +1,25 @@
 import assert from 'node:assert/strict';
 import { createDocumentV3 } from '../src/editor/model.js';
-import { buildAdaptiveLayout, buildCompactScoreLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
+import {
+  buildAdaptiveLayout,
+  buildAdaptiveSystemLayout,
+  buildCompactScoreLayout,
+  buildSystems,
+  measureComplexity
+} from '../src/editor/layout.js';
 
-function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false}={}) {
+function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chordSymbol=''}={}) {
   const events = doubleDigits ? [
     {id:`${id}-e1`,at:[0,1],duration:[1,4],marks:[],notes:[{id:`${id}-n1`,string:0,fret:'12',techniques:[]}]},
     {id:`${id}-e2`,at:[1,4],duration:[1,4],marks:[],notes:[{id:`${id}-n2`,string:1,fret:'14',techniques:[]}]}
-  ] : [{id:`${id}-e`,at:[0,1],duration:[1,4],marks:mark?[{id:`${id}-mk`,type:mark,direction:'up'}]:[],notes:[{id:`${id}-n`,string:0,fret:'5',techniques:harmonic?[{id:`${id}-h`,type:'harmonic',touchFret:17}]:[]}]}];
+  ] : [{
+    id:`${id}-e`,
+    at:[0,1],
+    duration:[1,4],
+    marks:mark?[{id:`${id}-mk`,type:mark,direction:'up'}]:[],
+    notes:[{id:`${id}-n`,string:0,fret:harmonic?'12':'5',techniques:harmonic?[{id:`${id}-h`,type:'harmonic',touchFret:24}]:[]}],
+    ...(chordSymbol ? { chord:{symbol:chordSymbol,voicingId:`${id}-v`} } : {})
+  }];
   return {id,timeSignature:{numerator:4,denominator:4},events,groups:group?[{id:`${id}-g`,...group}]:[]};
 }
 
@@ -22,10 +35,14 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false}={})
 {
   const plain=measure('plain');
   const harmonic=measure('harmonic',{harmonic:true});
+  const shortChord=measure('short-chord',{chordSymbol:'C'});
+  const wideChord=measure('wide-chord',{chordSymbol:'F#m7add11'});
   const triplet=measure('triplet',{group:{type:'tuplet',ratio:[3,2],slots:[[0,1],[1,3],[2,3]],duration:[1,3]}});
-  const doc=createDocumentV3({measures:[plain,harmonic,triplet]});
-  assert.equal(measureComplexity(doc,plain),measureComplexity(doc,harmonic),'harmonic must not widen layout');
-  assert.equal(measureComplexity(doc,plain),measureComplexity(doc,triplet),'triplet must not widen layout');
+  const doc=createDocumentV3({measures:[plain,harmonic,shortChord,wideChord,triplet]});
+  assert.ok(measureComplexity(doc,harmonic)>measureComplexity(doc,plain),'score-view <12> harmonic text must reserve horizontal space');
+  assert.ok(measureComplexity(doc,shortChord)>measureComplexity(doc,plain),'a chord symbol must contribute notation width');
+  assert.ok(measureComplexity(doc,wideChord)>measureComplexity(doc,shortChord),'longer chord symbols must reserve more width');
+  assert.equal(measureComplexity(doc,plain),measureComplexity(doc,triplet),'triplet bracket alone must not widen adaptive measure metrics');
 }
 
 {
@@ -53,10 +70,30 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false}={})
 }
 
 {
+  const documentModel=createDocumentV3({
+    measures:['m1','m2','m3','m4','m5','m6','m7','m8'].map(id=>measure(id)),
+    layout:{systemBreakAfter:['m4']}
+  });
+  const full=buildAdaptiveLayout(documentModel,{availableWidth:650});
+  const local=buildAdaptiveSystemLayout(full.logicalSystems[1],{sourceSystemIndex:1,availableWidth:650});
+  const expected=full.systems.filter(system=>system.sourceSystemIndex===1);
+  const shape=systems=>systems.map(system=>({
+    sourceSystemIndex:system.sourceSystemIndex,
+    sourceMeasureCount:system.sourceMeasureCount,
+    startMeasure:system.startMeasure,
+    measureIds:system.measureIds,
+    measureWidths:system.measureWidths.map(width=>Number(width.toFixed(6)))
+  }));
+  assert.deepEqual(shape(local),shape(expected),'source-system layout must match the equivalent slice of a full adaptive layout');
+  assert.ok(local.every(segment=>segment.sourceMeasureCount===4),'local segments carry logical-system size without rescanning the document');
+}
+
+{
   const documentModel=createDocumentV3({measures:['m1','m2','m3','m4','m5','m6','m7','m8'].map(id=>measure(id)),layout:{systemBreakAfter:['m4']}});
   const wide=buildCompactScoreLayout(documentModel,{availableWidth:1000,minMeasureWidth:100});
   assert.equal(wide.rows.length,1);
   assert.equal(wide.rows[0].measureCount,8);
+  assert.ok(wide.rows[0].segments.every(segment=>segment.sourceMeasureCount===4));
   const narrow=buildCompactScoreLayout(documentModel,{availableWidth:460,minMeasureWidth:100});
   assert.ok(narrow.rows.length>=2);
 }

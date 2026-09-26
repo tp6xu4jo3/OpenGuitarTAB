@@ -1,7 +1,7 @@
 import {
   buildAdaptiveLayout,
+  buildAdaptiveSystemLayout,
   buildCompactScoreLayout,
-  buildSystems,
   DEFAULT_LAYOUT_WIDTH,
   measureDurationInBeats,
   percentageForTime,
@@ -142,6 +142,7 @@ export class SparseScoreRenderer {
     this.observedWidth = -1;
     this.navigationEntries = [];
     this.navigationLookup = new Map();
+    this.measureIndexById = new Map();
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handleLayoutRequest = this.handleLayoutRequest.bind(this);
     this.root?.addEventListener('pointerdown', this.handlePointerDown);
@@ -189,10 +190,13 @@ export class SparseScoreRenderer {
 
   render(documentModel, changeSet = null) {
     this.document = isDocumentV3(documentModel) ? documentModel : normalizeDocumentV3(documentModel);
-    const navigationChanged = !changeSet
+    const structureChanged = !changeSet
       || changeSet.document
-      || changeSet.layoutKind === 'grid'
       || changeSet.layoutKind === 'structure'
+      || !this.measureIndexById.size;
+    if (structureChanged) this.rebuildMeasureIndex();
+    const navigationChanged = structureChanged
+      || changeSet?.layoutKind === 'grid'
       || !this.navigationEntries.length;
     if (navigationChanged) this.rebuildNavigationIndex();
     if (!this.root) return;
@@ -246,13 +250,13 @@ export class SparseScoreRenderer {
 
   createSystem(segment, visualIndex) {
     const rowIndex = Number(segment.sourceSystemIndex) || 0;
-    const logical = buildSystems(this.document)[rowIndex] || [];
+    const sourceMeasureCount = Math.max(segment.measures?.length || 0, Number(segment.sourceMeasureCount) || 0);
     const system = div('tab-system adaptive-tab-system v3-system');
     system.dataset.row = String(rowIndex);
     system.dataset.sourceRow = String(rowIndex);
     system.dataset.visualRow = String(visualIndex);
     system.dataset.sourceStart = String(Number(segment.startMeasure || 0) === 0);
-    system.dataset.sourceEnd = String((Number(segment.startMeasure || 0) + segment.measures.length) >= logical.length);
+    system.dataset.sourceEnd = String((Number(segment.startMeasure || 0) + segment.measures.length) >= sourceMeasureCount);
     system.dataset.centerKey = `row-${rowIndex}`;
     const placeholder = div('system-label layout-rail-placeholder');
     placeholder.setAttribute('aria-hidden', 'true');
@@ -454,8 +458,18 @@ export class SparseScoreRenderer {
     return layer;
   }
 
+  rebuildMeasureIndex() {
+    this.measureIndexById.clear();
+    (this.document?.measures || []).forEach((measure, index) => this.measureIndexById.set(String(measure.id), index));
+  }
+
+  measureForId(measureId) {
+    const index = this.measureIndexById.get(String(measureId));
+    return Number.isInteger(index) ? this.document?.measures?.[index] || null : null;
+  }
+
   renderMeasure(measureId) {
-    const measure = this.document.measures.find(item => String(item.id) === String(measureId));
+    const measure = this.measureForId(measureId);
     const existing = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
     if (!measure || !existing) return false;
     const index = Number(existing.dataset.measureIndex) || 0;
@@ -463,15 +477,61 @@ export class SparseScoreRenderer {
     return true;
   }
 
+  replaceAdaptiveSourcePlan(sourceSystemIndex, sourceMeasures, nextSegments, availableWidth) {
+    const previousSystems = this.layoutPlan?.systems;
+    if (!Array.isArray(previousSystems)) return null;
+    const systems = [];
+    let inserted = false;
+    for (const segment of previousSystems) {
+      if (Number(segment.sourceSystemIndex) === sourceSystemIndex) {
+        if (!inserted) {
+          systems.push(...nextSegments);
+          inserted = true;
+        }
+        continue;
+      }
+      systems.push(segment);
+    }
+    if (!inserted) return null;
+    const logicalSystems = Array.isArray(this.layoutPlan?.logicalSystems)
+      ? this.layoutPlan.logicalSystems.slice()
+      : [];
+    logicalSystems[sourceSystemIndex] = sourceMeasures;
+    return { ...this.layoutPlan, availableWidth, systems, logicalSystems };
+  }
+
   applyLayoutChange(changeSet) {
     if (isScoreViewActive()) return false;
-    const systems = buildSystems(this.document);
-    const sourceSystemIndex = systems.findIndex(system => system.some(measure => String(measure.id) === String(changeSet.layoutFrom)));
-    if (sourceSystemIndex < 0) return false;
-    const nextPlan = buildAdaptiveLayout(this.document, { availableWidth: layoutAvailableWidth(this.root) });
-    const nextSegments = nextPlan.systems.filter(segment => segment.sourceSystemIndex === sourceSystemIndex);
-    const existing = [...this.root.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
-    if (!existing.length || !nextSegments.length) return false;
+    const anchor = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(changeSet.layoutFrom)}"]`);
+    const sourceSystemIndex = Number(anchor?.closest?.('.tab-system')?.dataset?.sourceRow);
+    if (!Number.isInteger(sourceSystemIndex) || sourceSystemIndex < 0) return false;
+    const existing = [...this.root.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)]
+      .sort((left, right) => {
+        const leftStart = Number(left.querySelector(':scope .v3-grid')?.dataset.measureStart) || 0;
+        const rightStart = Number(right.querySelector(':scope .v3-grid')?.dataset.measureStart) || 0;
+        return leftStart - rightStart;
+      });
+    if (!existing.length) return false;
+
+    const sourceMeasureIds = [];
+    const seen = new Set();
+    for (const system of existing) {
+      const ids = String(system.querySelector(':scope .v3-grid')?.dataset.measureIds || '').split(',').filter(Boolean);
+      for (const id of ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        sourceMeasureIds.push(id);
+      }
+    }
+    const sourceMeasures = sourceMeasureIds.map(id => this.measureForId(id)).filter(Boolean);
+    if (!sourceMeasures.length || sourceMeasures.length !== sourceMeasureIds.length) return false;
+
+    const availableWidth = layoutAvailableWidth(this.root);
+    const nextSegments = buildAdaptiveSystemLayout(sourceMeasures, { sourceSystemIndex, availableWidth });
+    if (!nextSegments.length) return false;
+    const nextPlan = this.replaceAdaptiveSourcePlan(sourceSystemIndex, sourceMeasures, nextSegments, availableWidth);
+    if (!nextPlan) return false;
+
     const metricsOnly = changeSet.layoutKind === 'metrics';
     const sameShape = existing.length === nextSegments.length && existing.every((system, index) => {
       const grid = system.querySelector(':scope .v3-grid');
@@ -527,7 +587,7 @@ export class SparseScoreRenderer {
   }
 
   noteAt(measureId, at, string) {
-    const measure = this.document?.measures?.find(item => String(item.id) === String(measureId));
+    const measure = this.measureForId(measureId);
     if (!measure) return null;
     const event = (measure.events || []).find(item => fractionKey(item.at) === fractionKey(at));
     return (event?.notes || []).find(note => Number(note.string) === Number(string)) || null;
@@ -559,7 +619,7 @@ export class SparseScoreRenderer {
     const staff = event.target.closest?.('.v3-staff');
     const measureNode = staff?.closest?.('.v3-measure');
     const measureId = String(target?.dataset.measureId || measureNode?.dataset.measureId || '');
-    const measure = this.document?.measures?.find(item => String(item.id) === measureId);
+    const measure = this.measureForId(measureId);
     if (!staff || !measure) return;
     const at = parseFraction(target?.dataset.at) || timeFromPointerX(event.clientX, staff.getBoundingClientRect(), measure, this.snap);
     const duration = parseFraction(target?.dataset.duration) || BASE_GRID_STEP;
@@ -605,7 +665,7 @@ export class SparseScoreRenderer {
 
   showCursor({ measureId, string = 0, at = [0, 1], duration = BASE_GRID_STEP, initialValue = '' } = {}) {
     if (this.cursor?.isConnected) this.cursor.blur();
-    const measure = this.document?.measures?.find(item => String(item.id) === String(measureId));
+    const measure = this.measureForId(measureId);
     const measureNode = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
     const staff = measureNode?.querySelector('.v3-staff');
     if (!measure || !measureNode || !staff || !Array.isArray(at)) return null;
