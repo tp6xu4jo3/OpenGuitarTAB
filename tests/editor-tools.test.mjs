@@ -8,10 +8,14 @@ import { ToolRegistry } from '../src/editor/tools.js';
 
 function idFactory() { let sequence = 0; return prefix => `${prefix}-tool-${++sequence}`; }
 const definitions = new ToolRegistry();
-assert.deepEqual(definitions.list().map(tool => tool.id), ['harmonic','strumUp','strumDown','arpeggioUp','arpeggioDown','arc','slide','triplet','triplet16','duration32']);
+assert.deepEqual(definitions.list().map(tool => tool.id), ['harmonic','strumUp','strumDown','arpeggioUp','arpeggioDown','arc','arcDown','slide','triplet','triplet16','duration32']);
 for (const id of ['triplet','triplet16','duration32']) {
   assert.equal(definitions.get(id).target, 'ColumnTarget');
   assert.equal(toolTargetKind(definitions.get(id)), TOOL_TARGET_KINDS.COLUMN);
+}
+for (const id of ['arc','arcDown']) {
+  assert.equal(definitions.get(id).target, 'RangeTarget');
+  assert.equal(toolTargetKind(definitions.get(id)), TOOL_TARGET_KINDS.RANGE);
 }
 
 {
@@ -34,6 +38,22 @@ assert.equal(resolveTechniqueTarget('harmonic',{noteId:'n-bad'},documentModel).o
 assert.equal(resolveTechniqueTarget('harmonic',{noteId:'n-good'},documentModel).ok,true);
 assert.equal(resolveTechniqueTarget('strumUp',{eventId:'e-a'},documentModel).ok,true);
 assert.equal(resolveTechniqueTarget('slide',{fromNoteId:'n-good',toNoteId:'n-next'},documentModel).ok,true);
+
+{
+  const range={measureId:'m-tools',startAt:[0,1],endAt:[1,2]};
+  const upper=resolveTechniqueTarget('arc',range,documentModel);
+  const lower=resolveTechniqueTarget('arcDown',range,documentModel);
+  assert.equal(upper.ok,true,'upper arc may finish on an empty rhythmic column');
+  assert.equal(lower.ok,true,'lower arc may finish on an empty rhythmic column');
+  const upperCommand=definitions.createCommand('arc',upper.target);
+  const lowerCommand=definitions.createCommand('arcDown',lower.target);
+  assert.deepEqual(upperCommand.relation.toPosition,{measureId:'m-tools',at:[1,2]});
+  assert.equal(upperCommand.relation.direction,'up');
+  assert.equal(lowerCommand.relation.direction,'down');
+  const applied=applyCommand(documentModel,upperCommand,{idFactory:idFactory()});
+  assert.equal(applied.document.relations.length,1,'positional arc remains a normal relation owned by its source note');
+  assert.deepEqual(applied.document.relations[0].toPosition,{measureId:'m-tools',at:[1,2]});
+}
 
 {
   const ids = idFactory();

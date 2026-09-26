@@ -46,6 +46,19 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
 }
 
 {
+  const repeated={
+    id:'repeated-chord',timeSignature:{numerator:4,denominator:4},groups:[],events:[0,1,2].map((beat,index)=>({
+      id:`repeat-e${index}`,at:[beat,1],duration:[1,4],marks:[],
+      chord:{symbol:'C',voicingId:'c-v'},
+      notes:[{id:`repeat-n${index}`,string:0,fret:'3',techniques:[]}]
+    }))
+  };
+  const single=measure('single-chord',{chordSymbol:'C'});
+  const doc=createDocumentV3({measures:[single,repeated]});
+  assert.equal(measureComplexity(doc,repeated),measureComplexity(doc,single),'consecutive repeated chord labels reserve width only once');
+}
+
+{
   const stressed=measure('stressed',{mark:'strum'});
   const plain=measure('plain');
   const doc=createDocumentV3({measures:[stressed,plain]});
@@ -89,13 +102,26 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
 }
 
 {
-  const documentModel=createDocumentV3({measures:['m1','m2','m3','m4','m5','m6','m7','m8'].map(id=>measure(id)),layout:{systemBreakAfter:['m4']}});
-  const wide=buildCompactScoreLayout(documentModel,{availableWidth:1000,minMeasureWidth:100});
-  assert.equal(wide.rows.length,1);
-  assert.equal(wide.rows[0].measureCount,8);
-  assert.ok(wide.rows[0].segments.every(segment=>segment.sourceMeasureCount===4));
+  const documentModel=createDocumentV3({measures:Array.from({length:12},(_,index)=>measure(`m${index+1}`))});
+  const wide=buildCompactScoreLayout(documentModel,{availableWidth:1800,minMeasureWidth:100});
+  assert.deepEqual(wide.rows.map(row=>row.measureCount),[8,4],'compact score must never exceed eight measures per visual row');
+  assert.equal(wide.rows[0].plainNotation,true,'plain score rows should use non-adaptive equal measure widths');
+  const firstRowWidths=wide.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
+  assert.ok(firstRowWidths.every(width=>Math.abs(width-firstRowWidths[0])<0.001),'plain compact measures should remain equal width');
   const narrow=buildCompactScoreLayout(documentModel,{availableWidth:460,minMeasureWidth:100});
-  assert.ok(narrow.rows.length>=2);
+  assert.ok(narrow.rows.length>=3);
+  assert.ok(narrow.rows.every(row=>row.measureCount<=8));
+}
+
+{
+  const thirty=measure('compact-thirty',{group:{type:'subdivision',subdivision:'thirty-second',slots:[[0,1],[1,8]],duration:[1,8]}});
+  const digits=measure('compact-digits',{doubleDigits:true});
+  const doc=createDocumentV3({measures:[measure('compact-plain-1'),digits,thirty,measure('compact-plain-2')]});
+  const compact=buildCompactScoreLayout(doc,{availableWidth:1200,minMeasureWidth:100});
+  assert.equal(compact.rows.length,1);
+  assert.equal(compact.rows[0].plainNotation,true,'dense rhythm/fret content without chord or technique annotations must stay uniform in compact mode');
+  const widths=compact.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
+  assert.ok(widths.every(width=>Math.abs(width-widths[0])<0.001),'annotation-free compact measures must not receive elastic per-measure widths');
 }
 
 console.log('editor layout tests passed');

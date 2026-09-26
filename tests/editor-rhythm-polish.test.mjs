@@ -55,10 +55,13 @@ assert.match(editorCss, /\.v3-slot-dot\{[^}]*left:var\(--v3-anchor-x,50%\)[^}]*b
 assert.doesNotMatch(editorCss, /radial-gradient/, 'slot dots should not be painted as an all-or-nothing background gradient');
 assert.match(editorCss, /\.content\.score-view \.v3-slot-dot\{display:none\}/, 'edit affordance dots must remain hidden in score view');
 
-assert.match(renderer, /const groupBeamCount = Number\(group\?\.beamCount\)[\s\S]*Number\.isFinite\(groupBeamCount\)[\s\S]*inferredOrdinaryBeamCount/s, 'explicit triplet/subdivision beam counts must override ordinary duration inference');
-assert.match(renderer, /function inferredOrdinaryBeamCount\(event, orderedEvents\)[\s\S]*denominator === 1 \? 1 : denominator === 2 \? 0\.5 : 0\.25/s, 'ordinary base-grid notes should infer quarter/eighth/sixteenth notation from their rhythmic position');
+assert.match(renderer, /const groupBeamCount = Number\(group\?\.beamCount\)[\s\S]*beams: Number\.isFinite\(groupBeamCount\)[\s\S]*rhythmBeamCountForValue\(durationValue\)/s, 'explicit triplet/subdivision beam counts must override ordinary duration inference');
+assert.match(renderer, /function inferredOrdinaryDurationValue\(event, orderedEvents\)[\s\S]*denominator === 1 \? 1 : denominator === 2 \? 0\.5 : 0\.25/s, 'ordinary base-grid notes should infer quarter/eighth/sixteenth notation from their rhythmic position');
 assert.match(renderer, /const next = orderedEvents\.find[\s\S]*Math\.min\(impliedDuration,[\s\S]*fractionToNumber\(next\.at\) - atValue/s, 'ordinary inferred note values must shorten when the next onset arrives sooner');
-assert.match(renderer, /Math\.abs\(storedDuration - fractionToNumber\(BASE_GRID_STEP\)\) > 1e-9[\s\S]*return rhythmBeamCountForValue\(storedDuration\)/s, 'non-default explicit durations must stay authoritative');
+assert.match(renderer, /Math\.abs\(storedDuration - fractionToNumber\(BASE_GRID_STEP\)\) > 1e-9\) return storedDuration/s, 'non-default explicit durations must stay authoritative');
+assert.match(renderer, /function rhythmDotCountForValue[\s\S]*base \* 1\.5[\s\S]*v3-rhythm-dot/s, 'dotted binary note values should render an augmentation dot');
+assert.match(editorCss, /--v3-rhythm-stroke:2px;--v3-rhythm-beam-thickness:5px/, 'beams should be visually heavier than stems');
+assert.match(editorCss, /\.v3-rhythm-flag\{width:10px;transform:none\}/, 'secondary beamlets should remain horizontal rather than looking like detached diagonal tails');
 assert.match(renderer, /const fullyBeamed = [\s\S]*groupPoints\.length === slots\.length[\s\S]*v3-rhythm-tuplet-number v3-rhythm-tuplet-number-only/s, 'fully beamed tuplets should show only the centered numeral');
 assert.match(editorCss, /\.v3-rhythm-tuplet-number-only\{[^}]*top:32px/s, 'beamed tuplet numerals should sit outside the downward stems and beam');
 assert.match(editorCss, /\.v3-rhythm-tuplet-bracket\{[^}]*top:32px/s, 'unbeamed or incomplete tuplets should place their split bracket outside the downward stems and beam');

@@ -84,9 +84,9 @@ function rhythmBeamCount(duration) {
   return rhythmBeamCountForValue(fractionToNumber(duration || BASE_GRID_STEP));
 }
 
-function inferredOrdinaryBeamCount(event, orderedEvents) {
+function inferredOrdinaryDurationValue(event, orderedEvents) {
   const storedDuration = fractionToNumber(event?.duration || BASE_GRID_STEP);
-  if (Math.abs(storedDuration - fractionToNumber(BASE_GRID_STEP)) > 1e-9) return rhythmBeamCountForValue(storedDuration);
+  if (Math.abs(storedDuration - fractionToNumber(BASE_GRID_STEP)) > 1e-9) return storedDuration;
 
   const at = normalizeFraction(event?.at || [0, 1]);
   const denominator = Math.abs(Number(at[1])) || 1;
@@ -94,7 +94,19 @@ function inferredOrdinaryBeamCount(event, orderedEvents) {
   const atValue = fractionToNumber(at);
   const next = orderedEvents.find(candidate => fractionToNumber(candidate.at) > atValue + 1e-9);
   if (next) impliedDuration = Math.min(impliedDuration, Math.max(0, fractionToNumber(next.at) - atValue));
-  return rhythmBeamCountForValue(impliedDuration);
+  return impliedDuration;
+}
+
+function inferredOrdinaryBeamCount(event, orderedEvents) {
+  return rhythmBeamCountForValue(inferredOrdinaryDurationValue(event, orderedEvents));
+}
+
+function rhythmDotCountForValue(value) {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  for (const base of [2, 1, 0.5, 0.25, 0.125]) {
+    if (Math.abs(value - base * 1.5) <= 1e-9) return 1;
+  }
+  return 0;
 }
 
 function eventAt(measure, at) {
@@ -379,13 +391,15 @@ export class SparseScoreRenderer {
       const visualTime = visualTimeByKey.get(fractionKey(event.at));
       const group = explicitRhythmGroup(measure, event);
       const groupBeamCount = Number(group?.beamCount);
+      const durationValue = inferredOrdinaryDurationValue(event, orderedEvents);
       return {
         event,
         x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
         at: fractionToNumber(event.at),
         beams: Number.isFinite(groupBeamCount)
           ? Math.max(0, Math.trunc(groupBeamCount))
-          : inferredOrdinaryBeamCount(event, orderedEvents),
+          : rhythmBeamCountForValue(durationValue),
+        dots: group?.type === 'tuplet' ? 0 : rhythmDotCountForValue(durationValue),
         group
       };
     });
@@ -398,6 +412,11 @@ export class SparseScoreRenderer {
       const stem = div('v3-rhythm-stem');
       stem.style.left = `${point.x}%`;
       layer.appendChild(stem);
+      if (point.dots > 0) {
+        const dot = div('v3-rhythm-dot');
+        dot.style.left = `${point.x}%`;
+        layer.appendChild(dot);
+      }
     });
 
     groups.forEach(groupPoints => {

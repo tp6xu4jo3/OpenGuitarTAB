@@ -55,17 +55,38 @@ export const TOOL_DEFINITIONS = Object.freeze({
   },
   arc: {
     id: 'arc',
-    label: '弧線',
+    label: '上弧線',
     glyph: '⌒',
-    target: 'notePair',
-    hint: '依序點選兩個音符；同弦同品位建立延音，其餘建立圓滑線',
+    target: 'RangeTarget',
+    hint: '先選有音符的起點，再選終點時間位置；終點可以是空格',
     command(target) {
       return {
         type: 'relation/add',
         relation: {
-          type: target.relationType === 'tie' ? 'tie' : 'slur',
+          type: 'arc',
+          direction: 'up',
           fromNoteId: target.fromNoteId,
-          toNoteId: target.toNoteId
+          fromPosition: { measureId: target.measureId, at: [...target.startAt] },
+          toPosition: { measureId: target.measureId, at: [...target.endAt] }
+        }
+      };
+    }
+  },
+  arcDown: {
+    id: 'arcDown',
+    label: '下弧線',
+    glyph: '⌣',
+    target: 'RangeTarget',
+    hint: '先選有音符的起點，再選終點時間位置；終點可以是空格',
+    command(target) {
+      return {
+        type: 'relation/add',
+        relation: {
+          type: 'arc',
+          direction: 'down',
+          fromNoteId: target.fromNoteId,
+          fromPosition: { measureId: target.measureId, at: [...target.startAt] },
+          toPosition: { measureId: target.measureId, at: [...target.endAt] }
         }
       };
     }

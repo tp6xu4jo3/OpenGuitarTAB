@@ -1,4 +1,4 @@
-import { indexDocument, noteBaseFret, relationNoteIds } from './model.js';
+import { fractionKey, indexDocument, noteBaseFret, relationNoteIds } from './model.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -24,7 +24,9 @@ function boxIn(element, container) {
     top,
     bottom: rect.bottom - base.top,
     x: left + rect.width / 2,
-    y: top + rect.height / 2
+    y: top + rect.height / 2,
+    width: rect.width,
+    height: rect.height
   };
 }
 
@@ -42,12 +44,39 @@ function relationGrid(node) {
   return node?.closest?.('.v3-grid') || null;
 }
 
+function columnNode(systemElement, position) {
+  if (!position?.measureId || !Array.isArray(position?.at)) return null;
+  const measureId = escapeSelector(position.measureId);
+  const at = escapeSelector(fractionKey(position.at));
+  return systemElement.querySelector(`.v3-column-target[data-measure-id="${measureId}"][data-at="${at}"]`);
+}
+
+function columnX(node, container) {
+  const box = boxIn(node, container);
+  const anchor = Number.parseFloat(getComputedStyle(node).getPropertyValue('--v3-anchor-x'));
+  const ratio = Number.isFinite(anchor) ? Math.max(0, Math.min(100, anchor)) / 100 : 0.5;
+  return box.left + box.width * ratio;
+}
+
 function arcPoints(fromNode, toNode, container) {
   const from = boxIn(fromNode, container);
   const to = boxIn(toNode, container);
   return {
     from: { x: from.x, y: from.top - 1 },
     to: { x: to.x, y: to.top - 1 }
+  };
+}
+
+function positionalArcPoints(relation, systemElement, fromNode) {
+  const fromColumn = columnNode(systemElement, relation.fromPosition);
+  const toColumn = columnNode(systemElement, relation.toPosition);
+  if (!fromColumn || !toColumn || !fromNode) return null;
+  const source = boxIn(fromNode, systemElement);
+  const direction = relation.direction === 'down' ? 'down' : 'up';
+  const y = direction === 'down' ? source.bottom + 1 : source.top - 1;
+  return {
+    from: { x: columnX(fromColumn, systemElement), y },
+    to: { x: columnX(toColumn, systemElement), y }
   };
 }
 
@@ -62,19 +91,21 @@ function slidePoints(fromNode, toNode, container, fromFret, toFret) {
   };
 }
 
-function relationPath(type, from, to) {
-  if (type === 'tie' || type === 'slur') {
+function relationPath(type, from, to, direction = 'up') {
+  if (type === 'tie' || type === 'slur' || type === 'arc') {
     const dx = to.x - from.x;
     const lift = Math.max(9, Math.min(30, Math.abs(dx) * 0.15));
-    const controlY = Math.min(from.y, to.y) - lift;
+    const controlY = direction === 'down'
+      ? Math.max(from.y, to.y) + lift
+      : Math.min(from.y, to.y) - lift;
     return `M ${from.x} ${from.y} Q ${from.x + dx / 2} ${controlY} ${to.x} ${to.y}`;
   }
   return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
 
-function appendRelationPath(svg, { type, from, to, relationId = '', preview = false }) {
+function appendRelationPath(svg, { type, direction = 'up', from, to, relationId = '', preview = false }) {
   const path = svgNode('path', {
-    d: relationPath(type, from, to),
+    d: relationPath(type, from, to, direction),
     fill: 'none',
     stroke: 'currentColor',
     'stroke-width': type === 'slide' ? 1.8 : 1.35,
@@ -83,6 +114,7 @@ function appendRelationPath(svg, { type, from, to, relationId = '', preview = fa
   });
   if (relationId) path.dataset.relationId = relationId;
   path.classList.add('notation-relation', `notation-relation-${type || 'generic'}`, ...(preview ? ['notation-relation-preview'] : []));
+  if (type === 'arc') path.classList.add(`notation-relation-arc-${direction === 'down' ? 'down' : 'up'}`);
   svg.appendChild(path);
   return path;
 }
@@ -134,6 +166,21 @@ export class RelationRenderer {
     const measureSet = new Set((measureIds || []).map(String));
 
     for (const relation of documentModel.relations || []) {
+      if (relation.type === 'arc' && relation.fromPosition && relation.toPosition) {
+        const measureId = String(relation.fromPosition.measureId || '');
+        if (!measureId || measureId !== String(relation.toPosition.measureId || '') || !measureSet.has(measureId)) continue;
+        const fromNode = systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(relation.fromNoteId)}"]`);
+        const points = positionalArcPoints(relation, systemElement, fromNode);
+        if (!points) continue;
+        appendRelationPath(svg, {
+          type: 'arc',
+          direction: relation.direction,
+          ...points,
+          relationId: relation.id
+        });
+        continue;
+      }
+
       const noteIds = relationNoteIds(relation);
       if (noteIds.length < 2) continue;
       const fromId = String(relation.fromNoteId || noteIds[0]);
