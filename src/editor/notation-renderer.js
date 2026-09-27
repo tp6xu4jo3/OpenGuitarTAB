@@ -1,4 +1,5 @@
-import { fractionKey, indexDocument, updateDocumentIndex } from './model.js';
+import { mergeChangeSets } from './commands.js';
+import { fractionKey, updateDocumentIndex } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 import { isScoreViewActive } from './view-state.js';
 
@@ -211,29 +212,17 @@ export class NotationRenderer {
     this.documentIndex = null;
     this.pendingFrame = 0;
     this.pendingChangeSet = null;
-    this.fullRenderPending = false;
   }
 
   schedule(documentModel, changeSet = null) {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
-    if (!changeSet || changeSet.document) this.fullRenderPending = true;
-    if (changeSet) {
-      const previous = this.pendingChangeSet || {};
-      this.pendingChangeSet = {
-        ...previous,
-        ...changeSet,
-        measures: [...new Set([...(previous.measures || []), ...(changeSet.measures || [])])],
-        relations: [...new Set([...(previous.relations || []), ...(changeSet.relations || [])])],
-        document: Boolean(previous.document || changeSet.document)
-      };
-    }
+    this.pendingChangeSet = mergeChangeSets(this.pendingChangeSet, changeSet || { document: true });
     if (this.pendingFrame) return;
     this.pendingFrame = requestAnimationFrame(() => {
       this.pendingFrame = 0;
-      const pending = this.fullRenderPending ? null : this.pendingChangeSet;
+      const pending = this.pendingChangeSet;
       this.pendingChangeSet = null;
-      this.fullRenderPending = false;
       this.render(this.document, pending);
     });
   }
