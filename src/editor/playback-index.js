@@ -20,14 +20,53 @@ function locationMap(document) {
   return locations;
 }
 
-function playbackNotes(notes) {
-  return (notes || []).map(note => ({
-    ...cloneValue(note),
-    fret: noteSoundingFret(note)
-  }));
+function slideEffects(document) {
+  const noteContext = new Map();
+  let measureStartBeat = 0;
+  for (const measure of document.measures || []) {
+    for (const event of measure.events || []) {
+      const absoluteBeat = measureStartBeat + eventTime(event);
+      for (const note of event.notes || []) noteContext.set(String(note.id), { note, absoluteBeat });
+    }
+    measureStartBeat += measureDurationInBeats(measure);
+  }
+
+  const effects = new Map();
+  for (const relation of document.relations || []) {
+    if (relation?.type !== 'slide' || !relation.fromNoteId || !relation.toNoteId) continue;
+    const from = noteContext.get(String(relation.fromNoteId));
+    const to = noteContext.get(String(relation.toNoteId));
+    if (!from || !to || Number(from.note.string) !== Number(to.note.string)) continue;
+    const durationBeats = to.absoluteBeat - from.absoluteBeat;
+    if (!(durationBeats > 0)) continue;
+    const relationId = String(relation.id || '');
+    const fromEffect = effects.get(String(from.note.id)) || {};
+    fromEffect.slide = {
+      relationId,
+      toFret: noteSoundingFret(to.note),
+      durationBeats
+    };
+    effects.set(String(from.note.id), fromEffect);
+    const toEffect = effects.get(String(to.note.id)) || {};
+    toEffect.slideArrivalRelationId = relationId;
+    effects.set(String(to.note.id), toEffect);
+  }
+  return effects;
 }
 
-function playbackEvent(event, slotStart) {
+function playbackNotes(notes, effects) {
+  return (notes || []).map(note => {
+    const effect = effects.get(String(note.id)) || null;
+    return {
+      ...cloneValue(note),
+      fret: noteSoundingFret(note),
+      ...(effect?.slide ? { slide: cloneValue(effect.slide) } : {}),
+      ...(effect?.slideArrivalRelationId ? { slideArrivalRelationId: effect.slideArrivalRelationId } : {})
+    };
+  });
+}
+
+function playbackEvent(event, slotStart, effects) {
   const atBeats = eventTime(event);
   return {
     eventId: String(event.id || ''),
@@ -36,7 +75,7 @@ function playbackEvent(event, slotStart) {
     atBeats,
     offsetBeats: Math.max(0, atBeats - slotStart),
     durationBeats: eventDuration(event),
-    notes: playbackNotes(event.notes),
+    notes: playbackNotes(event.notes, effects),
     marks: cloneValue(event.marks || [])
   };
 }
@@ -44,6 +83,7 @@ function playbackEvent(event, slotStart) {
 export function buildPlaybackIndex(documentModel) {
   const document = normalizeDocumentV3(documentModel);
   const locations = locationMap(document);
+  const effects = slideEffects(document);
   const entries = [];
   let measureStartBeat = 0;
 
@@ -60,7 +100,7 @@ export function buildPlaybackIndex(documentModel) {
     for (const time of editableTimesForMeasure(measure)) {
       const atBeats = Math.max(0, fractionToNumber(time.at));
       const durationBeats = Math.max(0.001, fractionToNumber(time.duration));
-      const slotEvents = (eventsByTime.get(fractionKey(time.at)) || []).map(event => playbackEvent(event, atBeats));
+      const slotEvents = (eventsByTime.get(fractionKey(time.at)) || []).map(event => playbackEvent(event, atBeats, effects));
       entries.push({
         index: entries.length,
         eventId: slotEvents[0]?.eventId || '',
