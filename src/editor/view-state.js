@@ -81,6 +81,7 @@ function syncDensityUi() {
 
   const compact = scoreDensity === 'compact';
   editorView.classList.toggle('score-density-compact', compact);
+  control.classList.toggle('is-active', compact);
   control.hidden = !isScoreViewActive();
   control.setAttribute('aria-pressed', String(compact));
   control.setAttribute(
@@ -97,6 +98,7 @@ function syncModeUi(active) {
   window.scoreViewEnabled = Boolean(active);
   editorView.classList.toggle('edit-view', !active);
   editorView.classList.toggle('score-view', active);
+  toggle.classList.toggle('is-active', active);
   toggle.setAttribute('aria-pressed', String(active));
 
   const label = toggle.querySelector('.mode-toggle-label');
