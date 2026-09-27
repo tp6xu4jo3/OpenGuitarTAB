@@ -30,7 +30,7 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   const wide=buildAdaptiveLayout(documentModel,{availableWidth:1200});
   assert.deepEqual(wide.systems.map(system=>system.measures.length),[4]);
   assert.ok(wide.systems[0].measureWidths.every(width=>Math.abs(width-25)<0.001),'ordinary measures remain equal width');
-  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:650}).systems.map(system=>system.measures.length),[2,2]);
+  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:650}).systems.map(system=>system.measures.length),[3,1],'natural-width layout should keep a one-measure final row instead of redistributing it');
   assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:400}).systems.map(system=>system.measures.length),[1,1,1,1]);
 }
 
