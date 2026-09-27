@@ -2,6 +2,7 @@ import {
   fractionKey,
   fractionToNumber,
   harmonicTechnique,
+  indexDocument,
   isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
@@ -58,7 +59,7 @@ function addColumnSpace(entry, { left = 0, right = 0 } = {}) {
   entry.right = Math.max(entry.right, Math.max(0, Number(right) || 0));
 }
 
-function localSpacingEntries(document, measure) {
+function localSpacingEntries(document, measure, documentIndex = null) {
   const times = editableTimesForMeasure(measure);
   const entries = times.map(time => ({
     key: fractionKey(time.at),
@@ -101,7 +102,10 @@ function localSpacingEntries(document, measure) {
     }
   }
 
-  for (const relation of document?.relations || []) {
+  const relationCandidates = documentIndex?.relationsByMeasure?.get(String(measure?.id || ''))
+    || document?.relations
+    || [];
+  for (const relation of relationCandidates) {
     if (relation?.type !== 'slide') continue;
     const fromKey = relation.fromNoteId
       ? noteColumn.get(String(relation.fromNoteId))
@@ -123,32 +127,32 @@ function spacingExtra(entries) {
   return extra;
 }
 
-export function measureColumnSpacing(documentModel, measure) {
+export function measureColumnSpacing(documentModel, measure, documentIndex = null) {
   const document = sourceDocument(documentModel);
   const target = measure || document.measures[0];
-  const entries = target ? localSpacingEntries(document, target) : [];
+  const entries = target ? localSpacingEntries(document, target, documentIndex) : [];
   return { entries, extraWidth: spacingExtra(entries) };
 }
 
-function spacingPressureForMeasure(document, measure) {
-  return 1 + measureColumnSpacing(document, measure).extraWidth / 23;
+function spacingPressureForMeasure(document, measure, documentIndex = null) {
+  return 1 + measureColumnSpacing(document, measure, documentIndex).extraWidth / 23;
 }
 
-export function measureComplexity(documentModel, measure) {
+export function measureComplexity(documentModel, measure, { documentIndex = null } = {}) {
   const document = sourceDocument(documentModel);
   const target = measure || document.measures[0];
-  return target ? spacingPressureForMeasure(document, target) : 1;
+  return target ? spacingPressureForMeasure(document, target, documentIndex) : 1;
 }
 
-export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = MIN_MEASURE_WIDTH } = {}) {
+export function measureMinimumWidth(documentModel, measure, { minMeasureWidth = MIN_MEASURE_WIDTH, documentIndex = null } = {}) {
   const document = sourceDocument(documentModel);
   const target = measure || document.measures[0];
   if (!target) return minMeasureWidth;
-  return Math.round(minMeasureWidth + measureColumnSpacing(document, target).extraWidth);
+  return Math.round(minMeasureWidth + measureColumnSpacing(document, target, documentIndex).extraWidth);
 }
 
-function metricForMeasure(document, measure, minMeasureWidth) {
-  const spacing = measureColumnSpacing(document, measure);
+function metricForMeasure(document, measure, minMeasureWidth, documentIndex) {
+  const spacing = measureColumnSpacing(document, measure, documentIndex);
   return {
     complexity: 1 + spacing.extraWidth / 23,
     extraWidth: spacing.extraWidth,
@@ -157,14 +161,14 @@ function metricForMeasure(document, measure, minMeasureWidth) {
   };
 }
 
-function buildMetricsForMeasures(document, measures, minMeasureWidth) {
+function buildMetricsForMeasures(document, measures, minMeasureWidth, documentIndex) {
   const metrics = new Map();
-  for (const measure of measures || []) metrics.set(measure.id, metricForMeasure(document, measure, minMeasureWidth));
+  for (const measure of measures || []) metrics.set(measure.id, metricForMeasure(document, measure, minMeasureWidth, documentIndex));
   return metrics;
 }
 
-function buildMetrics(document, minMeasureWidth) {
-  return buildMetricsForMeasures(document, document.measures || [], minMeasureWidth);
+function buildMetrics(document, minMeasureWidth, documentIndex) {
+  return buildMetricsForMeasures(document, document.measures || [], minMeasureWidth, documentIndex);
 }
 
 function rowBaseWidth(availableWidth, minMeasureWidth, maxMeasures) {
@@ -230,22 +234,26 @@ export function buildAdaptiveSystemLayout(measures, {
   availableWidth = DEFAULT_LAYOUT_WIDTH,
   maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM,
   minMeasureWidth = MIN_MEASURE_WIDTH,
-  documentModel = null
+  documentModel = null,
+  documentIndex = null
 } = {}) {
   const sourceMeasures = Array.isArray(measures) ? measures : [];
   if (!sourceMeasures.length) return [];
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const context = documentModel ? sourceDocument(documentModel) : sourceDocument({ version: 3, measures: sourceMeasures, relations: [], layout: {} });
-  const metrics = buildMetricsForMeasures(context, sourceMeasures, minMeasureWidth);
+  const index = documentIndex || indexDocument(context);
+  const metrics = buildMetricsForMeasures(context, sourceMeasures, minMeasureWidth, index);
   return splitLogicalSystem(sourceMeasures, Number(sourceSystemIndex) || 0, width, maxMeasuresPerSystem, metrics, minMeasureWidth);
 }
 
 export function buildAdaptiveLayout(documentModel, {
   availableWidth = DEFAULT_LAYOUT_WIDTH,
   maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM,
-  minMeasureWidth = MIN_MEASURE_WIDTH
+  minMeasureWidth = MIN_MEASURE_WIDTH,
+  documentIndex = null
 } = {}) {
   const document = sourceDocument(documentModel);
+  const index = documentIndex || indexDocument(document);
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
   const systems = [];
@@ -255,7 +263,8 @@ export function buildAdaptiveLayout(documentModel, {
       availableWidth: width,
       maxMeasuresPerSystem,
       minMeasureWidth,
-      documentModel: document
+      documentModel: document,
+      documentIndex: index
     }));
   });
   return { availableWidth: width, systems, logicalSystems };
@@ -288,14 +297,16 @@ export function buildCompactScoreLayout(documentModel, {
   availableWidth = DEFAULT_LAYOUT_WIDTH,
   minMeasureWidth = COMPACT_SCORE_MIN_MEASURE_WIDTH,
   segmentGap = COMPACT_SCORE_SEGMENT_GAP,
-  maxMeasuresPerRow = COMPACT_SCORE_MAX_MEASURES_PER_ROW
+  maxMeasuresPerRow = COMPACT_SCORE_MAX_MEASURES_PER_ROW,
+  documentIndex = null
 } = {}) {
   const document = sourceDocument(documentModel);
+  const index = documentIndex || indexDocument(document);
   const width = Math.max(1, Number(availableWidth) || DEFAULT_LAYOUT_WIDTH);
   const gap = Math.max(0, Number(segmentGap) || 0);
   const maxPerRow = Math.max(1, Math.min(COMPACT_SCORE_MAX_MEASURES_PER_ROW, Math.trunc(Number(maxMeasuresPerRow) || COMPACT_SCORE_MAX_MEASURES_PER_ROW)));
   const logicalSystems = buildSystems(document, { maxMeasuresPerSystem: MAX_MEASURES_PER_SYSTEM });
-  const metrics = buildMetrics(document, minMeasureWidth);
+  const metrics = buildMetrics(document, minMeasureWidth, index);
   const base = rowBaseWidth(width, minMeasureWidth, maxPerRow);
   const rows = [];
   let row = null;
@@ -345,10 +356,10 @@ function visualCenterRatio(time, measure) {
   return Math.max(0, Math.min(1, (at + slot / 2) / duration));
 }
 
-export function columnGeometryForMeasure(documentModel, measure, measureWidthPx) {
+export function columnGeometryForMeasure(documentModel, measure, measureWidthPx, documentIndex = null) {
   const document = sourceDocument(documentModel);
-  const width = Math.max(1, Number(measureWidthPx) || measureMinimumWidth(document, measure));
-  const spacing = measureColumnSpacing(document, measure);
+  const width = Math.max(1, Number(measureWidthPx) || measureMinimumWidth(document, measure, { documentIndex }));
+  const spacing = measureColumnSpacing(document, measure, documentIndex);
   const entries = spacing.entries.map(entry => ({ ...entry, baseRatio: visualCenterRatio(entry, measure) }));
   const baseWidth = Math.max(1, width - spacing.extraWidth);
   const centers = new Map();

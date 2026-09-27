@@ -52,7 +52,20 @@ assert.doesNotMatch(playback, /grid-geometry|legacy-grid|LEGACY_SLOTS_PER_BEAT|n
 
 const structure = read('src/editor/structure-controller.js');
 assert.match(structure, /v3-grid/);
+assert.match(structure, /import \{ isEditingBlocked \} from '.\/view-state\.js'/, 'structure editing rules must come from view-state');
+assert.match(structure, /function handleRendered\(event\)[\s\S]*detail\.full[\s\S]*detail\.sourceSystemIndex == null/s, 'structure decoration must distinguish full, source-system, and ordinary partial renders');
+assert.match(structure, /decorateSourceSystem\(sourceSystemIndex\)/, 'layout changes must redecorate only the affected source system');
+assert.doesNotMatch(structure, /editorPlayback\?\.invalidate/, 'playback invalidation must be owned by ChangeSet handling, not structure-controller');
 assert.doesNotMatch(structure, /grid-geometry|legacy-grid|projectDocumentToLegacySong|renderRows/);
+
+const model = read('src/editor/model.js');
+assert.match(model, /relationsByMeasure = new Map\(\)/, 'document index must own the relation-to-measure lookup');
+const relationRenderer = read('src/editor/relation-renderer.js');
+assert.match(relationRenderer, /visibleRelations\(documentModel, measureSet, index\)/, 'relation rendering must use visible measure relation candidates');
+
+const scoreCss = read('styles/score-layout.css');
+assert.doesNotMatch(scoreCss, /\.note-input|\.string-line|\.measure-line|\.beat-guide/, 'score layout CSS must not retain removed Dense Grid selectors');
+assert.match(scoreCss, /\.adaptive-tab-grid/, 'current Sparse adaptive grid layout styling must remain');
 
 const bootstrap = read('src/bootstrap.js');
 assert.match(bootstrap, /createBlankDocumentV3/);

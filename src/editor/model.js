@@ -226,6 +226,14 @@ export function relationNoteIds(relation) {
   return [...new Set(ids)];
 }
 
+function addRelationToMeasureIndex(relationsByMeasure, measureId, relation) {
+  const key = String(measureId || '');
+  if (!key) return;
+  const bucket = relationsByMeasure.get(key) || [];
+  bucket.push(relation);
+  relationsByMeasure.set(key, bucket);
+}
+
 export function indexDocument(document) {
   const measureById = new Map();
   const eventById = new Map();
@@ -234,6 +242,7 @@ export function indexDocument(document) {
   const markById = new Map();
   const groupById = new Map();
   const relationById = new Map();
+  const relationsByMeasure = new Map();
   const eventLocation = new Map();
   const noteLocation = new Map();
   for (let measureIndex = 0; measureIndex < (document?.measures?.length || 0); measureIndex++) {
@@ -255,6 +264,27 @@ export function indexDocument(document) {
       }
     }
   }
-  for (const relation of document?.relations || []) relationById.set(relation.id, relation);
-  return { measureById, eventById, noteById, techniqueById, markById, groupById, relationById, eventLocation, noteLocation };
+  for (const relation of document?.relations || []) {
+    relationById.set(relation.id, relation);
+    const measureIds = new Set();
+    for (const noteId of relationNoteIds(relation)) {
+      const measureId = noteLocation.get(noteId)?.measureId;
+      if (measureId) measureIds.add(String(measureId));
+    }
+    if (relation?.fromPosition?.measureId) measureIds.add(String(relation.fromPosition.measureId));
+    if (relation?.toPosition?.measureId) measureIds.add(String(relation.toPosition.measureId));
+    measureIds.forEach(measureId => addRelationToMeasureIndex(relationsByMeasure, measureId, relation));
+  }
+  return {
+    measureById,
+    eventById,
+    noteById,
+    techniqueById,
+    markById,
+    groupById,
+    relationById,
+    relationsByMeasure,
+    eventLocation,
+    noteLocation
+  };
 }

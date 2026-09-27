@@ -11,6 +11,7 @@ const moduleCss=await readFile(new URL('../styles/editor-modules.css',import.met
 const adaptiveCss=await readFile(new URL('../styles/adaptive-measures.css',import.meta.url),'utf8');
 const toolsCss=await readFile(new URL('../styles/editor-tools.css',import.meta.url),'utf8');
 const responsiveCss=await readFile(new URL('../styles/responsive.css',import.meta.url),'utf8');
+const playbackCss=await readFile(new URL('../styles/playback-controls.css',import.meta.url),'utf8');
 const scoreCss=await readFile(new URL('../styles/score-layout.css',import.meta.url),'utf8');
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
 const structure=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
@@ -83,12 +84,14 @@ assert.match(toolsCss,/\.notation-relation\{[^}]*fill:none!important/s,'arcs mus
 assert.match(toolsCss,/\.editor-ribbon-tab\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-continuous-button\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-ribbon-panel\{[^}]*width:max-content[^}]*max-width:100%/s,'tool panel border must shrink-wrap its contents');
-assert.match(responsiveCss,/grid-template-columns:minmax\(0,1\.2fr\) minmax\(0,1fr\) minmax\(0,\.85fr\)/,'mobile playback controls must stay inside the viewport');
+assert.match(playbackCss,/@media\(max-width:760px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content minmax\(0,1fr\)/s,'mobile playback controls must stay inside the viewport while keeping both mode switches intact');
+assert.match(playbackCss,/\.mode-toggle-label\{[^}]*word-break:keep-all[^}]*overflow-wrap:normal/s,'score mode labels must not break between Chinese characters');
 assert.match(responsiveCss,/\.editor-ribbon\{[^}]*width:max-content[^}]*max-width:100%/s,'mobile ribbon must shrink-wrap instead of spanning the score width');
 assert.match(responsiveCss,/\.editor-ribbon-section\{[^}]*width:max-content[^}]*overflow-x:auto[^}]*touch-action:pan-x/s,'mobile ribbon must support native horizontal swiping');
 assert.match(responsiveCss,/\.mobile-menu-button\{position:absolute/,'mobile navigation button must scroll with the page instead of covering titles');
 assert.match(responsiveCss,/\.catalog-view,\.library-view\{position:relative;padding-top:88px\}/,'mobile catalog must reserve space above the title');
 assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width must be capped by the visible viewport');
+assert.match(renderer,/this\.documentIndex = indexDocument\(this\.document\)/,'Sparse renderer must reuse a document relation index between local layout operations');
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)/,'score renderer must draw rhythm stems and beams using the same local column geometry as the TAB notes');
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)[\s\S]*v3-rhythm-stem[\s\S]*v3-rhythm-beam/s,'geometry-aware rhythm rendering must still create stems and beams');
 assert.match(renderer,/for \(const group of measure\.groups \|\| \[\]\)[\s\S]*group\?\.type !== 'tuplet'[\s\S]*v3-rhythm-tuplet-bracket/,'triplet brackets must come from group slots even when some slots contain no note');
@@ -105,5 +108,6 @@ assert.match(notation,/function chordLaneY\(/,'chord labels need a dedicated lan
 assert.match(notation,/\.v3-string-line\[data-string="0"\]/,'chord label position must anchor to string one rather than overlap the staff');
 assert.match(notation,/kind: 'group',[\s\S]*label: triplet \? '3' : '32'/,'edit mode must expose both triplet and thirty-second group markers for selection/deletion');
 assert.match(scoreCss,/\.content\.score-view \.score-density-line\{[^}]*gap:0/s,'compact score segments must join without horizontal gaps');
-assert.match(headerCss,/\.preview-badge \{ display:none!important; \}/,'public preview subtitle badge should not be visible');
+assert.match(headerCss,/\.preview-badge\{[^}]*display:inline-flex/s,'public preview badge should be visible only while preview state is active');
+assert.match(headerCss,/\.preview-badge\[hidden\]\{display:none!important\}/,'preview badge hidden state must remain authoritative');
 console.log('UI layout regression tests passed');

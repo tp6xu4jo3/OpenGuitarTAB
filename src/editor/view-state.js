@@ -74,6 +74,14 @@ function ensureScoreDensityControl() {
   return control;
 }
 
+function syncControlVisibility() {
+  const preview = isPreviewActive();
+  const scoreToggle = document.getElementById('rhythmToggleButton');
+  const densityControl = document.getElementById('scoreDensityControl');
+  if (scoreToggle) scoreToggle.hidden = preview;
+  if (densityControl) densityControl.hidden = preview || !isScoreViewActive();
+}
+
 function syncDensityUi() {
   const editorView = document.getElementById('editorView');
   const control = ensureScoreDensityControl();
@@ -82,12 +90,12 @@ function syncDensityUi() {
   const compact = scoreDensity === 'compact';
   editorView.classList.toggle('score-density-compact', compact);
   control.classList.toggle('is-active', compact);
-  control.hidden = !isScoreViewActive();
   control.setAttribute('aria-pressed', String(compact));
   control.setAttribute(
     'aria-label',
     compact ? '緊湊看譜已開啟，關閉緊湊看譜' : '緊湊看譜已關閉，開啟緊湊看譜'
   );
+  syncControlVisibility();
 }
 
 function syncModeUi(active) {
@@ -108,6 +116,13 @@ function syncModeUi(active) {
     active ? '看譜模式已開啟，關閉看譜模式' : '看譜模式已關閉，開啟看譜模式'
   );
   syncDensityUi();
+}
+
+export function setPreviewActive(active) {
+  const badge = document.getElementById('previewBadge');
+  if (badge) badge.hidden = !Boolean(active);
+  syncControlVisibility();
+  return isPreviewActive();
 }
 
 export function setScoreDensityMode(mode) {
@@ -148,7 +163,7 @@ export function installViewState() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   scoreDensity = storedDensity();
-  window.setScoreViewEnabled = setScoreViewEnabled;
+  Object.assign(window, { setPreviewActive, setScoreViewEnabled });
   ensureScoreDensityControl();
   syncModeUi(typeof window.scoreViewEnabled === 'boolean' ? window.scoreViewEnabled : isScoreViewActive());
   installModeToggle();

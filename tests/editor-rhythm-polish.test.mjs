@@ -5,7 +5,7 @@ import { inflateSync } from 'node:zlib';
 const renderer = await readFile(new URL('../src/editor/renderer.js', import.meta.url), 'utf8');
 const songBrowser = await readFile(new URL('../src/catalog/song-browser.js', import.meta.url), 'utf8');
 const editorCss = await readFile(new URL('../styles/editor-v3.css', import.meta.url), 'utf8');
-const responsiveCss = await readFile(new URL('../styles/responsive.css', import.meta.url), 'utf8');
+const playbackCss = await readFile(new URL('../styles/playback-controls.css', import.meta.url), 'utf8');
 const sidebarCss = await readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8');
 const indexHtml = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const brandIcon = await readFile(new URL('../assets/OpenGuitarTABicon.ico', import.meta.url));
@@ -46,8 +46,8 @@ for (let row = 0; row < 64; row += 1) {
   assert.ok(scanlines[row * 257] <= 4, `brand PNG row ${row} should start with a valid PNG filter byte`);
 }
 
-assert.match(responsiveCss, /@media \(min-width:761px\) and \(max-width:980px\)[\s\S]*\.play-panel\{display:grid;grid-template-columns:auto auto auto minmax\(180px,1fr\) auto/s, 'tablet playback controls should stay on one ordered row');
-assert.match(responsiveCss, /\.play-panel \.mode-toggle-button\{position:static;grid-column:auto/s, 'score mode toggle must remain directly before capo instead of being absolutely wrapped away');
+assert.match(playbackCss, /@media\(min-width:761px\) and \(max-width:1024px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content auto auto minmax\(160px,1fr\) auto/s, 'tablet playback controls should keep both mode switches together before capo and tempo');
+assert.match(playbackCss, /\.editor-view #rhythmToggleButton,\.editor-view #scoreDensityControl\{[^}]*width:max-content[^}]*flex:0 0 auto/s, 'score mode controls must retain their own intrinsic width instead of wrapping');
 
 assert.match(renderer, /function halfFraction\(value\)[\s\S]*denominator \* 2/s, 'editable anchors should be centered within their rhythmic slot');
 assert.match(renderer, /const occupiedStrings = new Set\([\s\S]*v3-slot-dot/s, 'renderer should create individual empty-slot dots and omit occupied strings');

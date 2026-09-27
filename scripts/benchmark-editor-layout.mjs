@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { createDocumentV3 } from '../src/editor/model.js';
+import { createDocumentV3, indexDocument } from '../src/editor/model.js';
 import { buildAdaptiveLayout, buildAdaptiveSystemLayout } from '../src/editor/layout.js';
 
 const MEASURE_COUNT = 1600;
@@ -30,14 +30,25 @@ function makeMeasure(index) {
   };
 }
 
-const documentModel = createDocumentV3({ measures: Array.from({ length: MEASURE_COUNT }, (_, index) => makeMeasure(index)) });
-const fullReference = buildAdaptiveLayout(documentModel, { availableWidth: AVAILABLE_WIDTH });
+const measures = Array.from({ length: MEASURE_COUNT }, (_, index) => makeMeasure(index));
+const relations = [];
+for (let index = 0; index + 1 < MEASURE_COUNT; index += 3) {
+  relations.push({ id: `slide-${index}`, type: 'slide', fromNoteId: `n-${index}`, toNoteId: `n-${index + 1}` });
+}
+const documentModel = createDocumentV3({ measures, relations });
+const documentIndex = indexDocument(documentModel);
+const fullReference = buildAdaptiveLayout(documentModel, { availableWidth: AVAILABLE_WIDTH, documentIndex });
 const sourceSystemIndex = Math.floor(fullReference.logicalSystems.length / 2);
 const sourceMeasures = fullReference.logicalSystems[sourceSystemIndex];
 const expected = fullReference.systems
   .filter(segment => segment.sourceSystemIndex === sourceSystemIndex)
   .map(segment => segment.measureIds.join(','));
-const localReference = buildAdaptiveSystemLayout(sourceMeasures, { sourceSystemIndex, availableWidth: AVAILABLE_WIDTH });
+const localReference = buildAdaptiveSystemLayout(sourceMeasures, {
+  sourceSystemIndex,
+  availableWidth: AVAILABLE_WIDTH,
+  documentModel,
+  documentIndex
+});
 assert.deepEqual(localReference.map(segment => segment.measureIds.join(',')), expected, 'local benchmark path must produce the same affected-system segmentation as the full layout');
 
 function averageMs(callback, iterations) {
@@ -47,15 +58,21 @@ function averageMs(callback, iterations) {
   return (performance.now() - started) / iterations;
 }
 
-const fullMs = averageMs(() => buildAdaptiveLayout(documentModel, { availableWidth: AVAILABLE_WIDTH }), 30);
-const localMs = averageMs(() => buildAdaptiveSystemLayout(sourceMeasures, { sourceSystemIndex, availableWidth: AVAILABLE_WIDTH }), 1500);
+const fullMs = averageMs(() => buildAdaptiveLayout(documentModel, { availableWidth: AVAILABLE_WIDTH, documentIndex }), 30);
+const localMs = averageMs(() => buildAdaptiveSystemLayout(sourceMeasures, {
+  sourceSystemIndex,
+  availableWidth: AVAILABLE_WIDTH,
+  documentModel,
+  documentIndex
+}), 1500);
 const ratio = fullMs > 0 ? localMs / fullMs : 0;
 
-assert.ok(localMs < fullMs * 0.35, `local source-system layout should remain substantially cheaper than a ${MEASURE_COUNT}-measure full pass (full=${fullMs.toFixed(4)}ms local=${localMs.toFixed(4)}ms)`);
+assert.ok(localMs < fullMs * 0.35, `local source-system layout should remain substantially cheaper than a ${MEASURE_COUNT}-measure relation-heavy full pass (full=${fullMs.toFixed(4)}ms local=${localMs.toFixed(4)}ms)`);
 
 console.log(JSON.stringify({
   benchmark: 'editor-adaptive-layout',
   measures: MEASURE_COUNT,
+  relations: relations.length,
   sourceMeasures: sourceMeasures.length,
   fullAverageMs: Number(fullMs.toFixed(4)),
   localAverageMs: Number(localMs.toFixed(4)),
