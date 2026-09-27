@@ -41,24 +41,26 @@ function apply(command){const result=applyCommand(documentModel,command,{idFacto
 
 {
   const harmonic=apply({type:'note/technique/add',noteId:'n-a',technique:{type:'harmonic'}});
-  assert.equal(harmonic.changeSet.layoutFrom,null,'edit-mode harmonic marker does not require immediate adaptive reflow');
+  assert.equal(harmonic.changeSet.layoutFrom,'m-technique','harmonic score text should update its local spacing immediately');
+  assert.equal(harmonic.changeSet.layoutKind,'metrics');
   const strum=apply({type:'event/mark/add',eventId:'e-chord',mark:{type:'strum',direction:'up'}});
   assert.equal(strum.changeSet.layoutFrom,'m-technique');
   assert.equal(strum.changeSet.layoutKind,'metrics','left-side sweep needs metric recalculation');
   const relation=apply({type:'relation/add',relation:{type:'slide',fromNoteId:'n-a',toNoteId:'n-next'}});
-  assert.equal(relation.changeSet.layoutFrom,null,'slide must not flex layout');
-  assert.equal(relation.changeSet.layoutKind,null);
+  assert.equal(relation.changeSet.layoutFrom,'m-technique','slide source columns should reserve right-side spacing immediately');
+  assert.equal(relation.changeSet.layoutKind,'metrics');
   const removed=apply({type:'relation/delete',relationId:relation.document.relations[0].id});
-  assert.equal(removed.changeSet.layoutFrom,null);
+  assert.equal(removed.changeSet.layoutFrom,'m-technique','removing a slide should release its local spacing immediately');
+  assert.equal(removed.changeSet.layoutKind,'metrics');
 }
 
 {
   const ordinary=apply({type:'note/set',measureId:'m-technique',at:[1,4],duration:[1,4],string:1,fret:'12'});
-  assert.equal(ordinary.changeSet.layoutFrom,null,'a multi-digit fret alone must not trigger layout when spacing complexity is unchanged');
-  assert.equal(ordinary.changeSet.layoutKind,null);
-  const closePair=apply({type:'note/set',measureId:'m-technique',at:[0,1],duration:[1,4],string:0,fret:'12'});
-  assert.equal(closePair.changeSet.layoutFrom,'m-technique','creating a close pair of multi-digit fret events should recalc layout metrics');
-  assert.equal(closePair.changeSet.layoutKind,'metrics');
+  assert.equal(ordinary.changeSet.layoutFrom,'m-technique','a two-digit fret must trigger local spacing on its own');
+  assert.equal(ordinary.changeSet.layoutKind,'metrics');
+  const secondTwoDigit=apply({type:'note/set',measureId:'m-technique',at:[0,1],duration:[1,4],string:0,fret:'12'});
+  assert.equal(secondTwoDigit.changeSet.layoutFrom,'m-technique','changing another column to a two-digit fret should recalc local geometry');
+  assert.equal(secondTwoDigit.changeSet.layoutKind,'metrics');
 }
 
 {
