@@ -11,9 +11,17 @@ const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'
 
 assert.match(structureSource,/function rowTargetForSystem\(system\)[\s\S]*dataset\.visualRow[\s\S]*measureIdsForSystem\(system\)/s,'row actions should resolve their target from live system metadata');
 assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*dragState = \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must not retain a stale visualRow closure');
-assert.match(structureSource,/function decorateSourceSystem\([\s\S]*firstAffectedVisualRow[\s\S]*syncVisualRowMetadata\(system, visualRowIndex\)[\s\S]*syncSelectedRow\(systems\)/s,'local segmentation changes should refresh downstream row metadata without rebuilding their measure UI');
+assert.match(structureSource,/function decorateSourceSystem\(sourceSystemIndex, \{[\s\S]*segmentationChanged = false,[\s\S]*visualRowStart = 0,[\s\S]*visualRowCount = 0/s,'local structure decoration must consume explicit renderer segmentation metadata');
 const localDecoration=structureSource.slice(structureSource.indexOf('function decorateSourceSystem('),structureSource.indexOf('function handleRendered('));
+assert.match(localDecoration,/if \(segmentationChanged\) \{[\s\S]*querySelectorAll\(':scope > \.tab-system'\)[\s\S]*syncVisualRowMetadata\(systems\[visualRowIndex\], visualRowIndex\)/s,'only real segmentation changes should synchronize downstream visual-row metadata');
+assert.equal(localDecoration.includes('const affected = [...tabArea.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];'),true,'shape-preserving layout changes should query only the affected source system');
+const downstreamStart=localDecoration.indexOf('for (let visualRowIndex = start + affected.length;');
+const downstreamEnd=localDecoration.indexOf('syncSelectedRow(systems);',downstreamStart);
+const downstreamSync=localDecoration.slice(downstreamStart,downstreamEnd);
+assert.match(downstreamSync,/syncVisualRowMetadata/,'segmentation changes should lightweight-sync downstream row metadata');
+assert.doesNotMatch(downstreamSync,/decorateSystem|addMeasureUi/,'downstream metadata sync must not rebuild measure hitboxes');
 assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
+assert.match(structureSource,/decorateSourceSystem\(sourceSystemIndex, \{[\s\S]*segmentationChanged: Boolean\(detail\.segmentationChanged\),[\s\S]*visualRowStart: detail\.visualRowStart,[\s\S]*visualRowCount: detail\.visualRowCount/s,'render completion metadata must drive local structure synchronization');
 for(const source of [controllerSource,chordDragSource]){
   assert.equal(source.includes('isEditingBlocked'),true,'editor interactions should use canonical view-state editing blocking');
   assert.equal(source.includes('isPreviewActive'),false,'editor controllers should not duplicate preview/score blocking logic');
