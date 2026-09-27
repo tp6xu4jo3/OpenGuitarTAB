@@ -8,18 +8,13 @@ import {
   moveMeasureAt,
   moveSystem
 } from './structure-commands.js';
+import { isEditingBlocked } from './view-state.js';
 
 let installed = false;
 let selected = null;
 let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
-
-function editingBlocked() {
-  const editorView = document.getElementById('editorView');
-  const previewBadge = document.getElementById('previewBadge');
-  return Boolean(editorView?.hidden || editorView?.classList.contains('score-view') || (previewBadge && !previewBadge.hidden));
-}
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -70,7 +65,6 @@ function commitResult(result, message, nextSelection = null) {
   const store = currentStore();
   if (!store || !result || result.document === store.getDocument()) return false;
   store.commit(result.document, result.changeSet);
-  window.editorPlayback?.invalidate?.();
   if (message) toast(message);
   if (nextSelection) requestAnimationFrame(() => setSelected(nextSelection));
   return true;
@@ -85,7 +79,7 @@ function pasteTarget(target) {
 }
 
 function structuralAction(target, action) {
-  if (editingBlocked()) return false;
+  if (isEditingBlocked()) return false;
   const store = currentStore();
   if (!store) return false;
   const documentModel = store.getDocument();
@@ -127,7 +121,7 @@ function structuralAction(target, action) {
 }
 
 function insertSystemAtBoundary(index) {
-  if (editingBlocked()) return false;
+  if (isEditingBlocked()) return false;
   const store = currentStore();
   if (!store) return false;
   const documentModel = store.getDocument();
@@ -137,7 +131,7 @@ function insertSystemAtBoundary(index) {
 }
 
 function openMenu(target, x, y) {
-  if (editingBlocked()) return;
+  if (isEditingBlocked()) return;
   setSelected(target);
   contextTarget = target;
   const menu = ensureMenu();
@@ -280,30 +274,59 @@ function measureIdsForSystem(system) {
     .flatMap(grid => String(grid.dataset.measureIds || '').split(',').filter(Boolean));
 }
 
+function decorateSystem(system, visualRowIndex) {
+  const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
+  const sourceStart = system.dataset.sourceStart !== 'false';
+  if (!Number.isInteger(rowIndex)) return null;
+  system.classList.add('editor-row-module');
+  system.dataset.row = String(rowIndex);
+  system.dataset.visualRow = String(visualRowIndex);
+  system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
+  system.querySelector('.layout-rail-placeholder')?.remove();
+  const target = { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
+  system.prepend(makeRowHandle(target, { sourceStart }));
+  system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
+  return { rowIndex, sourceStart };
+}
+
 function decorateEditor() {
-  if (editingBlocked()) return;
+  if (isEditingBlocked()) return;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
   tabArea.querySelectorAll('.row-insert-zone').forEach(node => node.remove());
   const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
   let logicalRowCount = 0;
   systems.forEach((system, visualRowIndex) => {
-    const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
-    const sourceStart = system.dataset.sourceStart !== 'false';
-    if (!Number.isInteger(rowIndex)) return;
-    logicalRowCount = Math.max(logicalRowCount, rowIndex + 1);
-    system.classList.add('editor-row-module');
-    system.dataset.row = String(rowIndex);
-    system.dataset.visualRow = String(visualRowIndex);
-    system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
-    system.querySelector('.layout-rail-placeholder')?.remove();
-    const target = { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
-    system.prepend(makeRowHandle(target, { sourceStart }));
-    system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
-    if (sourceStart) tabArea.insertBefore(makeInsertZone(rowIndex), system);
+    const decorated = decorateSystem(system, visualRowIndex);
+    if (!decorated) return;
+    logicalRowCount = Math.max(logicalRowCount, decorated.rowIndex + 1);
+    if (decorated.sourceStart) tabArea.insertBefore(makeInsertZone(decorated.rowIndex), system);
   });
   tabArea.appendChild(makeInsertZone(logicalRowCount));
   if (selected) setSelected(selected);
+}
+
+function decorateSourceSystem(sourceSystemIndex) {
+  if (isEditingBlocked()) return;
+  const tabArea = document.getElementById('tabArea');
+  if (!tabArea) return;
+  const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
+  systems.forEach((system, visualRowIndex) => {
+    if (Number(system.dataset.sourceRow ?? system.dataset.row) !== Number(sourceSystemIndex)) return;
+    decorateSystem(system, visualRowIndex);
+  });
+  if (selected) setSelected(selected);
+}
+
+function handleRendered(event) {
+  const detail = event?.detail || {};
+  if (detail.full) {
+    decorateEditor();
+    return;
+  }
+  if (detail.sourceSystemIndex == null) return;
+  const sourceSystemIndex = Number(detail.sourceSystemIndex);
+  if (Number.isInteger(sourceSystemIndex)) decorateSourceSystem(sourceSystemIndex);
 }
 
 function rowBoundaryFromPoint(y) {
@@ -369,12 +392,12 @@ function commitDrop() {
 
 function installDragHandlers() {
   document.addEventListener('dragover', event => {
-    if (!dragState || editingBlocked()) return;
+    if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
     updateDropUi(event);
   }, true);
   document.addEventListener('drop', event => {
-    if (!dragState || editingBlocked()) return;
+    if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
     event.stopPropagation();
     updateDropUi(event);
@@ -400,7 +423,7 @@ function installGlobalActions() {
 
 function installKeyboard() {
   document.addEventListener('keydown', event => {
-    if (editingBlocked() || !(event.ctrlKey || event.metaKey) || !selected) return;
+    if (isEditingBlocked() || !(event.ctrlKey || event.metaKey) || !selected) return;
     if (event.target.closest('input,textarea,[contenteditable="true"]')) return;
     const key = event.key.toLowerCase();
     if (key === 'c') { event.preventDefault(); copyTarget(selected); }
@@ -417,7 +440,7 @@ export function installStructureController() {
   installGlobalActions();
   installKeyboard();
   installDragHandlers();
-  window.addEventListener('opentab:editor-rendered', decorateEditor);
+  window.addEventListener('opentab:editor-rendered', handleRendered);
   decorateEditor();
   if (window.editorV3) window.editorV3.structure = { decorate: decorateEditor, selected: () => selected };
 }
