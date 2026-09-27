@@ -388,13 +388,11 @@ async function openCatalogPreview(id) {
     capoInput.value = clamp(Math.round(Number(previewSong.capo) || 0), 0, 12);
     meterBadge.textContent = `每小節 ${activeBeatsPerMeasure} 拍`;
     editorTitle.textContent = previewSong.name || '曲譜';
-    const previewBadge = document.getElementById('previewBadge');
-    if (previewBadge) previewBadge.hidden = false;
+    setPreviewActive(true);
     saveSongButton.hidden = true;
     downloadSongButton.hidden = true;
     addPreviewSongButton.hidden = catalogArrangementCanManage(arrangement) || catalogArrangementIsAdded(arrangement);
     setScoreViewEnabled(true);
-    if (rhythmToggleButton.isConnected) rhythmToggleButton.remove();
     showPage('editor');
     window.editorV3?.renderCurrentSong?.();
   } catch (error) {
@@ -410,9 +408,7 @@ function openLocalEditor(id) {
   saveSongButton.hidden = false;
   downloadSongButton.hidden = dataSource.isLocalTest;
   addPreviewSongButton.hidden = true;
-  if (!rhythmToggleButton.isConnected) meterBadge.before(rhythmToggleButton);
-  const previewBadge = document.getElementById('previewBadge');
-  if (previewBadge) previewBadge.hidden = true;
+  setPreviewActive(false);
   setScoreViewEnabled(false);
   showPage('editor');
   loadSong(id);
@@ -427,12 +423,14 @@ function handleRoute() {
   const id = parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : null;
   if (route === 'catalog') {
     previewSong = null;
+    setPreviewActive(false);
     previousNonEditorRoute = '#/catalog';
     showPage('catalog');
     renderCatalog();
     return;
   }
   if (route === 'library') {
+    setPreviewActive(false);
     if (!window.authState?.user) {
       previousNonEditorRoute = '#/catalog';
       showPage('catalog');
@@ -497,6 +495,7 @@ window.addEventListener('opentab:auth-changed', async event => {
     songs = [];
     currentSongId = null;
     previewSong = null;
+    setPreviewActive(false);
     libraryLoadError = '';
     renderSongList();
     renderLibraryGrid();
@@ -510,6 +509,7 @@ window.addEventListener('opentab:auth-changed', async event => {
 });
 window.addEventListener('opentab:test-data-reset', async () => {
   previewSong = null;
+  setPreviewActive(false);
   await Promise.all([loadCatalog(), loadUserLibrary()]);
   showToast('已重設為repo測試資料');
   handleRoute();
