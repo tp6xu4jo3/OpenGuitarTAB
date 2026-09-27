@@ -45,11 +45,7 @@
 .mode-toggle-button.is-active .mode-switch { background:#22c55e; }
 .mode-toggle-button.is-active .mode-switch-thumb { transform:translateX(19px); }
 .content.edit-view { --rhythm-height:0px; --system-height:var(--staff-height); }
-.content.edit-view .rhythm-layer { display:none; }
 .content.score-view { --slot-size:16px; --small-slot-size:10px; --value-width:20px; --value-height:16px; --note-font-size:14px; --row-height:16px; --staff-height:calc(var(--row-height)*6); --rhythm-height:36px; --stem-end:27px; --system-height:calc(var(--staff-height) + var(--rhythm-height)); }
 .content.score-view #tabArea { min-width:0; }
-.content.score-view .tab-system.score-system { display:block; margin:5px 0 12px; }
-.score-grid-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
 .content.score-view .tab-grid { grid-template-columns:repeat(var(--steps),minmax(0,1fr)); }
-.score-grid-pair .tab-grid + .tab-grid .measure-line.first { display:none; }
 .content.score-view .actions { display:none; }
