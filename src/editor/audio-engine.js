@@ -174,6 +174,21 @@ export class GuitarAudioEngine {
     }
   }
 
+  playMetronomeClick({ accent = false } = {}) {
+    if (!this.context || !this.masterGain) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(accent ? 1480 : 1040, now);
+    gain.gain.setValueAtTime(accent ? 0.17 : 0.11, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+    oscillator.connect(gain);
+    gain.connect(this.masterGain);
+    oscillator.start(now);
+    oscillator.stop(now + 0.05);
+  }
+
   playNote(stringIndex, fret, { capo = getCapoFromUi() } = {}) {
     if (!this.context || !this.masterGain || /^x$/i.test(String(fret))) return;
     const frequency = frequencyForTab(stringIndex, fret, capo);
@@ -256,6 +271,7 @@ export function installAudioEngine() {
     getSlotDurationMs: () => (60000 / getTempoFromUi()) / 4,
     ensureAudioReady: () => engine.ensureReady(),
     playGuitarNote: (stringIndex, fret) => engine.playNote(stringIndex, fret),
+    playMetronomeClick: options => engine.playMetronomeClick(options),
     stopAllStringVoices: () => engine.stopAll()
   });
   window.editorAudio = engine;

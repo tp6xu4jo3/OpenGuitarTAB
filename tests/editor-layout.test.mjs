@@ -5,6 +5,8 @@ import {
   buildAdaptiveSystemLayout,
   buildCompactScoreLayout,
   buildSystems,
+  columnGeometryForMeasure,
+  measureColumnSpacing,
   measureComplexity
 } from '../src/editor/layout.js';
 
@@ -28,7 +30,7 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   const wide=buildAdaptiveLayout(documentModel,{availableWidth:1200});
   assert.deepEqual(wide.systems.map(system=>system.measures.length),[4]);
   assert.ok(wide.systems[0].measureWidths.every(width=>Math.abs(width-25)<0.001),'ordinary measures remain equal width');
-  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:650}).systems.map(system=>system.measures.length),[2,2]);
+  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:650}).systems.map(system=>system.measures.length),[3,1],'natural-width layout should keep a one-measure final row instead of redistributing it');
   assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:400}).systems.map(system=>system.measures.length),[1,1,1,1]);
 }
 
@@ -39,9 +41,9 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   const wideChord=measure('wide-chord',{chordSymbol:'F#m7add11'});
   const triplet=measure('triplet',{group:{type:'tuplet',ratio:[3,2],slots:[[0,1],[1,3],[2,3]],duration:[1,3]}});
   const doc=createDocumentV3({measures:[plain,harmonic,shortChord,wideChord,triplet]});
-  assert.ok(measureComplexity(doc,harmonic)>measureComplexity(doc,plain),'score-view <12> harmonic text must reserve horizontal space');
-  assert.ok(measureComplexity(doc,shortChord)>measureComplexity(doc,plain),'a chord symbol must contribute notation width');
-  assert.ok(measureComplexity(doc,wideChord)>measureComplexity(doc,shortChord),'longer chord symbols must reserve more width');
+  assert.ok(measureComplexity(doc,harmonic)>measureComplexity(doc,plain),'score-view harmonic text must reserve local horizontal space');
+  assert.equal(measureComplexity(doc,shortChord),measureComplexity(doc,plain),'chord symbols must not trigger elastic score layout');
+  assert.equal(measureComplexity(doc,wideChord),measureComplexity(doc,plain),'long chord symbols must not widen the score layout');
   assert.equal(measureComplexity(doc,plain),measureComplexity(doc,triplet),'triplet bracket alone must not widen adaptive measure metrics');
 }
 
@@ -55,16 +57,21 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   };
   const single=measure('single-chord',{chordSymbol:'C'});
   const doc=createDocumentV3({measures:[single,repeated]});
-  assert.equal(measureComplexity(doc,repeated),measureComplexity(doc,single),'consecutive repeated chord labels reserve width only once');
+  assert.equal(measureComplexity(doc,repeated),measureComplexity(doc,single),'repeated chord labels must not create spacing pressure');
 }
 
 {
   const stressed=measure('stressed',{mark:'strum'});
   const plain=measure('plain');
   const doc=createDocumentV3({measures:[stressed,plain]});
-  assert.ok(measureComplexity(doc,stressed)>measureComplexity(doc,plain),'left-side sweep notation needs more width');
+  assert.ok(measureComplexity(doc,stressed)>measureComplexity(doc,plain),'left-side sweep notation needs local space');
+  const spacing=measureColumnSpacing(doc,doc.measures[0]);
+  assert.ok(spacing.entries[0].left>0,'strum spacing belongs to its source column');
   const layout=buildAdaptiveLayout(doc,{availableWidth:900});
-  assert.ok(layout.systems[0].measureWidths[0]>layout.systems[0].measureWidths[1]);
+  assert.ok(Math.abs(layout.systems[0].measureWidthsPx[0]-layout.systems[0].measureWidthsPx[1])<0.001,'available row slack should not be redistributed across whole measures');
+  const stressedGeometry=columnGeometryForMeasure(doc,doc.measures[0],layout.systems[0].measureWidthsPx[0]);
+  const plainGeometry=columnGeometryForMeasure(doc,doc.measures[1],layout.systems[0].measureWidthsPx[1]);
+  assert.ok(stressedGeometry.percentForKey('0/1')>plainGeometry.percentForKey('0/1'),'only the affected column should shift to make room for left-side notation');
 }
 
 {
@@ -72,14 +79,34 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   const digits=measure('digits',{doubleDigits:true});
   const plain=measure('plain');
   const doc=createDocumentV3({measures:[thirty,digits,plain]});
-  assert.ok(measureComplexity(doc,thirty)>measureComplexity(doc,plain),'32nd subdivision needs more width');
-  assert.ok(measureComplexity(doc,digits)>measureComplexity(doc,plain),'adjacent two-digit frets need more width');
+  assert.ok(measureComplexity(doc,thirty)>measureComplexity(doc,plain),'32nd subdivision needs local width');
+  assert.ok(measureComplexity(doc,digits)>measureComplexity(doc,plain),'two-digit frets must trigger local spacing');
+  const digitSpacing=measureColumnSpacing(doc,doc.measures[1]);
+  assert.ok(digitSpacing.entries.some(entry=>entry.left>0&&entry.right>0),'two-digit fret spacing must be attached to its note columns');
+}
+
+{
+  const slideMeasure={
+    id:'slide-measure',timeSignature:{numerator:4,denominator:4},groups:[],events:[
+      {id:'slide-e1',at:[0,1],duration:[1,4],marks:[],notes:[{id:'slide-n1',string:2,fret:'5',techniques:[]}]},
+      {id:'slide-e2',at:[1,1],duration:[1,4],marks:[],notes:[{id:'slide-n2',string:2,fret:'7',techniques:[]}]}
+    ]
+  };
+  const plainDoc=createDocumentV3({measures:[slideMeasure]});
+  const slideDoc=createDocumentV3({
+    measures:[slideMeasure],
+    relations:[{id:'slide-r',type:'slide',fromNoteId:'slide-n1',toNoteId:'slide-n2'}]
+  });
+  assert.ok(measureComplexity(slideDoc,slideDoc.measures[0])>measureComplexity(plainDoc,plainDoc.measures[0]),'slide relations must trigger local elastic spacing');
+  const spacing=measureColumnSpacing(slideDoc,slideDoc.measures[0]);
+  assert.ok(spacing.entries.find(entry=>entry.key==='0/1')?.right>0,'slide spacing must be reserved on the source column right side');
 }
 
 {
   const documentModel=createDocumentV3({measures:['m1','m2','m3','m4'].map(id=>measure(id)),layout:{systemBreakAfter:['m2']}});
   assert.deepEqual(buildSystems(documentModel).map(system=>system.map(item=>item.id)),[['m1','m2'],['m3','m4']]);
   assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems.map(system=>system.measureIds),[['m1','m2'],['m3','m4']]);
+  assert.ok(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems.every(system=>system.widthPx<1200),'short logical systems must keep natural width instead of stretching to the right edge');
 }
 
 {
@@ -108,6 +135,7 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   assert.equal(wide.rows[0].plainNotation,true,'plain score rows should use non-adaptive equal measure widths');
   const firstRowWidths=wide.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
   assert.ok(firstRowWidths.every(width=>Math.abs(width-firstRowWidths[0])<0.001),'plain compact measures should remain equal width');
+  assert.ok(Math.abs(wide.rows[1].widthPx-wide.rows[0].widthPx/2)<0.001,'the final four-measure compact row must remain half-width instead of stretching to eight measures');
   const narrow=buildCompactScoreLayout(documentModel,{availableWidth:460,minMeasureWidth:100});
   assert.ok(narrow.rows.length>=3);
   assert.ok(narrow.rows.every(row=>row.measureCount<=8));
@@ -119,9 +147,9 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   const doc=createDocumentV3({measures:[measure('compact-plain-1'),digits,thirty,measure('compact-plain-2')]});
   const compact=buildCompactScoreLayout(doc,{availableWidth:1200,minMeasureWidth:100});
   assert.equal(compact.rows.length,1);
-  assert.equal(compact.rows[0].plainNotation,true,'dense rhythm/fret content without chord or technique annotations must stay uniform in compact mode');
+  assert.equal(compact.rows[0].plainNotation,false,'two-digit and 32nd columns are local spacing requirements even without chord labels');
   const widths=compact.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
-  assert.ok(widths.every(width=>Math.abs(width-widths[0])<0.001),'annotation-free compact measures must not receive elastic per-measure widths');
+  assert.ok(widths.every(width=>width>=compact.baseMeasureWidth),'local spacing must never make a compact measure narrower than its base slot');
 }
 
 console.log('editor layout tests passed');

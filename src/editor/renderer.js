@@ -2,6 +2,7 @@ import {
   buildAdaptiveLayout,
   buildAdaptiveSystemLayout,
   buildCompactScoreLayout,
+  columnGeometryForMeasure,
   DEFAULT_LAYOUT_WIDTH,
   measureDurationInBeats,
   percentageForTime,
@@ -24,6 +25,11 @@ import { isPreviewActive, isScoreViewActive, scoreDensityMode } from './view-sta
 
 const EDITOR_RAIL_WIDTH = 102;
 const BASE_GRID_STEP = Object.freeze([1, 4]);
+const SCORE_STAFF_TOP = 32;
+const SCORE_STAFF_HEIGHT = 112;
+const SCORE_RHYTHM_LAYER_TOP = 154;
+const SCORE_NOTE_HALF_HEIGHT = 13;
+const SCORE_STEM_END = 30;
 
 function div(className) {
   const node = document.createElement('div');
@@ -107,6 +113,13 @@ function rhythmDotCountForValue(value) {
     if (Math.abs(value - base * 1.5) <= 1e-9) return 1;
   }
   return 0;
+}
+
+function rhythmStemTopForEvent(event, stringCount = STRING_COUNT) {
+  const strings = (event?.notes || []).map(note => Math.max(0, Math.min(stringCount - 1, Number(note.string) || 0)));
+  const lowestString = strings.length ? Math.max(...strings) : stringCount - 1;
+  const noteCenter = SCORE_STAFF_TOP + ((lowestString + 0.5) / stringCount) * SCORE_STAFF_HEIGHT;
+  return Math.min(-4, noteCenter + SCORE_NOTE_HALF_HEIGHT + 2 - SCORE_RHYTHM_LAYER_TOP);
 }
 
 function eventAt(measure, at) {
@@ -245,10 +258,12 @@ export class SparseScoreRenderer {
         line.dataset.scoreLine = String(visualIndex);
         line.dataset.visualRow = String(visualIndex);
         line.dataset.measureCount = String(visualRow.measureCount);
+        line.style.setProperty('--score-density-line-width', `${Math.max(1, Number(visualRow.widthPx) || plan.availableWidth)}px`);
         visualRow.segments.forEach(segment => {
           const system = this.createSystem(segment, visualIndex);
           system.classList.add('score-density-segment');
           system.style.setProperty('--score-density-weight', String(Math.max(1, segment.widthWeight || segment.minimumWidth || 1)));
+          system.style.setProperty('--score-density-width', `${Math.max(1, Number(segment.widthPx) || segment.minimumWidth || 1)}px`);
           line.appendChild(system);
         });
         fragment.appendChild(line);
@@ -270,6 +285,7 @@ export class SparseScoreRenderer {
     system.dataset.sourceStart = String(Number(segment.startMeasure || 0) === 0);
     system.dataset.sourceEnd = String((Number(segment.startMeasure || 0) + segment.measures.length) >= sourceMeasureCount);
     system.dataset.centerKey = `row-${rowIndex}`;
+    if (Number(segment.widthPx) > 0) system.style.setProperty('--score-density-width', `${Number(segment.widthPx)}px`);
     const placeholder = div('system-label layout-rail-placeholder');
     placeholder.setAttribute('aria-hidden', 'true');
     system.appendChild(placeholder);
@@ -285,26 +301,37 @@ export class SparseScoreRenderer {
     const widths = segment.measureWidths?.length === measures.length
       ? segment.measureWidths
       : Array.from({ length: Math.max(1, measures.length) }, () => 100 / Math.max(1, measures.length));
+    const pixelWidths = segment.measureWidthsPx?.length === measures.length
+      ? segment.measureWidthsPx.map(value => Math.max(1, Number(value) || 1))
+      : null;
+    const gridWidth = Math.max(1, Number(segment.widthPx) || pixelWidths?.reduce((sum, value) => sum + value, 0) || 0);
     const grid = div('tab-grid adaptive-tab-grid v3-grid');
     grid.dataset.row = String(rowIndex);
     grid.dataset.measureStart = String(Number(segment.startMeasure) || 0);
     grid.dataset.measureCount = String(Math.max(1, measures.length));
     grid.dataset.measureIds = measures.map(measure => measure.id).join(',');
     grid.dataset.measureWidths = widths.map(value => Number(value).toFixed(6)).join(',');
+    if (pixelWidths) grid.dataset.measureWidthsPx = pixelWidths.map(value => Number(value).toFixed(3)).join(',');
+    grid.dataset.widthPx = Number(gridWidth).toFixed(3);
     grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = widths.map(width => `${Number(width).toFixed(6)}%`).join(' ');
+    grid.style.gridTemplateColumns = pixelWidths
+      ? pixelWidths.map(width => `${Number(width).toFixed(3)}px`).join(' ')
+      : widths.map(width => `${Number(width).toFixed(6)}%`).join(' ');
     grid.style.position = 'relative';
-    grid.style.width = '100%';
-    measures.forEach((measure, index) => grid.appendChild(this.createMeasure(measure, index)));
+    grid.style.setProperty('--score-grid-width', `${gridWidth}px`);
+    measures.forEach((measure, index) => grid.appendChild(this.createMeasure(measure, index, pixelWidths?.[index] || null)));
     return grid;
   }
 
-  createMeasure(measure, localMeasureIndex = 0) {
+  createMeasure(measure, localMeasureIndex = 0, measureWidthPx = null) {
     const node = div('v3-measure');
     node.dataset.measureId = String(measure.id);
     node.dataset.measureIndex = String(localMeasureIndex);
     node.style.position = 'relative';
     node.style.setProperty('--v3-strings', String(this.stringCount));
+    const geometry = columnGeometryForMeasure(this.document, measure, measureWidthPx);
+    const pointForTime = time => geometry.percentForKey(fractionKey(time.at))
+      ?? visualPercentageForTime(time.at, time.duration || BASE_GRID_STEP, measure);
     const staff = div('v3-staff');
     staff.dataset.measureId = String(measure.id);
     staff.setAttribute('aria-label', 'TAB measure');
@@ -317,15 +344,15 @@ export class SparseScoreRenderer {
     const beats = measureDurationInBeats(measure);
     for (let beat = 1; beat < Math.ceil(beats); beat++) {
       const guide = div('v3-beat-guide');
-      guide.style.left = `${beat / beats * 100}%`;
+      guide.style.left = `${geometry.percentForFraction([beat, 1])}%`;
       staff.appendChild(guide);
     }
     const times = editableTimesForMeasure(measure);
     const visualTimeByKey = new Map(times.map(time => [fractionKey(time.at), time]));
     times.forEach((time, index) => {
-      const current = visualPercentageForTime(time.at, time.duration, measure);
-      const previous = index > 0 ? visualPercentageForTime(times[index - 1].at, times[index - 1].duration, measure) : 0;
-      const next = index + 1 < times.length ? visualPercentageForTime(times[index + 1].at, times[index + 1].duration, measure) : 100;
+      const current = pointForTime(time);
+      const previous = index > 0 ? pointForTime(times[index - 1]) : 0;
+      const next = index + 1 < times.length ? pointForTime(times[index + 1]) : 100;
       const left = index === 0 ? 0 : (previous + current) / 2;
       const right = index === times.length - 1 ? 100 : (current + next) / 2;
       const width = Math.max(0.2, right - left);
@@ -357,7 +384,9 @@ export class SparseScoreRenderer {
       eventNode.dataset.measureId = String(measure.id);
       eventNode.dataset.at = fractionKey(event.at);
       const visualTime = visualTimeByKey.get(fractionKey(event.at));
-      eventNode.style.left = `${visualPercentageForTime(event.at, visualTime?.duration || BASE_GRID_STEP, measure)}%`;
+      const eventX = geometry.percentForKey(fractionKey(event.at))
+        ?? visualPercentageForTime(event.at, visualTime?.duration || BASE_GRID_STEP, measure);
+      eventNode.style.left = `${eventX}%`;
       for (const note of event.notes || []) {
         const top = `${((Number(note.string) + 0.5) / this.stringCount) * 100}%`;
         const noteNode = document.createElement('button');
@@ -378,11 +407,11 @@ export class SparseScoreRenderer {
       staff.appendChild(eventNode);
     }
     node.appendChild(staff);
-    if (isScoreViewActive()) node.appendChild(this.createRhythmLayer(measure, visualTimeByKey));
+    if (isScoreViewActive()) node.appendChild(this.createRhythmLayer(measure, visualTimeByKey, geometry));
     return node;
   }
 
-  createRhythmLayer(measure, visualTimeByKey) {
+  createRhythmLayer(measure, visualTimeByKey, geometry) {
     const layer = div('v3-rhythm-layer');
     const orderedEvents = (measure.events || [])
       .filter(event => (event.notes || []).length)
@@ -394,13 +423,15 @@ export class SparseScoreRenderer {
       const durationValue = inferredOrdinaryDurationValue(event, orderedEvents);
       return {
         event,
-        x: visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
+        x: geometry.percentForKey(fractionKey(event.at))
+          ?? visualPercentageForTime(event.at, visualTime?.duration || event.duration || BASE_GRID_STEP, measure),
         at: fractionToNumber(event.at),
         beams: Number.isFinite(groupBeamCount)
           ? Math.max(0, Math.trunc(groupBeamCount))
           : rhythmBeamCountForValue(durationValue),
         dots: group?.type === 'tuplet' ? 0 : rhythmDotCountForValue(durationValue),
-        group
+        group,
+        stemTop: rhythmStemTopForEvent(event, this.stringCount)
       };
     });
 
@@ -411,6 +442,8 @@ export class SparseScoreRenderer {
       groups.get(key).push(point);
       const stem = div('v3-rhythm-stem');
       stem.style.left = `${point.x}%`;
+      stem.style.top = `${point.stemTop}px`;
+      stem.style.height = `${Math.max(4, SCORE_STEM_END - point.stemTop)}px`;
       layer.appendChild(stem);
       if (point.dots > 0) {
         const dot = div('v3-rhythm-dot');
@@ -448,8 +481,11 @@ export class SparseScoreRenderer {
       const slots = Array.isArray(group.slots) ? group.slots : [];
       if (slots.length < 2) continue;
       const slotX = slot => {
-        const visualTime = visualTimeByKey.get(fractionKey(slot));
-        return visualPercentageForTime(slot, visualTime?.duration || group.duration || BASE_GRID_STEP, measure);
+        const key = fractionKey(slot);
+        const visualTime = visualTimeByKey.get(key);
+        return geometry.percentForKey(key)
+          ?? geometry.percentForFraction(slot)
+          ?? visualPercentageForTime(slot, visualTime?.duration || group.duration || BASE_GRID_STEP, measure);
       };
       const left = slotX(slots[0]);
       const right = slotX(slots.at(-1));
@@ -487,12 +523,13 @@ export class SparseScoreRenderer {
     return Number.isInteger(index) ? this.document?.measures?.[index] || null : null;
   }
 
-  renderMeasure(measureId) {
+  renderMeasure(measureId, measureWidthPx = null) {
     const measure = this.measureForId(measureId);
     const existing = this.root?.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
     if (!measure || !existing) return false;
     const index = Number(existing.dataset.measureIndex) || 0;
-    existing.replaceWith(this.createMeasure(measure, index));
+    const measuredWidth = Number(measureWidthPx) || Number(existing.getBoundingClientRect?.().width) || null;
+    existing.replaceWith(this.createMeasure(measure, index, measuredWidth));
     return true;
   }
 
@@ -546,7 +583,11 @@ export class SparseScoreRenderer {
     if (!sourceMeasures.length || sourceMeasures.length !== sourceMeasureIds.length) return false;
 
     const availableWidth = layoutAvailableWidth(this.root);
-    const nextSegments = buildAdaptiveSystemLayout(sourceMeasures, { sourceSystemIndex, availableWidth });
+    const nextSegments = buildAdaptiveSystemLayout(sourceMeasures, {
+      sourceSystemIndex,
+      availableWidth,
+      documentModel: this.document
+    });
     if (!nextSegments.length) return false;
     const nextPlan = this.replaceAdaptiveSourcePlan(sourceSystemIndex, sourceMeasures, nextSegments, availableWidth);
     if (!nextPlan) return false;
@@ -557,8 +598,12 @@ export class SparseScoreRenderer {
       return String(grid?.dataset.measureIds || '') === segmentSignature(nextSegments[index]);
     });
     if (metricsOnly && sameShape) {
-      for (const measureId of changeSet.measures || []) this.renderMeasure(measureId);
       existing.forEach((system, index) => this.updateGridWidths(system.querySelector(':scope .v3-grid'), nextSegments[index]));
+      for (const measureId of changeSet.measures || []) {
+        const segment = nextSegments.find(item => item.measureIds?.includes(String(measureId)));
+        const measureIndex = segment?.measureIds?.indexOf(String(measureId)) ?? -1;
+        this.renderMeasure(measureId, measureIndex >= 0 ? segment.measureWidthsPx?.[measureIndex] : null);
+      }
     } else {
       const first = existing[0];
       const fragment = document.createDocumentFragment();
@@ -576,8 +621,18 @@ export class SparseScoreRenderer {
     if (!grid) return false;
     const widths = segment.measureWidths || [];
     if (!widths.length) return false;
+    const pixelWidths = segment.measureWidthsPx?.length === widths.length
+      ? segment.measureWidthsPx.map(value => Math.max(1, Number(value) || 1))
+      : null;
+    const gridWidth = Math.max(1, Number(segment.widthPx) || pixelWidths?.reduce((sum, value) => sum + value, 0) || 0);
     grid.dataset.measureWidths = widths.map(value => Number(value).toFixed(6)).join(',');
-    grid.style.gridTemplateColumns = widths.map(width => `${Number(width).toFixed(6)}%`).join(' ');
+    if (pixelWidths) grid.dataset.measureWidthsPx = pixelWidths.map(value => Number(value).toFixed(3)).join(',');
+    grid.dataset.widthPx = Number(gridWidth).toFixed(3);
+    grid.style.gridTemplateColumns = pixelWidths
+      ? pixelWidths.map(width => `${Number(width).toFixed(3)}px`).join(' ')
+      : widths.map(width => `${Number(width).toFixed(6)}%`).join(' ');
+    grid.style.setProperty('--score-grid-width', `${gridWidth}px`);
+    grid.closest?.('.v3-system')?.style.setProperty('--score-density-width', `${gridWidth}px`);
     return true;
   }
 
@@ -699,7 +754,10 @@ export class SparseScoreRenderer {
     input.dataset.string = String(string);
     input.dataset.at = fractionKey(at);
     input.dataset.duration = fractionKey(duration || BASE_GRID_STEP);
-    Object.assign(input.style, { position: 'absolute', left: `${visualPercentageForAt(measure, at)}%`, top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`, transform: 'translate(-50%, -50%)' });
+    const measureWidth = Number(measureNode.getBoundingClientRect?.().width) || null;
+    const geometry = columnGeometryForMeasure(this.document, measure, measureWidth);
+    const cursorLeft = geometry.percentForKey(fractionKey(at)) ?? visualPercentageForAt(measure, at);
+    Object.assign(input.style, { position: 'absolute', left: `${cursorLeft}%`, top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`, transform: 'translate(-50%, -50%)' });
     let cancelled = false;
     let committed = false;
     const commit = () => {

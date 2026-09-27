@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDocumentV3 } from '../src/editor/model.js';
-import { buildAdaptiveLayout, buildSystems, measureComplexity } from '../src/editor/layout.js';
+import { buildAdaptiveLayout, buildSystems, columnGeometryForMeasure, measureComplexity } from '../src/editor/layout.js';
 import { deleteMeasures, deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
 
 function plainMeasure(id,{mark=false,harmonic=false}={}){
@@ -12,9 +12,12 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 
 {
   const doc=createDocumentV3({measures:[plainMeasure('harmonic',{harmonic:true}),plainMeasure('plain')]});
-  assert.ok(measureComplexity(doc,doc.measures[0])>measureComplexity(doc,doc.measures[1]),'score-view harmonic text may flex layout');
+  assert.ok(measureComplexity(doc,doc.measures[0])>measureComplexity(doc,doc.measures[1]),'score-view harmonic text requires local horizontal space');
   const layout=buildAdaptiveLayout(doc,{availableWidth:900});
-  assert.ok(layout.systems[0].measureWidths[0]>layout.systems[0].measureWidths[1],'harmonic notation should receive more adaptive width than a plain measure');
+  assert.equal(layout.systems[0].measureWidthsPx[0],layout.systems[0].measureWidthsPx[1],'harmonic notation should not stretch the whole measure when its base width already has room');
+  const harmonicGeometry=columnGeometryForMeasure(doc,doc.measures[0],layout.systems[0].measureWidthsPx[0]);
+  const plainGeometry=columnGeometryForMeasure(doc,doc.measures[1],layout.systems[0].measureWidthsPx[1]);
+  assert.ok(harmonicGeometry.percentForKey('0/1')>plainGeometry.percentForKey('0/1'),'harmonic width must be absorbed by the affected rhythmic column instead');
 }
 {
   const doc=createDocumentV3({measures:[plainMeasure('sweep',{mark:true}),plainMeasure('plain')]});
