@@ -54,6 +54,6 @@ assert.match(
   /\.mode-toggle-button\.is-active \.mode-switch-thumb \{ transform:translateX\(19px\); \}/,
   'active mode switches must move the thumb to the on position'
 );
-assert.match(headerCss, /\.preview-badge\[hidden\] \{ display:none!important; \}/, 'preview badge visibility must follow its hidden state instead of being permanently suppressed');
+assert.match(headerCss, /\.preview-badge\[hidden\]\{display:none!important\}/, 'preview badge visibility must follow its hidden state instead of being permanently suppressed');
 
 console.log('playback layout regression tests passed');
