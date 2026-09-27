@@ -161,14 +161,15 @@ function openMenu(target, x, y) {
   menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
 }
 
-function makeRowMoreButton(target) {
+function makeRowMoreButton(handle) {
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'row-module-more';
   more.textContent = '…';
-  more.setAttribute('aria-label', `第 ${Number(target.visualRowIndex) + 1} 列操作`);
   more.addEventListener('click', event => {
     event.stopPropagation();
+    const target = rowTargetForSystem(handle.closest('.tab-system'));
+    if (!target) return;
     const rect = more.getBoundingClientRect();
     openMenu(target, rect.right + 6, rect.top);
   });
@@ -181,19 +182,29 @@ function makeRowHandle(target, { sourceStart = false } = {}) {
   handle.draggable = true;
   handle.dataset.row = String(target.rowIndex);
   handle.dataset.visualRow = String(target.visualRowIndex);
-  handle.setAttribute('aria-label', `第 ${Number(target.visualRowIndex) + 1} 列，可拖曳其來源列排序`);
   const grip = document.createElement('span');
   grip.className = 'row-drag-grip';
   grip.textContent = '⠿';
   const label = document.createElement('span');
   label.className = 'row-module-label';
-  label.textContent = `第 ${Number(target.visualRowIndex) + 1} 列`;
-  handle.append(grip, label, makeRowMoreButton(target));
-  handle.addEventListener('click', event => { if (!event.target.closest('button')) setSelected(target); });
-  handle.addEventListener('contextmenu', event => { event.preventDefault(); openMenu(target, event.clientX, event.clientY); });
+  const more = makeRowMoreButton(handle);
+  handle.append(grip, label, more);
+  syncHandleMetadata(handle, target);
+  handle.addEventListener('click', event => {
+    if (event.target.closest('button')) return;
+    const current = rowTargetForSystem(handle.closest('.tab-system'));
+    if (current) setSelected(current);
+  });
+  handle.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    const current = rowTargetForSystem(handle.closest('.tab-system'));
+    if (current) openMenu(current, event.clientX, event.clientY);
+  });
   handle.addEventListener('dragstart', event => {
-    dragState = { type: 'row', rowIndex: target.rowIndex };
-    event.dataTransfer?.setData('text/plain', `row:${target.rowIndex}`);
+    const current = rowTargetForSystem(handle.closest('.tab-system'));
+    if (!current) return;
+    dragState = { type: 'row', rowIndex: current.rowIndex };
+    event.dataTransfer?.setData('text/plain', `row:${current.rowIndex}`);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   });
   return handle;
@@ -274,6 +285,40 @@ function measureIdsForSystem(system) {
     .flatMap(grid => String(grid.dataset.measureIds || '').split(',').filter(Boolean));
 }
 
+function rowTargetForSystem(system) {
+  if (!system) return null;
+  const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
+  const visualRowIndex = Number(system.dataset.visualRow);
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(visualRowIndex)) return null;
+  return { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
+}
+
+function syncHandleMetadata(handle, target) {
+  if (!handle || !target) return;
+  handle.dataset.row = String(target.rowIndex);
+  handle.dataset.visualRow = String(target.visualRowIndex);
+  handle.setAttribute('aria-label', `第 ${target.visualRowIndex + 1} 列，可拖曳其來源列排序`);
+  const label = handle.querySelector('.row-module-label');
+  if (label) label.textContent = `第 ${target.visualRowIndex + 1} 列`;
+  handle.querySelector('.row-module-more')?.setAttribute('aria-label', `第 ${target.visualRowIndex + 1} 列操作`);
+}
+
+function syncVisualRowMetadata(system, visualRowIndex) {
+  system.dataset.visualRow = String(visualRowIndex);
+  const target = rowTargetForSystem(system);
+  if (!target) return;
+  syncHandleMetadata(system.querySelector('.row-module-handle,.visual-row-handle'), target);
+}
+
+function syncSelectedRow(systems) {
+  if (selected?.type !== 'row') return;
+  const matching = systems.filter(system => Number(system.dataset.sourceRow ?? system.dataset.row) === Number(selected.rowIndex));
+  if (!matching.length) return;
+  const current = matching.find(system => Number(system.dataset.visualRow) === Number(selected.visualRowIndex)) || matching[0];
+  const target = rowTargetForSystem(current);
+  if (target) selected = target;
+}
+
 function decorateSystem(system, visualRowIndex) {
   const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
   const sourceStart = system.dataset.sourceStart !== 'false';
@@ -303,6 +348,7 @@ function decorateEditor() {
     if (decorated.sourceStart) tabArea.insertBefore(makeInsertZone(decorated.rowIndex), system);
   });
   tabArea.appendChild(makeInsertZone(logicalRowCount));
+  syncSelectedRow(systems);
   if (selected) setSelected(selected);
 }
 
@@ -311,10 +357,18 @@ function decorateSourceSystem(sourceSystemIndex) {
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
   const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
+  const affected = [];
   systems.forEach((system, visualRowIndex) => {
     if (Number(system.dataset.sourceRow ?? system.dataset.row) !== Number(sourceSystemIndex)) return;
+    affected.push(visualRowIndex);
     decorateSystem(system, visualRowIndex);
   });
+  if (!affected.length) return;
+  const firstAffectedVisualRow = Math.min(...affected);
+  systems.forEach((system, visualRowIndex) => {
+    if (visualRowIndex >= firstAffectedVisualRow) syncVisualRowMetadata(system, visualRowIndex);
+  });
+  syncSelectedRow(systems);
   if (selected) setSelected(selected);
 }
 
