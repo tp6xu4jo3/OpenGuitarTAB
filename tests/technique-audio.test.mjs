@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { pitchPlanForTab } from '../src/editor/audio-engine.js';
 import { playbackNoteSchedule } from '../src/editor/playback-articulation.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 
@@ -29,6 +30,20 @@ assert.deepEqual(upArpeggio.map(item => item.note.id), ['low', 'mid', 'high'], '
 assert.deepEqual(downArpeggio.map(item => item.note.id), ['high', 'mid', 'low'], 'down arpeggio rolls from high strings to low strings');
 assert.ok(upArpeggio.at(-1).delayMs > downStrum.at(-1).delayMs, 'arpeggio spread must be slower than a strum');
 
+const plainPitch = pitchPlanForTab(2, '5', { capo: 0, slideToFret: null, slideSeconds: 1 });
+assert.equal(plainPitch.sliding, false, 'a missing slide target must never be coerced to fret zero');
+assert.equal(plainPitch.targetFrequency, plainPitch.frequency, 'ordinary notes must keep one fixed fundamental frequency');
+assert.equal(plainPitch.glideSeconds, 0, 'ordinary notes must not schedule a pitch glide');
+for (const missingTarget of [undefined, '']) {
+  const plan = pitchPlanForTab(2, '5', { slideToFret: missingTarget, slideSeconds: 1 });
+  assert.equal(plan.sliding, false, 'empty slide targets must remain non-sliding notes');
+  assert.equal(plan.targetFrequency, plan.frequency);
+}
+const openStringSlide = pitchPlanForTab(2, '5', { slideToFret: '0', slideSeconds: 0.5 });
+assert.equal(openStringSlide.sliding, true, 'an explicit fret-zero slide target must remain valid');
+assert.ok(openStringSlide.targetFrequency < openStringSlide.frequency, 'an explicit downward slide must lower pitch');
+assert.equal(openStringSlide.glideSeconds, 0.5);
+
 const documentModel = {
   version: 3,
   measures: [{
@@ -57,6 +72,7 @@ assert.equal(Object.hasOwn(sourceNote, 'arc'), false, 'generic visual arcs must 
 const audioSource = await readFile(new URL('../src/editor/audio-engine.js', import.meta.url), 'utf8');
 const controllerSource = await readFile(new URL('../src/editor/playback-controller.js', import.meta.url), 'utf8');
 assert.match(audioSource, /playbackRate\.exponentialRampToValueAtTime\(playbackRateEnd, startTime \+ glideSeconds\)/, 'slide audio must continuously ramp pitch instead of retriggering intermediate frets');
+assert.match(audioSource, /pitchPlanForTab\(string, fret, \{ capo, slideToFret, slideSeconds \}\)/, 'audio playback must use the validated pitch plan for both ordinary notes and slides');
 assert.match(audioSource, /hasActiveSlide\(stringIndex, relationId\)/, 'audio engine must expose active slide identity for arrival handling');
 assert.match(audioSource, /harmonic \? 4\.2 : 1\.7/, 'harmonics must have a distinct brighter playback timbre in addition to their sounding pitch');
 assert.match(controllerSource, /playbackNoteSchedule\(event, beatMs\)/, 'playback controller must schedule strum and arpeggio note offsets from the articulation model');
