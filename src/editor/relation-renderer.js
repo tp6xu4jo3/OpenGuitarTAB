@@ -119,6 +119,17 @@ function appendRelationPath(svg, { type, direction = 'up', from, to, relationId 
   return path;
 }
 
+function visibleRelations(documentModel, measureSet, index) {
+  if (!index?.relationsByMeasure) return documentModel?.relations || [];
+  const unique = new Map();
+  for (const measureId of measureSet) {
+    for (const relation of index.relationsByMeasure.get(String(measureId)) || []) {
+      unique.set(String(relation.id), relation);
+    }
+  }
+  return [...unique.values()];
+}
+
 export class RelationRenderer {
   constructor() {
     this.overlays = new WeakMap();
@@ -165,7 +176,7 @@ export class RelationRenderer {
     const index = documentIndex || indexDocument(documentModel);
     const measureSet = new Set((measureIds || []).map(String));
 
-    for (const relation of documentModel.relations || []) {
+    for (const relation of visibleRelations(documentModel, measureSet, index)) {
       if (relation.type === 'arc' && relation.fromPosition && relation.toPosition) {
         const measureId = String(relation.fromPosition.measureId || '');
         if (!measureId || measureId !== String(relation.toPosition.measureId || '') || !measureSet.has(measureId)) continue;
