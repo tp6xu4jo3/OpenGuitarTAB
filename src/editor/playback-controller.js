@@ -1,5 +1,6 @@
 import { getAudioEngine } from './audio-engine.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
+import { playbackNoteSchedule } from './playback-articulation.js';
 import { buildPlaybackIndex } from './playback-index.js';
 
 const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
@@ -309,11 +310,28 @@ function setMetronomeEnabled(enabled) {
   return state.metronomeEnabled;
 }
 
-function playNotes(notes) {
-  if (!state.musicEnabled) return;
+function playNote(note, beatMs) {
+  if (!state.musicEnabled || !note || /^x$/i.test(String(note.fret))) return;
   const audio = getAudioEngine();
-  (notes || []).forEach(note => {
-    if (!/^x$/i.test(String(note.fret))) audio?.playNote(Number(note.string), note.fret);
+  if (!audio) return;
+  const string = Number(note.string);
+  const slide = note.slide || null;
+  const hasOutgoingSlide = Boolean(slide?.relationId && slide?.toFret != null);
+  if (note.slideArrivalRelationId && !hasOutgoingSlide && audio.hasActiveSlide(string, note.slideArrivalRelationId)) return;
+  const harmonic = (note.techniques || []).some(technique => technique?.type === 'harmonic');
+  audio.playNote(string, note.fret, {
+    harmonic,
+    slideToFret: slide?.toFret ?? null,
+    slideSeconds: slide ? Math.max(0.06, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
+    slideRelationId: slide?.relationId || ''
+  });
+}
+
+function playEvent(event, beatMs) {
+  if (!state.musicEnabled) return;
+  playbackNoteSchedule(event, beatMs).forEach(({ note, delayMs }) => {
+    if (delayMs <= 2) playNote(note, beatMs);
+    else state.eventTimers.push(window.setTimeout(() => playNote(note, beatMs), delayMs));
   });
 }
 
@@ -337,8 +355,8 @@ function playBeat(entry, beatMs, fromOffset = 0) {
   (entry.events || []).forEach(event => {
     if (event.offsetBeats < fromOffset - 1e-9) return;
     const delay = Math.max(0, (event.offsetBeats - fromOffset) * beatMs);
-    if (delay <= 2) playNotes(event.notes);
-    else state.eventTimers.push(window.setTimeout(() => playNotes(event.notes), delay));
+    if (delay <= 2) playEvent(event, beatMs);
+    else state.eventTimers.push(window.setTimeout(() => playEvent(event, beatMs), delay));
   });
 }
 
