@@ -7,6 +7,10 @@ const STRING_TUNING = [
   82.4068892282175
 ];
 
+// String index 0 is the first (high E) string and index 5 is the sixth (low E).
+// Keep the level spread intentionally small so chords stay balanced while the
+// low strings do not dominate the mix.
+const STRING_LEVEL_DB = [0.5, 0.3, 0.1, -0.1, -0.3, -0.5];
 const PLUCK_BUFFER_CACHE_LIMIT = 48;
 let installedEngine = null;
 
@@ -32,6 +36,11 @@ export function getCapoFromUi() {
   return clamped;
 }
 
+export function stringLevelDb(stringIndex) {
+  const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_LEVEL_DB.length - 1);
+  return STRING_LEVEL_DB[string];
+}
+
 export function frequencyForTab(stringIndex, fret, capo = 0) {
   const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1);
   const cleanFret = clamp(Number(fret) || 0, 0, 36);
@@ -44,18 +53,45 @@ export function pitchPlanForTab(stringIndex, fret, {
   slideToFret = null,
   slideSeconds = 0
 } = {}) {
-  const frequency = frequencyForTab(stringIndex, fret, capo);
+  const startFret = clamp(Number(fret) || 0, 0, 36);
+  const frequency = frequencyForTab(stringIndex, startFret, capo);
   const hasSlideTarget = slideToFret !== null
     && slideToFret !== undefined
     && String(slideToFret).trim() !== '';
-  const targetFret = hasSlideTarget ? Number(slideToFret) : Number.NaN;
-  const sliding = Number.isFinite(targetFret) && Math.abs(targetFret - Number(fret)) > 1e-9;
+  const rawTargetFret = hasSlideTarget ? Number(slideToFret) : Number.NaN;
+  const targetFret = Number.isFinite(rawTargetFret) ? clamp(rawTargetFret, 0, 36) : startFret;
+  const sliding = Number.isFinite(rawTargetFret) && Math.abs(targetFret - startFret) > 1e-9;
   return {
+    startFret,
+    targetFret,
     frequency,
     targetFrequency: sliding ? frequencyForTab(stringIndex, targetFret, capo) : frequency,
     glideSeconds: sliding ? clamp(Number(slideSeconds) || 0.25, 0.06, 4) : 0,
     sliding
   };
+}
+
+export function frettedSlideSteps(fromFret, toFret, slideSeconds) {
+  const start = clamp(Math.round(Number(fromFret) || 0), 0, 36);
+  const targetValue = Number(toFret);
+  if (!Number.isFinite(targetValue)) return [];
+  const target = clamp(Math.round(targetValue), 0, 36);
+  if (target === start) return [];
+
+  const direction = Math.sign(target - start);
+  const fretCount = Math.abs(target - start);
+  const duration = clamp(Number(slideSeconds) || 0.25, 0.06, 4);
+  const stepDuration = duration / fretCount;
+
+  return Array.from({ length: fretCount }, (_, index) => {
+    const fret = start + direction * (index + 1);
+    return {
+      fret,
+      playbackRate: Math.pow(2, (fret - start) / 12),
+      atSeconds: stepDuration * (index + 1),
+      transitionSeconds: Math.min(0.026, Math.max(0.006, stepDuration * 0.35))
+    };
+  });
 }
 
 export class GuitarAudioEngine {
@@ -142,13 +178,23 @@ export class GuitarAudioEngine {
     return buffer;
   }
 
-  connectPluckedString(frequency, stringIndex, startTime, duration, destination, { playbackRateEnd = 1, glideSeconds = 0 } = {}) {
+  connectPluckedString(frequency, stringIndex, startTime, duration, destination, { slideSteps = [] } = {}) {
     const source = this.context.createBufferSource();
     source.buffer = this.pluckBuffer(frequency, stringIndex, duration);
     source.playbackRate.setValueAtTime(1, startTime);
-    if (glideSeconds > 0 && Number.isFinite(playbackRateEnd) && playbackRateEnd > 0 && Math.abs(playbackRateEnd - 1) > 1e-6) {
-      source.playbackRate.exponentialRampToValueAtTime(playbackRateEnd, startTime + glideSeconds);
+
+    let previousRate = 1;
+    let previousStepTime = startTime;
+    for (const step of slideSteps) {
+      const stepEnd = startTime + Math.max(0, Number(step.atSeconds) || 0);
+      const transitionSeconds = Math.max(0.001, Number(step.transitionSeconds) || 0.01);
+      const rampStart = Math.max(previousStepTime, stepEnd - transitionSeconds);
+      source.playbackRate.setValueAtTime(previousRate, rampStart);
+      source.playbackRate.linearRampToValueAtTime(step.playbackRate, stepEnd);
+      previousRate = step.playbackRate;
+      previousStepTime = stepEnd;
     }
+
     source.connect(destination);
     source.start(startTime);
     source.stop(startTime + duration + 0.04);
@@ -227,16 +273,24 @@ export class GuitarAudioEngine {
     if (!this.context || !this.masterGain || /^x$/i.test(String(fret))) return;
     const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1);
     const {
+      startFret,
+      targetFret,
       frequency,
       targetFrequency,
       glideSeconds,
       sliding
     } = pitchPlanForTab(string, fret, { capo, slideToFret, slideSeconds });
-    const duration = sliding ? Math.max(0.5, glideSeconds + 0.18) : harmonic ? 0.66 : 0.5;
-    const playbackRateEnd = sliding ? targetFrequency / frequency : 1;
-    const sourceDuration = duration * Math.max(1, playbackRateEnd) + 0.05;
+    const slideSteps = sliding ? frettedSlideSteps(startFret, targetFret, glideSeconds) : [];
+    const duration = sliding ? Math.max(1.2, glideSeconds + 0.55) : harmonic ? 1.35 : 1.15;
+    const maxPlaybackRate = slideSteps.reduce((value, step) => Math.max(value, step.playbackRate), 1);
+    const sourceDuration = duration * maxPlaybackRate + 0.08;
     const now = this.context.currentTime;
-    const peakLevel = (string >= 4 ? 0.58 : 0.50) * (harmonic ? 0.82 : 1);
+    const stringGain = Math.pow(10, stringLevelDb(string) / 20);
+    const peakLevel = 0.52 * stringGain * (harmonic ? 0.82 : 1);
+
+    // A guitar string is monophonic along its own length: a new note on the
+    // same string damps the previous tail. Other strings keep ringing because
+    // activeVoices is indexed independently by string.
     this.stopStringVoice(string);
 
     const sourceBus = this.context.createGain();
@@ -246,10 +300,13 @@ export class GuitarAudioEngine {
     const bodyHighCut = this.context.createBiquadFilter();
     const noteGain = this.context.createGain();
 
+    // Longer, convex-down decay: fast pick transient followed by a much slower
+    // exponential tail instead of a short straight fade.
     noteGain.gain.setValueAtTime(0.0001, now);
     noteGain.gain.exponentialRampToValueAtTime(peakLevel, now + 0.004);
-    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.72 : 0.62), now + 0.045);
-    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.18 : 0.14), now + duration * 0.86);
+    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.76 : 0.64), now + 0.055);
+    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.40 : 0.31), now + duration * 0.34);
+    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.16 : 0.11), now + duration * 0.72);
     noteGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     bodyLow.type = 'peaking';
@@ -278,10 +335,7 @@ export class GuitarAudioEngine {
     );
     bodyHighCut.Q.setValueAtTime(harmonic ? 0.8 : 0.55, now);
 
-    const stringSource = this.connectPluckedString(frequency, string, now, sourceDuration, sourceBus, {
-      playbackRateEnd,
-      glideSeconds
-    });
+    const stringSource = this.connectPluckedString(frequency, string, now, sourceDuration, sourceBus, { slideSteps });
     const pickSource = this.addPickNoise(now, sourceBus, harmonic ? 0.045 : 0.082);
     sourceBus.connect(bodyLow);
     bodyLow.connect(bodyMid);
@@ -311,7 +365,7 @@ export class GuitarAudioEngine {
       }
     };
     this.activeVoices[string] = voice;
-    cleanupTimer = window.setTimeout(() => voice.stop(), (duration + 0.12) * 1000);
+    cleanupTimer = window.setTimeout(() => voice.stop(), (duration + 0.16) * 1000);
   }
 }
 
