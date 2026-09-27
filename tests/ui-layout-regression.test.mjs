@@ -89,7 +89,8 @@ assert.match(responsiveCss,/\.editor-ribbon-section\{[^}]*width:max-content[^}]*
 assert.match(responsiveCss,/\.mobile-menu-button\{position:absolute/,'mobile navigation button must scroll with the page instead of covering titles');
 assert.match(responsiveCss,/\.catalog-view,\.library-view\{position:relative;padding-top:88px\}/,'mobile catalog must reserve space above the title');
 assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width must be capped by the visible viewport');
-assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey\)/,'score renderer must draw rhythm stems and beams');
+assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)/,'score renderer must draw rhythm stems and beams using the same local column geometry as the TAB notes');
+assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)[\s\S]*v3-rhythm-stem[\s\S]*v3-rhythm-beam/s,'geometry-aware rhythm rendering must still create stems and beams');
 assert.match(renderer,/for \(const group of measure\.groups \|\| \[\]\)[\s\S]*group\?\.type !== 'tuplet'[\s\S]*v3-rhythm-tuplet-bracket/,'triplet brackets must come from group slots even when some slots contain no note');
 assert.match(renderer,/function displayValueForNote\(note\)[\s\S]*const value = noteDisplayValue\(note\)[\s\S]*isScoreViewActive\(\) \? `<\$\{value\}>` : value/,'harmonic notation must display the entered fret, using angle brackets only in score mode');
 assert.match(renderer,/initialValue: this\.cursorValueAt/,'arrow navigation must preserve existing note values');
