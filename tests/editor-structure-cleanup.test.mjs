@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createDocumentV3, fractionKey } from '../src/editor/model.js';
 import { ensureSongDocumentV3 } from '../src/editor/migrate-v2.js';
 import { editableTimesForMeasure } from '../src/editor/rhythm-grid.js';
+
+const structureSource=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
+const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controller.js',import.meta.url),'utf8');
+const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
+
+assert.match(structureSource,/function rowTargetForSystem\(system\)[\s\S]*dataset\.visualRow[\s\S]*measureIdsForSystem\(system\)/s,'row actions should resolve their target from live system metadata');
+assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*dragState = \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must not retain a stale visualRow closure');
+assert.match(structureSource,/function decorateSourceSystem\([\s\S]*firstAffectedVisualRow[\s\S]*syncVisualRowMetadata\(system, visualRowIndex\)[\s\S]*syncSelectedRow\(systems\)/s,'local segmentation changes should refresh downstream row metadata without rebuilding their measure UI');
+const localDecoration=structureSource.slice(structureSource.indexOf('function decorateSourceSystem('),structureSource.indexOf('function handleRendered('));
+assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
+assert.equal(chordDragSource.includes('isEditingBlocked'),true,'chord drag should use canonical view-state editing blocking');
+assert.equal(chordDragSource.includes('isPreviewActive'),false,'chord drag should not duplicate preview/score blocking logic');
+for(const deadSelector of ['.content.edit-view .rhythm-layer','.content.score-view .tab-system.score-system','.score-grid-pair','.measure-line.first']){
+  assert.equal(headerCss.includes(deadSelector),false,`obsolete Dense selector should be removed: ${deadSelector}`);
+}
+assert.equal(headerCss.includes('.content.score-view .tab-grid'),true,'active Sparse tab-grid score rule should be preserved');
 
 {
   const measure = {
