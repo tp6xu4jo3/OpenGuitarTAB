@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { applyCommand } from '../src/editor/commands.js';
-import { createDocumentV3 } from '../src/editor/model.js';
+import { createDocumentV3, indexDocument, updateDocumentIndex } from '../src/editor/model.js';
 
 const rendererSource=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
 const notationSource=await readFile(new URL('../src/editor/notation-renderer.js',import.meta.url),'utf8');
@@ -22,11 +22,34 @@ const applyLayoutChangeSource=rendererSource.slice(rendererSource.indexOf('  app
 assert.doesNotMatch(applyLayoutChangeSource,/buildAdaptiveLayout\(/,'local layout changes must not rebuild the full adaptive document plan');
 assert.match(rendererSource,/replaceAdaptiveSourcePlan\([\s\S]*logicalSystems\[sourceSystemIndex\] = sourceMeasures/s,'the renderer should replace only the affected source-system slice in its existing plan');
 
-assert.match(notationSource,/const full = !changeSet \|\| changeSet\.document;/,'layoutFrom must not promote notation to a full-document redraw');
-assert.match(notationSource,/const layoutRows = new Set\(\)[\s\S]*dataset\.sourceRow[\s\S]*layoutRows\.has\(sourceRow\)/s,'layout changes should redraw only visual systems belonging to the affected source system');
-assert.match(notationSource,/const index = indexDocument\(this\.document\)[\s\S]*this\.renderSystem\(systemElement, measureIds, index\)/s,'notation should build one document index per render pass');
+assert.match(notationSource,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document,[\s\S]*measures: changeSet\?\.measures[\s\S]*relations: changeSet\?\.relations/s,'notation should incrementally refresh its persistent document index');
+assert.match(notationSource,/const systems = new Set\(\)[\s\S]*for \(const measureId of dirty\)[\s\S]*closest\?\.\('\.tab-system'\)[\s\S]*for \(const sourceRow of layoutRows\)/s,'partial notation redraw should collect only dirty measure and affected source-row systems');
+assert.doesNotMatch(notationSource,/this\.document\.measures\.filter/,'notation partial rendering must not scan the full measure list');
+assert.doesNotMatch(notationSource,/for \(const relation of this\.document\.relations/,'notation technique markers must use the per-measure relation index');
 assert.match(relationSource,/render\(documentModel, systemElement, measureIds, documentIndex = null\)[\s\S]*documentIndex \|\| indexDocument\(documentModel\)/s,'relation rendering should reuse the notation pass index when provided');
 assert.match(commandsSource,/measureMetricsChanged\([\s\S]*layoutFrom: layoutChanged \? measure\.id : null/s,'note commands should derive layout invalidation from actual measure complexity');
+
+{
+  const indexedDocument=createDocumentV3({measures:[
+    {id:'m-index-a',timeSignature:{numerator:4,denominator:4},groups:[],events:[{id:'e-index-a',at:[0,1],duration:[1,4],marks:[],notes:[{id:'n-index-a',string:0,fret:'5',techniques:[]}]}]},
+    {id:'m-index-b',timeSignature:{numerator:4,denominator:4},groups:[],events:[{id:'e-index-b',at:[0,1],duration:[1,4],marks:[],notes:[{id:'n-index-b',string:1,fret:'7',techniques:[]}]}]}
+  ],relations:[{id:'r-index',type:'slide',fromNoteId:'n-index-a',toNoteId:'n-index-b'}]});
+  const index=indexDocument(indexedDocument);
+  const changedMeasure={
+    ...indexedDocument.measures[0],
+    events:[{...indexedDocument.measures[0].events[0],notes:[{...indexedDocument.measures[0].events[0].notes[0],fret:'9'}]}]
+  };
+  const afterMeasure={...indexedDocument,measures:[changedMeasure,indexedDocument.measures[1]]};
+  updateDocumentIndex(index,afterMeasure,{measures:['m-index-a']});
+  assert.equal(index.noteById.get('n-index-a').fret,'9','partial measure refresh should update indexed note payloads without rebuilding unrelated measures');
+  assert.equal(index.measureById.get('m-index-b').measure,indexedDocument.measures[1],'unrelated measure index entries should be retained');
+  assert.equal(index.relationsByMeasure.get('m-index-a')?.[0]?.id,'r-index','unchanged relations should remain indexed after a local measure refresh');
+
+  const withoutRelation={...afterMeasure,relations:[]};
+  updateDocumentIndex(index,withoutRelation,{relations:['r-index']});
+  assert.equal(index.relationById.has('r-index'),false,'deleted relations should be removed incrementally');
+  assert.equal(index.relationsByMeasure.get('m-index-a')?.some(relation=>relation.id==='r-index')||false,false,'relation measure buckets should release deleted relations');
+}
 
 function idFactory(){let sequence=0;return prefix=>`${prefix}-invalidation-${++sequence}`;}
 const ids=idFactory();

@@ -1,4 +1,4 @@
-import { fractionKey, indexDocument } from './model.js';
+import { fractionKey, indexDocument, updateDocumentIndex } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 import { isScoreViewActive } from './view-state.js';
 
@@ -187,11 +187,28 @@ function relationMarkerTitle(relation) {
   return '關聯標記';
 }
 
+function indexedMeasures(index, measureIds) {
+  return (measureIds || [])
+    .map(measureId => index?.measureById?.get(String(measureId))?.measure)
+    .filter(Boolean);
+}
+
+function indexedRelations(index, measureIds) {
+  const unique = new Map();
+  for (const measureId of measureIds || []) {
+    for (const relation of index?.relationsByMeasure?.get(String(measureId)) || []) {
+      unique.set(String(relation.id), relation);
+    }
+  }
+  return [...unique.values()];
+}
+
 export class NotationRenderer {
   constructor(root, { relationRenderer = new RelationRenderer() } = {}) {
     this.root = root;
     this.relationRenderer = relationRenderer;
     this.document = null;
+    this.documentIndex = null;
     this.pendingFrame = 0;
     this.pendingChangeSet = null;
     this.fullRenderPending = false;
@@ -237,6 +254,13 @@ export class NotationRenderer {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
     const full = !changeSet || changeSet.document;
+    const structureChanged = full || changeSet?.layoutKind === 'structure';
+    this.documentIndex = updateDocumentIndex(this.documentIndex, this.document, {
+      measures: changeSet?.measures || [],
+      relations: changeSet?.relations || [],
+      structure: structureChanged
+    });
+
     const dirty = new Set((changeSet?.measures || []).map(String));
     const layoutRows = new Set();
     if (changeSet?.layoutFrom) {
@@ -247,20 +271,28 @@ export class NotationRenderer {
         if (sourceRow != null) layoutRows.add(String(sourceRow));
       }
     }
-    const index = indexDocument(this.document);
-    [...this.root.querySelectorAll('.tab-system')].forEach(systemElement => {
-      const measureIds = visibleMeasureIds(systemElement);
-      if (!full && (dirty.size || layoutRows.size)) {
-        const sourceRow = String(systemElement.dataset.sourceRow ?? '');
-        const layoutAffected = layoutRows.has(sourceRow);
-        const measureAffected = measureIds.some(id => dirty.has(String(id)));
-        if (!layoutAffected && !measureAffected) return;
+
+    const systems = new Set();
+    if (full || structureChanged) {
+      this.root.querySelectorAll('.tab-system').forEach(system => systems.add(system));
+    } else {
+      for (const measureId of dirty) {
+        const measureNode = this.root.querySelector(`.v3-measure[data-measure-id="${escapeSelector(measureId)}"]`);
+        const system = measureNode?.closest?.('.tab-system');
+        if (system) systems.add(system);
       }
-      this.renderSystem(systemElement, measureIds, index);
+      for (const sourceRow of layoutRows) {
+        this.root.querySelectorAll(`.tab-system[data-source-row="${escapeSelector(sourceRow)}"]`).forEach(system => systems.add(system));
+      }
+    }
+
+    systems.forEach(systemElement => {
+      this.renderSystem(systemElement, visibleMeasureIds(systemElement), this.documentIndex);
     });
   }
 
-  renderSystem(systemElement, measureIds = visibleMeasureIds(systemElement), index = indexDocument(this.document)) {
+  renderSystem(systemElement, measureIds = visibleMeasureIds(systemElement), index = this.documentIndex) {
+    if (!index) return;
     this.relationRenderer.render(this.document, systemElement, measureIds, index);
     const svg = systemElement.querySelector(':scope > svg.notation-overlay');
     if (!svg) return;
@@ -268,7 +300,7 @@ export class NotationRenderer {
     markerLayer.replaceChildren();
     const markerBuckets = new Map();
     const measureSet = new Set(measureIds.map(String));
-    const measures = this.document.measures.filter(measure => measureSet.has(String(measure.id)));
+    const measures = indexedMeasures(index, measureIds);
 
     for (const measure of measures) {
       let previousChordSymbol = null;
@@ -342,7 +374,7 @@ export class NotationRenderer {
       }
     }
 
-    for (const relation of this.document.relations || []) {
+    for (const relation of indexedRelations(index, measureIds)) {
       const sourceLocation = index.noteLocation.get(String(relation.fromNoteId || ''));
       if (!sourceLocation || !measureSet.has(String(sourceLocation.measureId))) continue;
       const sourceNode = systemElement.querySelector(`.v3-note[data-note-id="${escapeSelector(relation.fromNoteId)}"]`);

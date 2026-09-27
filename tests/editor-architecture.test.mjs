@@ -59,7 +59,8 @@ assert.doesNotMatch(structure, /editorPlayback\?\.invalidate/, 'playback invalid
 assert.doesNotMatch(structure, /grid-geometry|legacy-grid|projectDocumentToLegacySong|renderRows/);
 
 const model = read('src/editor/model.js');
-assert.match(model, /relationsByMeasure = new Map\(\)/, 'document index must own the relation-to-measure lookup');
+assert.match(model, /relationsByMeasure: new Map\(\)/, 'document index must own the relation-to-measure lookup');
+assert.match(model, /export function updateDocumentIndex\(/, 'document index must expose one canonical incremental refresh path');
 const relationRenderer = read('src/editor/relation-renderer.js');
 assert.match(relationRenderer, /visibleRelations\(documentModel, measureSet, index\)/, 'relation rendering must use visible measure relation candidates');
 

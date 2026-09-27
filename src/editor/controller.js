@@ -10,7 +10,7 @@ import { StoreRegistry } from './store.js';
 import { resolveTechniqueTarget } from './technique-rules.js';
 import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from './tool-session.js';
 import { ToolRegistry } from './tools.js';
-import { installViewState, isPreviewActive, isScoreViewActive } from './view-state.js';
+import { installViewState, isEditingBlocked } from './view-state.js';
 
 const registry = new StoreRegistry();
 const stateSync = new EditorStateSync(registry);
@@ -51,7 +51,6 @@ function bindStore(store) {
 }
 
 function ensureStore() { return bindStore(stateSync.ensureStore()); }
-function editingBlocked() { return isPreviewActive() || isScoreViewActive(); }
 
 function dispatchCommand(command) {
   const store = ensureStore();
@@ -64,7 +63,7 @@ function dispatchCommand(command) {
 function systemMeasures(store, rowIndex) { return buildSystems(store.getDocument())?.[rowIndex] || []; }
 
 function copyModule(target) {
-  if (!target || editingBlocked()) return false;
+  if (!target || isEditingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
   if (target.type === 'measure') {
@@ -85,7 +84,7 @@ function copyModule(target) {
 }
 
 function pasteModule(target) {
-  if (!target || editingBlocked()) return false;
+  if (!target || isEditingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
   if (target.type === 'measure') {
@@ -189,7 +188,7 @@ function changed(result) {
 
 function dispatchTool(toolId, target, options = {}) {
   const definition = toolRegistry.get(toolId);
-  if (!definition || editingBlocked()) return false;
+  if (!definition || isEditingBlocked()) return false;
   const store = ensureStore();
   if (!store) return false;
   const resolved = commandTarget(definition, target, store.getDocument());
@@ -331,8 +330,7 @@ function ensureEditorRibbon() {
 function syncEditorRibbon() {
   const ribbon = ensureEditorRibbon();
   if (!ribbon) return;
-  const editorView = document.getElementById('editorView');
-  const hidden = Boolean(editorView?.hidden || editingBlocked());
+  const hidden = isEditingBlocked();
   ribbon.setHidden(hidden);
   if (hidden) {
     cancelActiveTool();
@@ -372,7 +370,7 @@ function handleToolSelection(target) {
 }
 
 function handleChordPlacement(node) {
-  if (!chordPlacement || editingBlocked()) return false;
+  if (!chordPlacement || isEditingBlocked()) return false;
   const target = atFromNode(node);
   if (!target) return false;
   const result = dispatchCommand({ type: 'chord/apply', ...target, ...chordPlacement });
@@ -398,7 +396,7 @@ function installToolInteractions() {
       clearTechniqueSelection();
       hideTechniqueContextMenu();
     }
-    if (editingBlocked()) return;
+    if (isEditingBlocked()) return;
     const snapshot = toolSession.snapshot();
     if (snapshot.toolId) {
       const definition = toolRegistry.get(snapshot.toolId);

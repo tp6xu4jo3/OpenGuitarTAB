@@ -226,65 +226,127 @@ export function relationNoteIds(relation) {
   return [...new Set(ids)];
 }
 
-function addRelationToMeasureIndex(relationsByMeasure, measureId, relation) {
-  const key = String(measureId || '');
-  if (!key) return;
-  const bucket = relationsByMeasure.get(key) || [];
-  bucket.push(relation);
-  relationsByMeasure.set(key, bucket);
+function createEmptyDocumentIndex() {
+  return {
+    measureById: new Map(),
+    eventById: new Map(),
+    noteById: new Map(),
+    techniqueById: new Map(),
+    markById: new Map(),
+    groupById: new Map(),
+    relationById: new Map(),
+    relationsByMeasure: new Map(),
+    eventLocation: new Map(),
+    noteLocation: new Map()
+  };
 }
 
-export function indexDocument(document) {
-  const measureById = new Map();
-  const eventById = new Map();
-  const noteById = new Map();
-  const techniqueById = new Map();
-  const markById = new Map();
-  const groupById = new Map();
-  const relationById = new Map();
-  const relationsByMeasure = new Map();
-  const eventLocation = new Map();
-  const noteLocation = new Map();
-  for (let measureIndex = 0; measureIndex < (document?.measures?.length || 0); measureIndex++) {
-    const measure = document.measures[measureIndex];
-    measureById.set(measure.id, { measure, measureIndex });
-    for (const group of measure.groups || []) groupById.set(group.id, { group, measureId: measure.id, measureIndex });
-    for (let eventIndex = 0; eventIndex < (measure.events?.length || 0); eventIndex++) {
-      const event = measure.events[eventIndex];
-      eventById.set(event.id, event);
-      eventLocation.set(event.id, { measureId: measure.id, measureIndex, eventIndex });
-      for (const mark of event.marks || []) markById.set(mark.id, { mark, measureId: measure.id, measureIndex, eventId: event.id, eventIndex });
-      for (let noteIndex = 0; noteIndex < (event.notes?.length || 0); noteIndex++) {
-        const note = event.notes[noteIndex];
-        noteById.set(note.id, note);
-        noteLocation.set(note.id, { measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteIndex });
-        for (const technique of note.techniques || []) {
-          techniqueById.set(technique.id, { technique, measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteId: note.id, noteIndex });
-        }
+function addMeasureToIndex(index, measure, measureIndex) {
+  index.measureById.set(String(measure.id), { measure, measureIndex });
+  for (const group of measure.groups || []) {
+    index.groupById.set(String(group.id), { group, measureId: measure.id, measureIndex });
+  }
+  for (let eventIndex = 0; eventIndex < (measure.events?.length || 0); eventIndex++) {
+    const event = measure.events[eventIndex];
+    index.eventById.set(String(event.id), event);
+    index.eventLocation.set(String(event.id), { measureId: measure.id, measureIndex, eventIndex });
+    for (const mark of event.marks || []) {
+      index.markById.set(String(mark.id), { mark, measureId: measure.id, measureIndex, eventId: event.id, eventIndex });
+    }
+    for (let noteIndex = 0; noteIndex < (event.notes?.length || 0); noteIndex++) {
+      const note = event.notes[noteIndex];
+      index.noteById.set(String(note.id), note);
+      index.noteLocation.set(String(note.id), { measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteIndex });
+      for (const technique of note.techniques || []) {
+        index.techniqueById.set(String(technique.id), { technique, measureId: measure.id, measureIndex, eventId: event.id, eventIndex, noteId: note.id, noteIndex });
       }
     }
   }
-  for (const relation of document?.relations || []) {
-    relationById.set(relation.id, relation);
-    const measureIds = new Set();
-    for (const noteId of relationNoteIds(relation)) {
-      const measureId = noteLocation.get(noteId)?.measureId;
-      if (measureId) measureIds.add(String(measureId));
+}
+
+function removeMeasureFromIndex(index, measure) {
+  index.measureById.delete(String(measure.id));
+  for (const group of measure.groups || []) index.groupById.delete(String(group.id));
+  for (const event of measure.events || []) {
+    index.eventById.delete(String(event.id));
+    index.eventLocation.delete(String(event.id));
+    for (const mark of event.marks || []) index.markById.delete(String(mark.id));
+    for (const note of event.notes || []) {
+      index.noteById.delete(String(note.id));
+      index.noteLocation.delete(String(note.id));
+      for (const technique of note.techniques || []) index.techniqueById.delete(String(technique.id));
     }
-    if (relation?.fromPosition?.measureId) measureIds.add(String(relation.fromPosition.measureId));
-    if (relation?.toPosition?.measureId) measureIds.add(String(relation.toPosition.measureId));
-    measureIds.forEach(measureId => addRelationToMeasureIndex(relationsByMeasure, measureId, relation));
   }
-  return {
-    measureById,
-    eventById,
-    noteById,
-    techniqueById,
-    markById,
-    groupById,
-    relationById,
-    relationsByMeasure,
-    eventLocation,
-    noteLocation
-  };
+}
+
+function relationMeasureIds(relation, noteLocation) {
+  const measureIds = new Set();
+  for (const noteId of relationNoteIds(relation)) {
+    const measureId = noteLocation.get(String(noteId))?.measureId;
+    if (measureId) measureIds.add(String(measureId));
+  }
+  if (relation?.fromPosition?.measureId) measureIds.add(String(relation.fromPosition.measureId));
+  if (relation?.toPosition?.measureId) measureIds.add(String(relation.toPosition.measureId));
+  return measureIds;
+}
+
+function addRelationToIndex(index, relation) {
+  const relationId = String(relation.id);
+  index.relationById.set(relationId, relation);
+  for (const measureId of relationMeasureIds(relation, index.noteLocation)) {
+    const bucket = index.relationsByMeasure.get(measureId) || [];
+    bucket.push(relation);
+    index.relationsByMeasure.set(measureId, bucket);
+  }
+}
+
+function removeRelationFromIndex(index, relation) {
+  const relationId = String(relation.id);
+  index.relationById.delete(relationId);
+  for (const measureId of relationMeasureIds(relation, index.noteLocation)) {
+    const bucket = index.relationsByMeasure.get(measureId);
+    if (!bucket) continue;
+    const next = bucket.filter(item => String(item.id) !== relationId);
+    if (next.length) index.relationsByMeasure.set(measureId, next);
+    else index.relationsByMeasure.delete(measureId);
+  }
+}
+
+export function indexDocument(document) {
+  const index = createEmptyDocumentIndex();
+  for (let measureIndex = 0; measureIndex < (document?.measures?.length || 0); measureIndex++) {
+    addMeasureToIndex(index, document.measures[measureIndex], measureIndex);
+  }
+  for (const relation of document?.relations || []) addRelationToIndex(index, relation);
+  return index;
+}
+
+export function updateDocumentIndex(index, document, { measures = [], relations = [], structure = false } = {}) {
+  if (!index || structure) return indexDocument(document);
+
+  const measureIds = [...new Set((measures || []).filter(Boolean).map(String))];
+  const relationIds = [...new Set((relations || []).filter(Boolean).map(String))];
+
+  for (const relationId of relationIds) {
+    const previous = index.relationById.get(relationId);
+    if (previous) removeRelationFromIndex(index, previous);
+  }
+
+  for (const measureId of measureIds) {
+    const previous = index.measureById.get(measureId);
+    if (!previous) return indexDocument(document);
+    const nextMeasure = document?.measures?.[previous.measureIndex];
+    if (!nextMeasure || String(nextMeasure.id) !== measureId) return indexDocument(document);
+    removeMeasureFromIndex(index, previous.measure);
+    addMeasureToIndex(index, nextMeasure, previous.measureIndex);
+  }
+
+  if (relationIds.length) {
+    const changed = new Set(relationIds);
+    for (const relation of document?.relations || []) {
+      if (changed.has(String(relation.id))) addRelationToIndex(index, relation);
+    }
+  }
+
+  return index;
 }
