@@ -59,8 +59,8 @@ function apply(command){const result=applyCommand(documentModel,command,{idFacto
   assert.equal(ordinary.changeSet.layoutFrom,'m-technique','a two-digit fret must trigger local spacing on its own');
   assert.equal(ordinary.changeSet.layoutKind,'metrics');
   const secondTwoDigit=apply({type:'note/set',measureId:'m-technique',at:[0,1],duration:[1,4],string:0,fret:'12'});
-  assert.equal(secondTwoDigit.changeSet.layoutFrom,'m-technique','changing another column to a two-digit fret should recalc local geometry');
-  assert.equal(secondTwoDigit.changeSet.layoutKind,'metrics');
+  assert.equal(secondTwoDigit.changeSet.layoutFrom,null,'a two-digit fret needs no extra reflow when that column already reserves more space for harmonic notation');
+  assert.equal(secondTwoDigit.changeSet.layoutKind,null);
 }
 
 {
