@@ -14,6 +14,7 @@ import {
   fractionKey,
   fractionToNumber,
   harmonicTechnique,
+  indexDocument,
   isDocumentV3,
   normalizeDocumentV3,
   normalizeFraction,
@@ -161,6 +162,7 @@ export class SparseScoreRenderer {
     this.onRendered = onRendered;
     this.snap = cloneValue(snap);
     this.document = null;
+    this.documentIndex = null;
     this.layoutPlan = null;
     this.layoutFrame = 0;
     this.cursor = null;
@@ -220,6 +222,9 @@ export class SparseScoreRenderer {
       || changeSet.layoutKind === 'structure'
       || !this.measureIndexById.size;
     if (structureChanged) this.rebuildMeasureIndex();
+    if (!this.documentIndex || structureChanged || (changeSet?.relations || []).length) {
+      this.documentIndex = indexDocument(this.document);
+    }
     const navigationChanged = structureChanged
       || changeSet?.layoutKind === 'grid'
       || !this.navigationEntries.length;
@@ -241,9 +246,9 @@ export class SparseScoreRenderer {
   currentLayout() {
     const availableWidth = layoutAvailableWidth(this.root);
     if (isScoreViewActive() && scoreDensityMode() === 'compact') {
-      return { mode: 'compact', plan: buildCompactScoreLayout(this.document, { availableWidth }) };
+      return { mode: 'compact', plan: buildCompactScoreLayout(this.document, { availableWidth, documentIndex: this.documentIndex }) };
     }
-    return { mode: 'adaptive', plan: buildAdaptiveLayout(this.document, { availableWidth }) };
+    return { mode: 'adaptive', plan: buildAdaptiveLayout(this.document, { availableWidth, documentIndex: this.documentIndex }) };
   }
 
   renderAll() {
@@ -329,7 +334,7 @@ export class SparseScoreRenderer {
     node.dataset.measureIndex = String(localMeasureIndex);
     node.style.position = 'relative';
     node.style.setProperty('--v3-strings', String(this.stringCount));
-    const geometry = columnGeometryForMeasure(this.document, measure, measureWidthPx);
+    const geometry = columnGeometryForMeasure(this.document, measure, measureWidthPx, this.documentIndex);
     const pointForTime = time => geometry.percentForKey(fractionKey(time.at))
       ?? visualPercentageForTime(time.at, time.duration || BASE_GRID_STEP, measure);
     const staff = div('v3-staff');
@@ -586,7 +591,8 @@ export class SparseScoreRenderer {
     const nextSegments = buildAdaptiveSystemLayout(sourceMeasures, {
       sourceSystemIndex,
       availableWidth,
-      documentModel: this.document
+      documentModel: this.document,
+      documentIndex: this.documentIndex
     });
     if (!nextSegments.length) return false;
     const nextPlan = this.replaceAdaptiveSourcePlan(sourceSystemIndex, sourceMeasures, nextSegments, availableWidth);
@@ -755,7 +761,7 @@ export class SparseScoreRenderer {
     input.dataset.at = fractionKey(at);
     input.dataset.duration = fractionKey(duration || BASE_GRID_STEP);
     const measureWidth = Number(measureNode.getBoundingClientRect?.().width) || null;
-    const geometry = columnGeometryForMeasure(this.document, measure, measureWidth);
+    const geometry = columnGeometryForMeasure(this.document, measure, measureWidth, this.documentIndex);
     const cursorLeft = geometry.percentForKey(fractionKey(at)) ?? visualPercentageForAt(measure, at);
     Object.assign(input.style, { position: 'absolute', left: `${cursorLeft}%`, top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`, transform: 'translate(-50%, -50%)' });
     let cancelled = false;
