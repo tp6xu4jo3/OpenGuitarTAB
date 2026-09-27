@@ -352,23 +352,32 @@ function decorateEditor() {
   if (selected) setSelected(selected);
 }
 
-function decorateSourceSystem(sourceSystemIndex) {
+function decorateSourceSystem(sourceSystemIndex, {
+  segmentationChanged = false,
+  visualRowStart = 0,
+  visualRowCount = 0
+} = {}) {
   if (isEditingBlocked()) return;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
-  const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
-  const affected = [];
-  systems.forEach((system, visualRowIndex) => {
-    if (Number(system.dataset.sourceRow ?? system.dataset.row) !== Number(sourceSystemIndex)) return;
-    affected.push(visualRowIndex);
-    decorateSystem(system, visualRowIndex);
-  });
-  if (!affected.length) return;
-  const firstAffectedVisualRow = Math.min(...affected);
-  systems.forEach((system, visualRowIndex) => {
-    if (visualRowIndex >= firstAffectedVisualRow) syncVisualRowMetadata(system, visualRowIndex);
-  });
-  syncSelectedRow(systems);
+  const start = Math.max(0, Math.trunc(Number(visualRowStart) || 0));
+  const count = Math.max(0, Math.trunc(Number(visualRowCount) || 0));
+
+  if (segmentationChanged) {
+    const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
+    const affected = systems.slice(start, start + count);
+    affected.forEach((system, index) => decorateSystem(system, start + index));
+    for (let visualRowIndex = start + affected.length; visualRowIndex < systems.length; visualRowIndex++) {
+      syncVisualRowMetadata(systems[visualRowIndex], visualRowIndex);
+    }
+    syncSelectedRow(systems);
+    if (selected) setSelected(selected);
+    return;
+  }
+
+  const affected = [...tabArea.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
+  affected.forEach((system, index) => decorateSystem(system, start + index));
+  syncSelectedRow(affected);
   if (selected) setSelected(selected);
 }
 
@@ -380,7 +389,13 @@ function handleRendered(event) {
   }
   if (detail.sourceSystemIndex == null) return;
   const sourceSystemIndex = Number(detail.sourceSystemIndex);
-  if (Number.isInteger(sourceSystemIndex)) decorateSourceSystem(sourceSystemIndex);
+  if (Number.isInteger(sourceSystemIndex)) {
+    decorateSourceSystem(sourceSystemIndex, {
+      segmentationChanged: Boolean(detail.segmentationChanged),
+      visualRowStart: detail.visualRowStart,
+      visualRowCount: detail.visualRowCount
+    });
+  }
 }
 
 function rowBoundaryFromPoint(y) {
