@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { createDocumentV3, indexDocument } from '../src/editor/model.js';
+import { createDocumentV3, indexDocument, updateDocumentIndex } from '../src/editor/model.js';
 import { buildAdaptiveLayout, buildAdaptiveSystemLayout } from '../src/editor/layout.js';
 
 const MEASURE_COUNT = 1600;
@@ -69,6 +69,26 @@ const ratio = fullMs > 0 ? localMs / fullMs : 0;
 
 assert.ok(localMs < fullMs * 0.35, `local source-system layout should remain substantially cheaper than a ${MEASURE_COUNT}-measure relation-heavy full pass (full=${fullMs.toFixed(4)}ms local=${localMs.toFixed(4)}ms)`);
 
+const changedMeasureIndex = documentModel.measures.findIndex(measure => measure.id === sourceMeasures[0]?.id);
+const previousMeasure = documentModel.measures[changedMeasureIndex];
+const changedMeasure = {
+  ...previousMeasure,
+  events: previousMeasure.events.map((event, eventIndex) => eventIndex === 0
+    ? { ...event, notes: event.notes.map((note, noteIndex) => noteIndex === 0 ? { ...note, fret: note.fret === '12' ? '11' : '12' } : note) }
+    : event)
+};
+const updatedMeasures = documentModel.measures.slice();
+updatedMeasures[changedMeasureIndex] = changedMeasure;
+const updatedDocument = { ...documentModel, measures: updatedMeasures };
+const incrementalIndex = indexDocument(documentModel);
+updateDocumentIndex(incrementalIndex, updatedDocument, { measures: [changedMeasure.id] });
+assert.equal(incrementalIndex.noteById.get(changedMeasure.events[0].notes[0].id)?.fret, changedMeasure.events[0].notes[0].fret, 'incremental index benchmark must reflect the changed measure');
+
+const fullIndexMs = averageMs(() => indexDocument(updatedDocument), 30);
+const localIndexMs = averageMs(() => updateDocumentIndex(incrementalIndex, updatedDocument, { measures: [changedMeasure.id] }), 1500);
+const indexRatio = fullIndexMs > 0 ? localIndexMs / fullIndexMs : 0;
+assert.ok(localIndexMs < fullIndexMs * 0.35, `single-measure index refresh should remain substantially cheaper than rebuilding a ${MEASURE_COUNT}-measure relation-heavy index (full=${fullIndexMs.toFixed(4)}ms local=${localIndexMs.toFixed(4)}ms)`);
+
 console.log(JSON.stringify({
   benchmark: 'editor-adaptive-layout',
   measures: MEASURE_COUNT,
@@ -76,5 +96,8 @@ console.log(JSON.stringify({
   sourceMeasures: sourceMeasures.length,
   fullAverageMs: Number(fullMs.toFixed(4)),
   localAverageMs: Number(localMs.toFixed(4)),
-  localToFullRatio: Number(ratio.toFixed(4))
+  localToFullRatio: Number(ratio.toFixed(4)),
+  fullIndexAverageMs: Number(fullIndexMs.toFixed(4)),
+  localIndexAverageMs: Number(localIndexMs.toFixed(4)),
+  localIndexToFullRatio: Number(indexRatio.toFixed(4))
 }));
