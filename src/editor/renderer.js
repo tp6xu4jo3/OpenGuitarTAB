@@ -603,6 +603,9 @@ export class SparseScoreRenderer {
       const grid = system.querySelector(':scope .v3-grid');
       return String(grid?.dataset.measureIds || '') === segmentSignature(nextSegments[index]);
     });
+    const visualRowStart = nextPlan.systems.findIndex(segment => Number(segment.sourceSystemIndex) === sourceSystemIndex);
+    const visualRowCount = nextSegments.length;
+    const segmentationChanged = !sameShape;
     if (metricsOnly && sameShape) {
       existing.forEach((system, index) => this.updateGridWidths(system.querySelector(':scope .v3-grid'), nextSegments[index]));
       for (const measureId of changeSet.measures || []) {
@@ -613,13 +616,19 @@ export class SparseScoreRenderer {
     } else {
       const first = existing[0];
       const fragment = document.createDocumentFragment();
-      nextSegments.forEach((segment, index) => fragment.appendChild(this.createSystem(segment, index)));
+      nextSegments.forEach((segment, index) => fragment.appendChild(this.createSystem(segment, visualRowStart + index)));
       first.before(fragment);
       existing.forEach(node => node.remove());
-      [...this.root.querySelectorAll(':scope > .tab-system')].forEach((system, visualIndex) => { system.dataset.visualRow = String(visualIndex); });
     }
     this.layoutPlan = nextPlan;
-    this.publishRendered({ layout: nextPlan, partial: true, sourceSystemIndex });
+    this.publishRendered({
+      layout: nextPlan,
+      partial: true,
+      sourceSystemIndex,
+      segmentationChanged,
+      visualRowStart,
+      visualRowCount
+    });
     return true;
   }
 
