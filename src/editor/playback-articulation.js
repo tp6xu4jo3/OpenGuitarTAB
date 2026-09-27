@@ -28,9 +28,8 @@ export function playbackNoteSchedule(event, beatMs) {
   const availableMs = durationBeats * beatDurationMs * 0.8;
   const desiredMs = mark.type === 'arpeggio'
     ? Math.min(220, beatDurationMs * 0.42)
-    : Math.min(70, beatDurationMs * 0.12);
-  const minimumMs = mark.type === 'arpeggio' ? 36 : 18;
-  const totalSpreadMs = clamp(Math.min(desiredMs, availableMs), 0, Math.max(minimumMs, availableMs));
+    : Math.min(48, beatDurationMs * 0.085);
+  const totalSpreadMs = clamp(Math.min(desiredMs, availableMs), 0, availableMs);
   const stepMs = notes.length > 1 ? totalSpreadMs / (notes.length - 1) : 0;
 
   return notes.map((note, index) => ({ note, delayMs: stepMs * index }));
