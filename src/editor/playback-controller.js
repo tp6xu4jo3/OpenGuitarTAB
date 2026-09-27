@@ -296,6 +296,7 @@ function setMusicEnabled(enabled) {
   state.musicEnabled = Boolean(enabled);
   persistBoolean(MUSIC_ENABLED_KEY, state.musicEnabled);
   if (!state.musicEnabled) getAudioEngine()?.stopAll();
+  if (state.musicEnabled && state.playing) void getAudioEngine()?.ensureReady();
   syncSoundControls();
   return state.musicEnabled;
 }
@@ -303,6 +304,7 @@ function setMusicEnabled(enabled) {
 function setMetronomeEnabled(enabled) {
   state.metronomeEnabled = Boolean(enabled);
   persistBoolean(METRONOME_ENABLED_KEY, state.metronomeEnabled);
+  if (state.metronomeEnabled && state.playing) void getAudioEngine()?.ensureReady();
   syncSoundControls();
   return state.metronomeEnabled;
 }
