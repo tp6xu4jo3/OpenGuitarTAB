@@ -1,16 +1,12 @@
 import { getChordById, getChordVoicing } from './chord-library.js';
 import { normalizeFraction } from './model.js';
-import { isPreviewActive, isScoreViewActive } from './view-state.js';
+import { isEditingBlocked } from './view-state.js';
 
 export const CHORD_DRAG_MIME = 'application/x-openguitartab-chord';
 
 let installed = false;
 let activeDropTarget = null;
 let activeDragPayload = null;
-
-function editingBlocked() {
-  return isPreviewActive() || isScoreViewActive();
-}
 
 function clearDropTarget() {
   activeDropTarget?.classList?.remove('is-chord-drop-target');
@@ -62,7 +58,7 @@ function payloadFromChordButton(chordButton) {
 
 function handleDragStart(event) {
   const chordButton = event.target?.closest?.('#editorRibbon [data-chord-id][data-voicing-id]');
-  if (!chordButton || editingBlocked()) return;
+  if (!chordButton || isEditingBlocked()) return;
   const payload = payloadFromChordButton(chordButton);
   if (!payload || !event.dataTransfer) return;
   activeDragPayload = payload;
@@ -72,7 +68,7 @@ function handleDragStart(event) {
 }
 
 function handleDragOver(event) {
-  if (editingBlocked() || !activeDragPayload) return;
+  if (isEditingBlocked() || !activeDragPayload) return;
   const target = targetFromNode(event.target);
   if (!target) {
     clearDropTarget();
@@ -93,7 +89,7 @@ function handleDrop(event) {
   const target = targetFromNode(event.target);
   clearDropTarget();
   activeDragPayload = null;
-  if (!payload || !target || editingBlocked()) return;
+  if (!payload || !target || isEditingBlocked()) return;
   event.preventDefault();
   const result = window.editorV3?.dispatch?.({
     type: 'chord/apply',
