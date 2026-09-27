@@ -5,6 +5,7 @@ import { ensureSongDocumentV3 } from '../src/editor/migrate-v2.js';
 import { editableTimesForMeasure } from '../src/editor/rhythm-grid.js';
 
 const structureSource=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
+const controllerSource=await readFile(new URL('../src/editor/controller.js',import.meta.url),'utf8');
 const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controller.js',import.meta.url),'utf8');
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
 
@@ -13,8 +14,11 @@ assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.
 assert.match(structureSource,/function decorateSourceSystem\([\s\S]*firstAffectedVisualRow[\s\S]*syncVisualRowMetadata\(system, visualRowIndex\)[\s\S]*syncSelectedRow\(systems\)/s,'local segmentation changes should refresh downstream row metadata without rebuilding their measure UI');
 const localDecoration=structureSource.slice(structureSource.indexOf('function decorateSourceSystem('),structureSource.indexOf('function handleRendered('));
 assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
-assert.equal(chordDragSource.includes('isEditingBlocked'),true,'chord drag should use canonical view-state editing blocking');
-assert.equal(chordDragSource.includes('isPreviewActive'),false,'chord drag should not duplicate preview/score blocking logic');
+for(const source of [controllerSource,chordDragSource]){
+  assert.equal(source.includes('isEditingBlocked'),true,'editor interactions should use canonical view-state editing blocking');
+  assert.equal(source.includes('isPreviewActive'),false,'editor controllers should not duplicate preview/score blocking logic');
+  assert.equal(source.includes('isScoreViewActive'),false,'editor controllers should not duplicate preview/score blocking logic');
+}
 for(const deadSelector of ['.content.edit-view .rhythm-layer','.content.score-view .tab-system.score-system','.score-grid-pair','.measure-line.first']){
   assert.equal(headerCss.includes(deadSelector),false,`obsolete Dense selector should be removed: ${deadSelector}`);
 }
