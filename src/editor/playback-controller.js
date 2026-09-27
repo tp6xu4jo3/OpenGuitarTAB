@@ -2,6 +2,9 @@ import { getAudioEngine } from './audio-engine.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
 import { buildPlaybackIndex } from './playback-index.js';
 
+const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
+const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
+
 let installed = false;
 const state = {
   playing: false,
@@ -14,11 +17,26 @@ const state = {
   dirty: true,
   timelineDirty: true,
   beatBar: null,
-  lastCenteredKey: null
+  lastCenteredKey: null,
+  musicEnabled: true,
+  metronomeEnabled: false
 };
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function storedBoolean(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+  } catch {}
+  return fallback;
+}
+
+function persistBoolean(key, value) {
+  try { localStorage.setItem(key, String(Boolean(value))); } catch {}
 }
 
 function syncProgressRangeFromIndex(playback) {
@@ -218,11 +236,91 @@ function updatePlayButton(playing) {
   button.setAttribute('aria-label', playing ? '停止播放 TAB 譜' : '播放 TAB 譜');
 }
 
+function soundControlButton(kind, label, enabled) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'playback-sound-toggle';
+  button.dataset.playbackSound = kind;
+  button.setAttribute('aria-pressed', String(enabled));
+  button.setAttribute('aria-label', `${label}${enabled ? '已開啟' : '已靜音'}`);
+  const text = document.createElement('span');
+  text.className = 'playback-sound-label';
+  text.textContent = label;
+  const indicator = document.createElement('span');
+  indicator.className = 'playback-sound-indicator';
+  indicator.setAttribute('aria-hidden', 'true');
+  button.append(text, indicator);
+  return button;
+}
+
+function ensureSoundControls() {
+  let controls = document.getElementById('playbackSoundControls');
+  if (controls) return controls;
+  const panel = document.querySelector('.play-panel');
+  const progress = document.querySelector('.play-panel .progress-box');
+  if (!panel || !progress) return null;
+  controls = document.createElement('div');
+  controls.id = 'playbackSoundControls';
+  controls.className = 'playback-sound-controls';
+  controls.setAttribute('role', 'group');
+  controls.setAttribute('aria-label', '播放聲音');
+  controls.append(
+    soundControlButton('music', '音樂', state.musicEnabled),
+    soundControlButton('metronome', '節拍器', state.metronomeEnabled)
+  );
+  controls.addEventListener('click', event => {
+    const button = event.target.closest?.('[data-playback-sound]');
+    if (!button) return;
+    event.preventDefault();
+    const kind = button.dataset.playbackSound;
+    if (kind === 'music') setMusicEnabled(!state.musicEnabled);
+    if (kind === 'metronome') setMetronomeEnabled(!state.metronomeEnabled);
+  });
+  progress.before(controls);
+  return controls;
+}
+
+function syncSoundControls() {
+  const controls = ensureSoundControls();
+  if (!controls) return;
+  controls.querySelectorAll('[data-playback-sound]').forEach(button => {
+    const music = button.dataset.playbackSound === 'music';
+    const enabled = music ? state.musicEnabled : state.metronomeEnabled;
+    const label = music ? '音樂' : '節拍器';
+    button.setAttribute('aria-pressed', String(enabled));
+    button.setAttribute('aria-label', `${label}${enabled ? '已開啟' : '已靜音'}`);
+  });
+}
+
+function setMusicEnabled(enabled) {
+  state.musicEnabled = Boolean(enabled);
+  persistBoolean(MUSIC_ENABLED_KEY, state.musicEnabled);
+  if (!state.musicEnabled) getAudioEngine()?.stopAll();
+  syncSoundControls();
+  return state.musicEnabled;
+}
+
+function setMetronomeEnabled(enabled) {
+  state.metronomeEnabled = Boolean(enabled);
+  persistBoolean(METRONOME_ENABLED_KEY, state.metronomeEnabled);
+  syncSoundControls();
+  return state.metronomeEnabled;
+}
+
 function playNotes(notes) {
+  if (!state.musicEnabled) return;
   const audio = getAudioEngine();
   (notes || []).forEach(note => {
     if (!/^x$/i.test(String(note.fret))) audio?.playNote(Number(note.string), note.fret);
   });
+}
+
+function playMetronome(entry, fromOffset) {
+  if (!state.metronomeEnabled || fromOffset > 1e-9) return;
+  const absoluteBeat = Number(entry?.absoluteBeat);
+  if (!Number.isFinite(absoluteBeat) || Math.abs(absoluteBeat - Math.round(absoluteBeat)) > 1e-9) return;
+  const accent = Math.abs(Number(entry?.atBeats) || 0) < 1e-9;
+  getAudioEngine()?.playMetronomeClick({ accent });
 }
 
 function playBeat(entry, beatMs, fromOffset = 0) {
@@ -233,6 +331,7 @@ function playBeat(entry, beatMs, fromOffset = 0) {
   if (slider) slider.value = String(entry.index);
   updateProgressLabel(entry.index, state.playbackIndex);
   highlightEntry(entry);
+  playMetronome(entry, fromOffset);
   (entry.events || []).forEach(event => {
     if (event.offsetBeats < fromOffset - 1e-9) return;
     const delay = Math.max(0, (event.offsetBeats - fromOffset) * beatMs);
@@ -243,7 +342,8 @@ function playBeat(entry, beatMs, fromOffset = 0) {
 
 async function startPlayback() {
   const audio = getAudioEngine();
-  if (!audio || !await audio.ensureReady()) return;
+  const needsAudio = state.musicEnabled || state.metronomeEnabled;
+  if (needsAudio && (!audio || !await audio.ensureReady())) return;
   stopPlayback(false, true, false);
   const playback = ensureIndex();
   if (!playback.entries.length) {
@@ -308,6 +408,8 @@ export function installPlaybackController() {
   if (typeof window === 'undefined') return null;
   if (installed) return window.editorPlayback || null;
   installed = true;
+  state.musicEnabled = storedBoolean(MUSIC_ENABLED_KEY, true);
+  state.metronomeEnabled = storedBoolean(METRONOME_ENABLED_KEY, false);
   Object.assign(window, {
     totalSlots,
     updateProgressRange,
@@ -324,12 +426,18 @@ export function installPlaybackController() {
     invalidate: invalidatePlaybackIndex,
     start: startPlayback,
     stop: stopPlayback,
+    setMusicEnabled,
+    setMetronomeEnabled,
     getIndex: () => state.currentIndex,
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
     getPlaybackIndex: () => ensureIndex(),
-    get isPlaying() { return state.playing; }
+    get isPlaying() { return state.playing; },
+    get musicEnabled() { return state.musicEnabled; },
+    get metronomeEnabled() { return state.metronomeEnabled; }
   };
   window.editorPlayback = api;
+  ensureSoundControls();
+  syncSoundControls();
   document.getElementById('playButton')?.addEventListener('click', event => {
     event.preventDefault();
     if (state.playing) stopPlayback();
