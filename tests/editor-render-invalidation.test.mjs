@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { applyCommand } from '../src/editor/commands.js';
+import { applyCommand, createChangeSet, LAYOUT_INVALIDATION } from '../src/editor/commands.js';
 import { createDocumentV3, indexDocument, updateDocumentIndex } from '../src/editor/model.js';
+import { NotationRenderer } from '../src/editor/notation-renderer.js';
 
 const rendererSource=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
 const notationSource=await readFile(new URL('../src/editor/notation-renderer.js',import.meta.url),'utf8');
@@ -21,13 +22,72 @@ assert.match(rendererSource,/buildAdaptiveSystemLayout\(sourceMeasures,[\s\S]*so
 const applyLayoutChangeSource=rendererSource.slice(rendererSource.indexOf('  applyLayoutChange(changeSet) {'),rendererSource.indexOf('  updateGridWidths(grid, segment) {'));
 assert.doesNotMatch(applyLayoutChangeSource,/buildAdaptiveLayout\(/,'local layout changes must not rebuild the full adaptive document plan');
 assert.match(rendererSource,/replaceAdaptiveSourcePlan\([\s\S]*logicalSystems\[sourceSystemIndex\] = sourceMeasures/s,'the renderer should replace only the affected source-system slice in its existing plan');
+assert.match(applyLayoutChangeSource,/const segmentationChanged = !sameShape;/,'renderer completion must report whether adaptive visual segmentation actually changed');
+assert.match(applyLayoutChangeSource,/const visualRowStart = nextPlan\.systems\.findIndex\([\s\S]*const visualRowCount = nextSegments\.length/s,'renderer must derive the affected visual-row range from its layout plan');
+assert.match(applyLayoutChangeSource,/createSystem\(segment, visualRowStart \+ index\)/,'replacement systems must receive global visual-row indices from the layout plan');
+assert.match(applyLayoutChangeSource,/publishRendered\(\{[\s\S]*sourceSystemIndex,[\s\S]*segmentationChanged,[\s\S]*visualRowStart,[\s\S]*visualRowCount/s,'render completion metadata must carry segmentation scope to structure ownership');
+assert.doesNotMatch(applyLayoutChangeSource,/querySelectorAll\(':scope > \.tab-system'\)[\s\S]*dataset\.visualRow/s,'renderer must not rescan every visual system to rewrite row metadata after a local layout change');
 
+assert.match(notationSource,/import \{ mergeChangeSets \} from '.\/commands\.js';/,'notation scheduling must reuse the canonical ChangeSet merge');
+const notationScheduleSource=notationSource.slice(notationSource.indexOf('  schedule(documentModel, changeSet = null) {'),notationSource.indexOf('  previewRelation('));
+assert.match(notationScheduleSource,/this\.pendingChangeSet = mergeChangeSets\(this\.pendingChangeSet, changeSet \|\| \{ document: true \}\);/,'pending notation work must merge through the canonical ChangeSet path');
+assert.doesNotMatch(notationScheduleSource,/fullRenderPending|new Set|\.\.\.previous|\.\.\.changeSet/,'notation scheduling must not retain a second manual ChangeSet merge implementation');
 assert.match(notationSource,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document,[\s\S]*measures: changeSet\?\.measures[\s\S]*relations: changeSet\?\.relations/s,'notation should incrementally refresh its persistent document index');
 assert.match(notationSource,/const systems = new Set\(\)[\s\S]*for \(const measureId of dirty\)[\s\S]*closest\?\.\('\.tab-system'\)[\s\S]*for \(const sourceRow of layoutRows\)/s,'partial notation redraw should collect only dirty measure and affected source-row systems');
 assert.doesNotMatch(notationSource,/this\.document\.measures\.filter/,'notation partial rendering must not scan the full measure list');
 assert.doesNotMatch(notationSource,/for \(const relation of this\.document\.relations/,'notation technique markers must use the per-measure relation index');
 assert.match(relationSource,/render\(documentModel, systemElement, measureIds, documentIndex = null\)[\s\S]*documentIndex \|\| indexDocument\(documentModel\)/s,'relation rendering should reuse the notation pass index when provided');
 assert.match(commandsSource,/measureMetricsChanged\([\s\S]*layoutFrom: layoutChanged \? measure\.id : null/s,'note commands should derive layout invalidation from actual measure complexity');
+
+{
+  const documentStub={version:3,measures:[],relations:[],layout:{systemBreakAfter:[]}};
+  const metrics=createChangeSet({
+    measures:['m-metrics'],playback:['p-metrics'],relations:['r-metrics'],
+    layoutFrom:'m-metrics',layoutKind:LAYOUT_INVALIDATION.METRICS
+  });
+  const grid=createChangeSet({
+    measures:['m-grid'],playback:['p-grid'],relations:['r-grid'],
+    layoutFrom:'m-grid',layoutKind:LAYOUT_INVALIDATION.GRID
+  });
+  const structure=createChangeSet({
+    measures:['m-structure'],playback:['p-structure'],relations:['r-structure'],
+    layoutFrom:'m-structure',layoutKind:LAYOUT_INVALIDATION.STRUCTURE
+  });
+  const partial=createChangeSet({measures:['m-partial'],playback:['p-partial'],relations:['r-partial']});
+  const full=createChangeSet({measures:['m-full'],playback:['p-full'],relations:['r-full'],document:true});
+  const originalRequestAnimationFrame=globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame=()=>1;
+  try{
+    const metricsThenGrid=new NotationRenderer({});
+    metricsThenGrid.schedule(documentStub,metrics);
+    metricsThenGrid.schedule(documentStub,grid);
+    assert.equal(metricsThenGrid.pendingChangeSet.layoutKind,LAYOUT_INVALIDATION.GRID,'metrics + grid in one RAF must retain grid priority');
+    assert.deepEqual(new Set(metricsThenGrid.pendingChangeSet.measures),new Set(['m-metrics','m-grid']));
+    assert.deepEqual(new Set(metricsThenGrid.pendingChangeSet.playback),new Set(['p-metrics','p-grid']),'pending playback scope must union across the RAF');
+    assert.deepEqual(new Set(metricsThenGrid.pendingChangeSet.relations),new Set(['r-metrics','r-grid']),'pending relation scope must union across the RAF');
+
+    const gridThenStructure=new NotationRenderer({});
+    gridThenStructure.schedule(documentStub,grid);
+    gridThenStructure.schedule(documentStub,structure);
+    assert.equal(gridThenStructure.pendingChangeSet.layoutKind,LAYOUT_INVALIDATION.STRUCTURE,'grid + structure in one RAF must retain structure priority');
+
+    const structureThenPartial=new NotationRenderer({});
+    structureThenPartial.schedule(documentStub,structure);
+    structureThenPartial.schedule(documentStub,partial);
+    assert.equal(structureThenPartial.pendingChangeSet.layoutKind,LAYOUT_INVALIDATION.STRUCTURE,'a later ordinary measure update must not erase pending structure scope');
+    assert.equal(structureThenPartial.pendingChangeSet.layoutFrom,'m-structure');
+    assert.deepEqual(new Set(structureThenPartial.pendingChangeSet.measures),new Set(['m-structure','m-partial']));
+
+    const fullThenPartial=new NotationRenderer({});
+    fullThenPartial.schedule(documentStub,full);
+    fullThenPartial.schedule(documentStub,partial);
+    assert.equal(fullThenPartial.pendingChangeSet.document,true,'document=true must survive later partial work in the same RAF');
+    assert.deepEqual(new Set(fullThenPartial.pendingChangeSet.measures),new Set(['m-full','m-partial']));
+  }finally{
+    if(originalRequestAnimationFrame===undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame=originalRequestAnimationFrame;
+  }
+}
 
 {
   const indexedDocument=createDocumentV3({measures:[
