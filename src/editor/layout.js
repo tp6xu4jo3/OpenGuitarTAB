@@ -19,6 +19,7 @@ export const COMPACT_SCORE_MAX_MEASURES_PER_ROW = 8;
 const COLUMN_SPACING = Object.freeze({
   TWO_DIGIT_SIDE: 6,
   HARMONIC_SIDE: 8,
+  THIRTY_SECOND_SIDE: 4,
   SWEEP_LEFT: 18,
   SLIDE_RIGHT: 16
 });
@@ -87,6 +88,16 @@ function localSpacingEntries(document, measure) {
     if (harmonicSide) addColumnSpace(entry, { left: harmonicSide, right: harmonicSide });
     if ((event.marks || []).some(mark => mark?.type === 'strum' || mark?.type === 'arpeggio')) {
       addColumnSpace(entry, { left: COLUMN_SPACING.SWEEP_LEFT });
+    }
+  }
+
+  for (const group of measure?.groups || []) {
+    if (group?.type !== 'subdivision' || group?.subdivision !== 'thirty-second') continue;
+    for (const slot of group.slots || []) {
+      addColumnSpace(byKey.get(fractionKey(slot)), {
+        left: COLUMN_SPACING.THIRTY_SECOND_SIDE,
+        right: COLUMN_SPACING.THIRTY_SECOND_SIDE
+      });
     }
   }
 
