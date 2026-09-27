@@ -5,7 +5,7 @@ const css = await readFile(new URL('../styles/playback-controls.css', import.met
 
 assert.match(
   css,
-  /#rhythmToggleButton,#scoreDensityControl\{[^}]*min-width:max-content[^}]*flex-wrap:nowrap[^}]*white-space:nowrap/s,
+  /\.editor-view #rhythmToggleButton,\.editor-view #scoreDensityControl\{[^}]*min-width:max-content[^}]*flex-wrap:nowrap[^}]*white-space:nowrap/s,
   'playback mode switches must stay single-line and must not shrink into wrapped controls'
 );
 assert.match(
