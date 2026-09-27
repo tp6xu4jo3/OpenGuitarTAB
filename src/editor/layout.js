@@ -13,7 +13,7 @@ export const MAX_MEASURES_PER_SYSTEM = 4;
 export const DEFAULT_LAYOUT_WIDTH = 1120;
 export const MIN_MEASURE_WIDTH = 205;
 export const COMPACT_SCORE_MIN_MEASURE_WIDTH = 112;
-export const COMPACT_SCORE_SEGMENT_GAP = 12;
+export const COMPACT_SCORE_SEGMENT_GAP = 0;
 export const COMPACT_SCORE_MAX_MEASURES_PER_ROW = 8;
 
 const COLUMN_SPACING = Object.freeze({
