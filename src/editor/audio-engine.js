@@ -123,16 +123,20 @@ export class GuitarAudioEngine {
     return buffer;
   }
 
-  connectPluckedString(frequency, stringIndex, startTime, duration, destination) {
+  connectPluckedString(frequency, stringIndex, startTime, duration, destination, { playbackRateEnd = 1, glideSeconds = 0 } = {}) {
     const source = this.context.createBufferSource();
     source.buffer = this.pluckBuffer(frequency, stringIndex, duration);
+    source.playbackRate.setValueAtTime(1, startTime);
+    if (glideSeconds > 0 && Number.isFinite(playbackRateEnd) && playbackRateEnd > 0 && Math.abs(playbackRateEnd - 1) > 1e-6) {
+      source.playbackRate.exponentialRampToValueAtTime(playbackRateEnd, startTime + glideSeconds);
+    }
     source.connect(destination);
     source.start(startTime);
     source.stop(startTime + duration + 0.04);
     return source;
   }
 
-  addPickNoise(startTime, destination) {
+  addPickNoise(startTime, destination, level = 0.082) {
     const sampleRate = this.context.sampleRate;
     const length = Math.max(1, Math.floor(sampleRate * 0.018));
     const buffer = this.context.createBuffer(1, length, sampleRate);
@@ -147,7 +151,7 @@ export class GuitarAudioEngine {
     source.buffer = buffer;
     highpass.type = 'highpass';
     highpass.frequency.setValueAtTime(900, startTime);
-    gain.gain.setValueAtTime(0.082, startTime);
+    gain.gain.setValueAtTime(level, startTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.038);
     source.connect(highpass);
     highpass.connect(gain);
@@ -174,6 +178,11 @@ export class GuitarAudioEngine {
     }
   }
 
+  hasActiveSlide(stringIndex, relationId) {
+    const voice = this.activeVoices[clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1)];
+    return Boolean(voice?.slideRelationId && String(voice.slideRelationId) === String(relationId || ''));
+  }
+
   playMetronomeClick({ accent = false } = {}) {
     if (!this.context || !this.masterGain) return;
     const now = this.context.currentTime;
@@ -189,13 +198,26 @@ export class GuitarAudioEngine {
     oscillator.stop(now + 0.05);
   }
 
-  playNote(stringIndex, fret, { capo = getCapoFromUi() } = {}) {
+  playNote(stringIndex, fret, {
+    capo = getCapoFromUi(),
+    harmonic = false,
+    slideToFret = null,
+    slideSeconds = 0,
+    slideRelationId = ''
+  } = {}) {
     if (!this.context || !this.masterGain || /^x$/i.test(String(fret))) return;
-    const frequency = frequencyForTab(stringIndex, fret, capo);
+    const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1);
+    const frequency = frequencyForTab(string, fret, capo);
+    const targetFret = Number(slideToFret);
+    const sliding = Number.isFinite(targetFret) && Math.abs(targetFret - Number(fret)) > 1e-9;
+    const targetFrequency = sliding ? frequencyForTab(string, targetFret, capo) : frequency;
+    const glideSeconds = sliding ? clamp(Number(slideSeconds) || 0.25, 0.06, 4) : 0;
+    const duration = sliding ? Math.max(0.5, glideSeconds + 0.18) : harmonic ? 0.66 : 0.5;
+    const playbackRateEnd = sliding ? targetFrequency / frequency : 1;
+    const sourceDuration = duration * Math.max(1, playbackRateEnd) + 0.05;
     const now = this.context.currentTime;
-    const duration = 0.5;
-    const peakLevel = Number(stringIndex) >= 4 ? 0.58 : 0.50;
-    this.stopStringVoice(Number(stringIndex));
+    const peakLevel = (string >= 4 ? 0.58 : 0.50) * (harmonic ? 0.82 : 1);
+    this.stopStringVoice(string);
 
     const sourceBus = this.context.createGain();
     const bodyLow = this.context.createBiquadFilter();
@@ -206,29 +228,41 @@ export class GuitarAudioEngine {
 
     noteGain.gain.setValueAtTime(0.0001, now);
     noteGain.gain.exponentialRampToValueAtTime(peakLevel, now + 0.004);
-    noteGain.gain.exponentialRampToValueAtTime(peakLevel * 0.62, now + 0.045);
-    noteGain.gain.exponentialRampToValueAtTime(peakLevel * 0.14, now + duration * 0.86);
+    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.72 : 0.62), now + 0.045);
+    noteGain.gain.exponentialRampToValueAtTime(peakLevel * (harmonic ? 0.18 : 0.14), now + duration * 0.86);
     noteGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     bodyLow.type = 'peaking';
-    bodyLow.frequency.setValueAtTime(Number(stringIndex) >= 4 ? 105 : 160, now);
+    bodyLow.frequency.setValueAtTime(string >= 4 ? 105 : 160, now);
     bodyLow.Q.setValueAtTime(0.82, now);
-    bodyLow.gain.setValueAtTime(Number(stringIndex) >= 4 ? 3.4 : 1.9, now);
+    bodyLow.gain.setValueAtTime(harmonic ? -2.4 : string >= 4 ? 3.4 : 1.9, now);
     bodyMid.type = 'peaking';
     bodyMid.frequency.setValueAtTime(320, now);
     bodyMid.Q.setValueAtTime(1.05, now);
-    bodyMid.gain.setValueAtTime(2.2, now);
+    bodyMid.gain.setValueAtTime(harmonic ? -0.8 : 2.2, now);
     bodyPresence.type = 'peaking';
-    bodyPresence.frequency.setValueAtTime(clamp(frequency * 5.8, 1450, 3900), now);
-    bodyPresence.Q.setValueAtTime(0.86, now);
-    bodyPresence.gain.setValueAtTime(1.7, now);
+    bodyPresence.frequency.setValueAtTime(clamp(frequency * (harmonic ? 7.6 : 5.8), 1450, harmonic ? 6200 : 3900), now);
+    if (sliding) {
+      bodyPresence.frequency.exponentialRampToValueAtTime(
+        clamp(targetFrequency * (harmonic ? 7.6 : 5.8), 1450, harmonic ? 6200 : 3900),
+        now + glideSeconds
+      );
+    }
+    bodyPresence.Q.setValueAtTime(harmonic ? 1.15 : 0.86, now);
+    bodyPresence.gain.setValueAtTime(harmonic ? 4.2 : 1.7, now);
     bodyHighCut.type = 'lowpass';
-    bodyHighCut.frequency.setValueAtTime(clamp(frequency * 12, 2500, 7600), now);
-    bodyHighCut.frequency.exponentialRampToValueAtTime(clamp(frequency * 5.2, 1200, 5600), now + duration);
-    bodyHighCut.Q.setValueAtTime(0.55, now);
+    bodyHighCut.frequency.setValueAtTime(clamp(frequency * (harmonic ? 16 : 12), 2500, harmonic ? 9800 : 7600), now);
+    bodyHighCut.frequency.exponentialRampToValueAtTime(
+      clamp((sliding ? targetFrequency : frequency) * (harmonic ? 9 : 5.2), 1200, harmonic ? 8200 : 5600),
+      now + duration
+    );
+    bodyHighCut.Q.setValueAtTime(harmonic ? 0.8 : 0.55, now);
 
-    const stringSource = this.connectPluckedString(frequency, Number(stringIndex), now, duration, sourceBus);
-    const pickSource = this.addPickNoise(now, sourceBus);
+    const stringSource = this.connectPluckedString(frequency, string, now, sourceDuration, sourceBus, {
+      playbackRateEnd,
+      glideSeconds
+    });
+    const pickSource = this.addPickNoise(now, sourceBus, harmonic ? 0.045 : 0.082);
     sourceBus.connect(bodyLow);
     bodyLow.connect(bodyMid);
     bodyMid.connect(bodyPresence);
@@ -240,6 +274,7 @@ export class GuitarAudioEngine {
     let cleanupTimer = null;
     const voice = {
       gain: noteGain,
+      slideRelationId: sliding ? String(slideRelationId || '') : '',
       stop: () => {
         if (stopped) return;
         stopped = true;
@@ -252,10 +287,10 @@ export class GuitarAudioEngine {
         try { bodyPresence.disconnect(); } catch {}
         try { bodyHighCut.disconnect(); } catch {}
         try { noteGain.disconnect(); } catch {}
-        if (this.activeVoices[stringIndex] === voice) this.activeVoices[stringIndex] = null;
+        if (this.activeVoices[string] === voice) this.activeVoices[string] = null;
       }
     };
-    this.activeVoices[stringIndex] = voice;
+    this.activeVoices[string] = voice;
     cleanupTimer = window.setTimeout(() => voice.stop(), (duration + 0.12) * 1000);
   }
 }
