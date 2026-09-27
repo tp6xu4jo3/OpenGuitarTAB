@@ -39,6 +39,25 @@ export function frequencyForTab(stringIndex, fret, capo = 0) {
   return STRING_TUNING[string] * Math.pow(2, soundingFret / 12);
 }
 
+export function pitchPlanForTab(stringIndex, fret, {
+  capo = 0,
+  slideToFret = null,
+  slideSeconds = 0
+} = {}) {
+  const frequency = frequencyForTab(stringIndex, fret, capo);
+  const hasSlideTarget = slideToFret !== null
+    && slideToFret !== undefined
+    && String(slideToFret).trim() !== '';
+  const targetFret = hasSlideTarget ? Number(slideToFret) : Number.NaN;
+  const sliding = Number.isFinite(targetFret) && Math.abs(targetFret - Number(fret)) > 1e-9;
+  return {
+    frequency,
+    targetFrequency: sliding ? frequencyForTab(stringIndex, targetFret, capo) : frequency,
+    glideSeconds: sliding ? clamp(Number(slideSeconds) || 0.25, 0.06, 4) : 0,
+    sliding
+  };
+}
+
 export class GuitarAudioEngine {
   constructor() {
     this.context = null;
@@ -207,11 +226,12 @@ export class GuitarAudioEngine {
   } = {}) {
     if (!this.context || !this.masterGain || /^x$/i.test(String(fret))) return;
     const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1);
-    const frequency = frequencyForTab(string, fret, capo);
-    const targetFret = Number(slideToFret);
-    const sliding = Number.isFinite(targetFret) && Math.abs(targetFret - Number(fret)) > 1e-9;
-    const targetFrequency = sliding ? frequencyForTab(string, targetFret, capo) : frequency;
-    const glideSeconds = sliding ? clamp(Number(slideSeconds) || 0.25, 0.06, 4) : 0;
+    const {
+      frequency,
+      targetFrequency,
+      glideSeconds,
+      sliding
+    } = pitchPlanForTab(string, fret, { capo, slideToFret, slideSeconds });
     const duration = sliding ? Math.max(0.5, glideSeconds + 0.18) : harmonic ? 0.66 : 0.5;
     const playbackRateEnd = sliding ? targetFrequency / frequency : 1;
     const sourceDuration = duration * Math.max(1, playbackRateEnd) + 0.05;
