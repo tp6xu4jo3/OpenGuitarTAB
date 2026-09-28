@@ -7,6 +7,7 @@ export const CHORD_DRAG_MIME = 'application/x-openguitartab-chord';
 let installed = false;
 let activeDropTarget = null;
 let activeDragPayload = null;
+let activeDropLookup = null;
 
 function clearDropTarget() {
   activeDropTarget?.classList?.remove('is-chord-drop-target');
@@ -28,12 +29,19 @@ function targetFromNode(node) {
   return { measureId, at, duration };
 }
 
+function columnKey(measureId, at) {
+  return `${String(measureId || '')}:${at?.[0]}/${at?.[1]}`;
+}
+
+function captureDropLookup() {
+  return new Map([...document.querySelectorAll('.v3-column-target[data-measure-id][data-at]')].map(node => [
+    `${node.dataset.measureId}:${node.dataset.at}`,
+    node
+  ]));
+}
+
 function columnNodeForTarget(target) {
-  if (!target) return null;
-  const measureId = globalThis.CSS?.escape ? CSS.escape(target.measureId) : target.measureId;
-  const atKey = `${target.at[0]}/${target.at[1]}`;
-  const at = globalThis.CSS?.escape ? CSS.escape(atKey) : atKey;
-  return document.querySelector(`.v3-column-target[data-measure-id="${measureId}"][data-at="${at}"]`);
+  return target ? activeDropLookup?.get(columnKey(target.measureId, target.at)) || null : null;
 }
 
 function payloadFromTransfer(dataTransfer) {
@@ -62,6 +70,7 @@ function handleDragStart(event) {
   const payload = payloadFromChordButton(chordButton);
   if (!payload || !event.dataTransfer) return;
   activeDragPayload = payload;
+  activeDropLookup = captureDropLookup();
   event.dataTransfer.effectAllowed = 'copy';
   event.dataTransfer.setData(CHORD_DRAG_MIME, JSON.stringify(payload));
   chordButton.classList.add('is-dragging');
@@ -89,6 +98,7 @@ function handleDrop(event) {
   const target = targetFromNode(event.target);
   clearDropTarget();
   activeDragPayload = null;
+  activeDropLookup = null;
   if (!payload || !target || isEditingBlocked()) return;
   event.preventDefault();
   const result = window.editorV3?.dispatch?.({
@@ -106,6 +116,7 @@ function handleDrop(event) {
 function handleDragEnd(event) {
   event.target?.closest?.('[data-chord-id]')?.classList.remove('is-dragging');
   activeDragPayload = null;
+  activeDropLookup = null;
   clearDropTarget();
 }
 

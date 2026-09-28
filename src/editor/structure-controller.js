@@ -15,6 +15,7 @@ let selected = null;
 let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
+let dragGeometry = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -204,6 +205,7 @@ function makeRowHandle(target, { sourceStart = false } = {}) {
     const current = rowTargetForSystem(handle.closest('.tab-system'));
     if (!current) return;
     dragState = { type: 'row', rowIndex: current.rowIndex };
+    beginDrag();
     event.dataTransfer?.setData('text/plain', `row:${current.rowIndex}`);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   });
@@ -252,6 +254,7 @@ function addMeasureUi(grid, rowIndex) {
     hitbox.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'measure', rowIndex, measureIndex }, event.clientX, event.clientY); });
     hitbox.addEventListener('dragstart', event => {
       dragState = { type: 'measure', rowIndex, measureIndex };
+      beginDrag();
       event.dataTransfer?.setData('text/plain', `measure:${rowIndex}:${measureIndex}`);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
     });
@@ -352,23 +355,32 @@ function decorateEditor() {
   if (selected) setSelected(selected);
 }
 
-function decorateSourceSystem(sourceSystemIndex) {
+function decorateSourceSystem(sourceSystemIndex, {
+  segmentationChanged = false,
+  visualRowStart = 0,
+  visualRowCount = 0
+} = {}) {
   if (isEditingBlocked()) return;
   const tabArea = document.getElementById('tabArea');
   if (!tabArea) return;
-  const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
-  const affected = [];
-  systems.forEach((system, visualRowIndex) => {
-    if (Number(system.dataset.sourceRow ?? system.dataset.row) !== Number(sourceSystemIndex)) return;
-    affected.push(visualRowIndex);
-    decorateSystem(system, visualRowIndex);
-  });
-  if (!affected.length) return;
-  const firstAffectedVisualRow = Math.min(...affected);
-  systems.forEach((system, visualRowIndex) => {
-    if (visualRowIndex >= firstAffectedVisualRow) syncVisualRowMetadata(system, visualRowIndex);
-  });
-  syncSelectedRow(systems);
+  const start = Math.max(0, Math.trunc(Number(visualRowStart) || 0));
+  const count = Math.max(0, Math.trunc(Number(visualRowCount) || 0));
+
+  if (segmentationChanged) {
+    const systems = [...tabArea.querySelectorAll(':scope > .tab-system')];
+    const affected = systems.slice(start, start + count);
+    affected.forEach((system, index) => decorateSystem(system, start + index));
+    for (let visualRowIndex = start + affected.length; visualRowIndex < systems.length; visualRowIndex++) {
+      syncVisualRowMetadata(systems[visualRowIndex], visualRowIndex);
+    }
+    syncSelectedRow(systems);
+    if (selected) setSelected(selected);
+    return;
+  }
+
+  const affected = [...tabArea.querySelectorAll(`:scope > .tab-system[data-source-row="${sourceSystemIndex}"]`)];
+  affected.forEach((system, index) => decorateSystem(system, start + index));
+  syncSelectedRow(affected);
   if (selected) setSelected(selected);
 }
 
@@ -380,57 +392,87 @@ function handleRendered(event) {
   }
   if (detail.sourceSystemIndex == null) return;
   const sourceSystemIndex = Number(detail.sourceSystemIndex);
-  if (Number.isInteger(sourceSystemIndex)) decorateSourceSystem(sourceSystemIndex);
+  if (Number.isInteger(sourceSystemIndex)) {
+    decorateSourceSystem(sourceSystemIndex, {
+      segmentationChanged: Boolean(detail.segmentationChanged),
+      visualRowStart: detail.visualRowStart,
+      visualRowCount: detail.visualRowCount
+    });
+  }
+}
+
+function captureDragGeometry() {
+  const rows = [...document.querySelectorAll('.row-insert-zone')].map(zone => {
+    const rect = zone.getBoundingClientRect();
+    return { index: Number(zone.dataset.insertIndex), zone, centerY: rect.top + rect.height / 2 };
+  });
+  const grids = [...document.querySelectorAll('.v3-grid[data-row]')].map(grid => {
+    const rect = grid.getBoundingClientRect();
+    const rowIndex = Number(grid.dataset.row);
+    const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
+    const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
+    const boundaries = Array.from({ length: count + 1 }, (_, localBoundary) => ({
+      boundary: start + localBoundary,
+      x: rect.left + rect.width * boundaryPercent(grid, localBoundary) / 100,
+      node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start + localBoundary}"]`)
+    }));
+    return { rowIndex, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, boundaries };
+  });
+  return { rows, grids };
+}
+
+function beginDrag() {
+  dragGeometry = captureDragGeometry();
+  clearDropUi();
 }
 
 function rowBoundaryFromPoint(y) {
-  const zones = [...document.querySelectorAll('.row-insert-zone')];
   let best = null;
-  zones.forEach(zone => {
-    const rect = zone.getBoundingClientRect();
-    const distance = Math.abs(y - (rect.top + rect.height / 2));
-    if (!best || distance < best.distance) best = { index: Number(zone.dataset.insertIndex), zone, distance };
-  });
+  for (const target of dragGeometry?.rows || []) {
+    const distance = Math.abs(y - target.centerY);
+    if (!best || distance < best.distance) best = { ...target, distance };
+  }
   return best && best.distance <= 42 ? best : null;
 }
 
 function measureBoundaryFromPoint(x, y) {
-  const pointed = document.elementFromPoint(x, y);
-  const grid = pointed?.closest?.('.v3-grid[data-row]');
+  const grid = (dragGeometry?.grids || []).find(item => y >= item.top && y <= item.bottom && x >= item.left && x <= item.right);
   if (!grid) return null;
-  const rect = grid.getBoundingClientRect();
-  const rowIndex = Number(grid.dataset.row);
-  const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
-  const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-  const ratio = Math.max(0, Math.min(100, ((x - rect.left) / Math.max(1, rect.width)) * 100));
-  let bestLocal = 0;
-  let bestDistance = Infinity;
-  for (let localBoundary = 0; localBoundary <= count; localBoundary++) {
-    const distance = Math.abs(ratio - boundaryPercent(grid, localBoundary));
-    if (distance < bestDistance) { bestDistance = distance; bestLocal = localBoundary; }
+  let best = null;
+  for (const boundary of grid.boundaries) {
+    const distance = Math.abs(x - boundary.x);
+    if (!best || distance < best.distance) best = { ...boundary, distance };
   }
-  return { rowIndex, boundary: start + bestLocal, grid };
+  return best ? { rowIndex: grid.rowIndex, boundary: best.boundary, node: best.node } : null;
 }
 
 function clearDropUi() {
-  document.querySelectorAll('.measure-insert-boundary.is-active,.row-insert-zone.is-drag-target').forEach(node => node.classList.remove('is-active', 'is-drag-target'));
+  if (activeDrop?.node) activeDrop.node.classList.remove(activeDrop.type === 'row' ? 'is-drag-target' : 'is-active');
   activeDrop = null;
 }
 
-function updateDropUi(event) {
+function setActiveDrop(next) {
+  const same = activeDrop && next
+    && activeDrop.type === next.type
+    && (next.type === 'row'
+      ? activeDrop.index === next.index
+      : activeDrop.rowIndex === next.rowIndex && activeDrop.boundary === next.boundary);
+  if (same) return;
   clearDropUi();
-  if (!dragState) return;
+  if (!next) return;
+  next.node?.classList.add(next.type === 'row' ? 'is-drag-target' : 'is-active');
+  activeDrop = next;
+}
+
+function updateDropUi(event) {
+  if (!dragState) { clearDropUi(); return; }
   if (dragState.type === 'row') {
     const target = rowBoundaryFromPoint(event.clientY);
-    if (!target) return;
-    target.zone.classList.add('is-drag-target');
-    activeDrop = { type: 'row', index: target.index };
+    setActiveDrop(target ? { type: 'row', index: target.index, node: target.zone } : null);
     return;
   }
   const target = measureBoundaryFromPoint(event.clientX, event.clientY);
-  if (!target) return;
-  target.grid.querySelector(`.measure-insert-boundary[data-boundary="${target.boundary}"]`)?.classList.add('is-active');
-  activeDrop = { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary };
+  setActiveDrop(target ? { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary, node: target.node } : null);
 }
 
 function commitDrop() {
@@ -457,9 +499,14 @@ function installDragHandlers() {
     updateDropUi(event);
     commitDrop();
     dragState = null;
+    dragGeometry = null;
     clearDropUi();
   }, true);
-  window.addEventListener('dragend', () => { dragState = null; clearDropUi(); }, true);
+  window.addEventListener('dragend', () => {
+    dragState = null;
+    dragGeometry = null;
+    clearDropUi();
+  }, true);
 }
 
 function installGlobalActions() {
