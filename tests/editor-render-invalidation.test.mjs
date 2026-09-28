@@ -12,7 +12,9 @@ const commandsSource=await readFile(new URL('../src/editor/commands.js',import.m
 assert.match(rendererSource,/rebuildNavigationIndex\(\)[\s\S]*editableTimesForMeasure\(measure\)[\s\S]*navigationLookup/s,'navigation should be indexed from document rhythmic times when grid structure changes');
 assert.match(rendererSource,/navigateCursor\([\s\S]*navigationLookup\.get/s,'arrow navigation should use the cached rhythmic navigation index');
 assert.doesNotMatch(rendererSource,/navigateCursor\([\s\S]*querySelectorAll\('\.v3-column-target/s,'arrow navigation must not rescan and sort every DOM column per key press');
-assert.match(rendererSource,/const navigation = \{ measureId:[\s\S]*requestAnimationFrame\(\(\) => \{\s*const next = this\.navigateCursor\(navigation\)/s,'arrow navigation should resolve its destination after commit rerenders');
+assert.match(rendererSource,/const navigation = \{ measureId:[\s\S]*const next = this\.navigateCursor\(navigation\);[\s\S]*commit\(\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*this\.showCursor\(next\)/s,'arrow navigation should resolve its destination before commit replaces the current measure DOM');
+assert.match(rendererSource,/event\.key === 'Delete' \|\| event\.key === 'Backspace'[\s\S]*input\.value = '';[\s\S]*commit\(\);[\s\S]*this\.hideCursor\(\)/s,'Delete and Backspace should commit note removal immediately');
+assert.match(rendererSource,/this\.cursor = input;\s*input\.focus\(\{ preventScroll: true \}\);\s*input\.select\(\);/s,'cursor focus should be synchronous so repeated arrow keys are not lost between animation frames');
 
 assert.doesNotMatch(rendererSource,/editorPlayback\?\.invalidate|updateProgressRange/,'renderer completion must not own playback invalidation or playback-index rebuilding');
 assert.match(controllerSource,/changeSet\?\.document \|\| changeSet\?\.playback\?\.length[\s\S]*editorPlayback\?\.invalidate/s,'store ChangeSet playback scope should own playback invalidation');
@@ -21,6 +23,9 @@ assert.match(rendererSource,/buildAdaptiveSystemLayout\(sourceMeasures,[\s\S]*so
 const applyLayoutChangeSource=rendererSource.slice(rendererSource.indexOf('  applyLayoutChange(changeSet) {'),rendererSource.indexOf('  updateGridWidths(grid, segment) {'));
 assert.doesNotMatch(applyLayoutChangeSource,/buildAdaptiveLayout\(/,'local layout changes must not rebuild the full adaptive document plan');
 assert.match(rendererSource,/replaceAdaptiveSourcePlan\([\s\S]*logicalSystems\[sourceSystemIndex\] = sourceMeasures/s,'the renderer should replace only the affected source-system slice in its existing plan');
+assert.match(applyLayoutChangeSource,/const segmentationChanged = !sameShape;/,'renderer completion must report whether adaptive visual segmentation actually changed');
+assert.match(applyLayoutChangeSource,/const visualRowStart = nextPlan\.systems\.findIndex\([\s\S]*const visualRowCount = nextSegments\.length/s,'renderer must derive the affected visual-row range from its layout plan');
+assert.doesNotMatch(applyLayoutChangeSource,/querySelectorAll\(':scope > \.tab-system'\)[\s\S]*dataset\.visualRow/s,'local layout replacement must not rescan every visual system to rewrite row metadata');
 
 assert.match(notationSource,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document,[\s\S]*measures: changeSet\?\.measures[\s\S]*relations: changeSet\?\.relations/s,'notation should incrementally refresh its persistent document index');
 assert.match(notationSource,/const systems = new Set\(\)[\s\S]*for \(const measureId of dirty\)[\s\S]*closest\?\.\('\.tab-system'\)[\s\S]*for \(const sourceRow of layoutRows\)/s,'partial notation redraw should collect only dirty measure and affected source-row systems');

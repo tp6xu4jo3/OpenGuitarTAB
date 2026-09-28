@@ -1,4 +1,5 @@
 export const SAMPLE_DURATION_SECONDS = 3;
+export const SAMPLE_ATTACK_PREROLL_SECONDS = 0.02;
 export const SAMPLE_FRETS_BY_STRING = Object.freeze([
   Object.freeze([0, 1, 3, 5, 7, 8, 10]),
   Object.freeze([0, 3, 5, 6, 8, 10]),
@@ -11,7 +12,7 @@ const SAMPLE_START_INDEX = SAMPLE_FRETS_BY_STRING.map((_, index) =>
   SAMPLE_FRETS_BY_STRING.slice(0, index).reduce((sum, frets) => sum + frets.length, 0)
 );
 export const SAMPLE_COUNT = SAMPLE_FRETS_BY_STRING.reduce((sum, frets) => sum + frets.length, 0);
-export const SAMPLE_BANK_URL = new URL('../../assets/audio/guitar-samples-v1.m4a', import.meta.url).href;
+export const SAMPLE_BANK_URL = new URL('../../assets/audio/guitar-samples.m4a', import.meta.url).href;
 const MIN_BANK_DURATION = SAMPLE_COUNT * SAMPLE_DURATION_SECONDS - 0.05;
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }

@@ -603,6 +603,9 @@ export class SparseScoreRenderer {
       const grid = system.querySelector(':scope .v3-grid');
       return String(grid?.dataset.measureIds || '') === segmentSignature(nextSegments[index]);
     });
+    const visualRowStart = nextPlan.systems.findIndex(segment => Number(segment.sourceSystemIndex) === sourceSystemIndex);
+    const visualRowCount = nextSegments.length;
+    const segmentationChanged = !sameShape;
     if (metricsOnly && sameShape) {
       existing.forEach((system, index) => this.updateGridWidths(system.querySelector(':scope .v3-grid'), nextSegments[index]));
       for (const measureId of changeSet.measures || []) {
@@ -613,13 +616,19 @@ export class SparseScoreRenderer {
     } else {
       const first = existing[0];
       const fragment = document.createDocumentFragment();
-      nextSegments.forEach((segment, index) => fragment.appendChild(this.createSystem(segment, index)));
+      nextSegments.forEach((segment, index) => fragment.appendChild(this.createSystem(segment, visualRowStart + index)));
       first.before(fragment);
       existing.forEach(node => node.remove());
-      [...this.root.querySelectorAll(':scope > .tab-system')].forEach((system, visualIndex) => { system.dataset.visualRow = String(visualIndex); });
     }
     this.layoutPlan = nextPlan;
-    this.publishRendered({ layout: nextPlan, partial: true, sourceSystemIndex });
+    this.publishRendered({
+      layout: nextPlan,
+      partial: true,
+      sourceSystemIndex,
+      segmentationChanged,
+      visualRowStart,
+      visualRowCount
+    });
     return true;
   }
 
@@ -780,15 +789,22 @@ export class SparseScoreRenderer {
     input.addEventListener('keydown', event => {
       if (event.key === 'Escape') { event.preventDefault(); cancelled = true; this.hideCursor(); return; }
       if (event.key === 'Enter') { event.preventDefault(); commit(); this.hideCursor(); return; }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        input.value = '';
+        commit();
+        this.hideCursor();
+        return;
+      }
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const direction = event.key.replace('Arrow', '').toLowerCase();
       const navigation = { measureId: String(measureId), string: Number(string), at: cloneValue(at), direction };
+      const next = this.navigateCursor(navigation);
       commit();
       this.hideCursor();
+      if (!next) return;
       requestAnimationFrame(() => {
-        const next = this.navigateCursor(navigation);
-        if (!next) return;
         const nextTarget = this.root?.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(next.measureId)}"][data-at="${escapeSelector(fractionKey(next.at))}"]`);
         if (nextTarget) window.jumpToInput?.(nextTarget, false);
         this.showCursor(next);
@@ -801,7 +817,8 @@ export class SparseScoreRenderer {
     }, { once: true });
     staff.appendChild(input);
     this.cursor = input;
-    requestAnimationFrame(() => { input.focus(); input.select(); });
+    input.focus({ preventScroll: true });
+    input.select();
     return input;
   }
 }

@@ -11,6 +11,7 @@ const state = {
   playing: false,
   timer: null,
   eventTimers: [],
+  nextStringDelayMs: new Map(),
   currentIndex: 0,
   startOffsetBeats: 0,
   playbackIndex: null,
@@ -310,6 +311,29 @@ function setMetronomeEnabled(enabled) {
   return state.metronomeEnabled;
 }
 
+function buildNextStringDelayMap(playback, beatMs) {
+  const delays = new Map();
+  const previousByString = new Map();
+  for (const entry of playback?.entries || []) {
+    for (const event of entry.events || []) {
+      const eventBaseMs = (Number(entry.absoluteBeat) + Number(event.offsetBeats || 0)) * beatMs;
+      for (const { note, delayMs } of playbackNoteSchedule(event, beatMs)) {
+        if (!note || /^x$/i.test(String(note.fret))) continue;
+        const pureSlideArrival = Boolean(note.slideArrivalRelationId && !note.slide?.relationId);
+        if (pureSlideArrival) continue;
+        const string = Number(note.string);
+        const noteId = String(note.id || '');
+        if (!Number.isInteger(string) || !noteId) continue;
+        const attackMs = eventBaseMs + Math.max(0, Number(delayMs) || 0);
+        const previous = previousByString.get(string);
+        if (previous) delays.set(previous.noteId, Math.max(0, attackMs - previous.attackMs));
+        previousByString.set(string, { noteId, attackMs });
+      }
+    }
+  }
+  return delays;
+}
+
 function playNote(note, beatMs) {
   if (!state.musicEnabled || !note || /^x$/i.test(String(note.fret))) return;
   const audio = getAudioEngine();
@@ -323,7 +347,9 @@ function playNote(note, beatMs) {
     harmonic,
     slideToFret: slide?.toFret ?? null,
     slideSeconds: slide ? Math.max(0.06, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
-    slideRelationId: slide?.relationId || ''
+    slideRelationId: slide?.relationId || '',
+    nextSameStringSeconds: (state.nextStringDelayMs.get(String(note.id || '')) ?? Number.NaN) / 1000,
+    dampPrevious: false
   });
 }
 
@@ -383,6 +409,7 @@ async function startPlayback() {
   }
   const tempo = typeof window.getTempo === 'function' ? window.getTempo() : 120;
   const beatMs = 60000 / tempo;
+  state.nextStringDelayMs = buildNextStringDelayMap(playback, beatMs);
   const firstIndex = state.currentIndex;
   const firstOffset = state.startOffsetBeats;
   state.startOffsetBeats = 0;

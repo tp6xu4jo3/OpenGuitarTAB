@@ -54,7 +54,7 @@ const structure = read('src/editor/structure-controller.js');
 assert.match(structure, /v3-grid/);
 assert.match(structure, /import \{ isEditingBlocked \} from '.\/view-state\.js'/, 'structure editing rules must come from view-state');
 assert.match(structure, /function handleRendered\(event\)[\s\S]*detail\.full[\s\S]*detail\.sourceSystemIndex == null/s, 'structure decoration must distinguish full, source-system, and ordinary partial renders');
-assert.match(structure, /decorateSourceSystem\(sourceSystemIndex\)/, 'layout changes must redecorate only the affected source system');
+assert.match(structure, /decorateSourceSystem\(sourceSystemIndex, \{[\s\S]*segmentationChanged: Boolean\(detail\.segmentationChanged\),[\s\S]*visualRowStart: detail\.visualRowStart,[\s\S]*visualRowCount: detail\.visualRowCount/s, 'layout changes must pass renderer-owned segmentation scope to affected-source decoration');
 assert.doesNotMatch(structure, /editorPlayback\?\.invalidate/, 'playback invalidation must be owned by ChangeSet handling, not structure-controller');
 assert.doesNotMatch(structure, /grid-geometry|legacy-grid|projectDocumentToLegacySong|renderRows/);
 

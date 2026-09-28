@@ -1,10 +1,14 @@
 import {
   RecordedGuitarSampleBank,
+  SAMPLE_ATTACK_PREROLL_SECONDS,
   SAMPLE_DURATION_SECONDS,
   samplePlanForTab
 } from './sample-bank.js';
 
 const STRING_TUNING = [329.6275569128699, 246.94165062806206, 195.99771799008746, 146.8323839587038, 110, 82.4068892282175];
+const SAME_STRING_DAMP_LEAD_SECONDS = 0.025;
+const SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0.002;
+const MANUAL_RELEASE_SECONDS = 0.018;
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -25,7 +29,7 @@ export function getCapoFromUi() {
   return value;
 }
 
-// All recorded anchors were normalized together to the same peak target.
+// Relative sample loudness is mastered into the single recorded bank.
 export function stringLevelDb() { return 0; }
 
 export function frequencyForTab(stringIndex, fret, capo = 0) {
@@ -129,19 +133,27 @@ export class GuitarAudioEngine {
       previousStepTime = stepEnd;
     }
     source.connect(destination);
-    source.start(startTime, plan.offsetSeconds, SAMPLE_DURATION_SECONDS);
+    source.start(
+      startTime,
+      plan.offsetSeconds + SAMPLE_ATTACK_PREROLL_SECONDS,
+      SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS
+    );
     return { source, basePlaybackRate };
   }
 
-  stopStringVoice(stringIndex, releaseSeconds = 0.018) {
+  stopStringVoice(stringIndex, releaseSeconds = MANUAL_RELEASE_SECONDS) {
     const voice = this.activeVoices[stringIndex];
     if (!voice || !this.context) return;
     this.activeVoices[stringIndex] = null;
     const now = this.context.currentTime;
-    voice.gain.gain.cancelScheduledValues(now);
-    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
-    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseSeconds);
-    window.setTimeout(() => voice.stop(), (releaseSeconds + 0.05) * 1000);
+    const gain = voice.gain.gain;
+    if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+    else {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(Math.max(0, gain.value), now);
+    }
+    gain.linearRampToValueAtTime(0, now + releaseSeconds);
+    window.setTimeout(() => voice.stop(), (releaseSeconds + 0.025) * 1000);
   }
 
   stopAll() {
@@ -169,24 +181,43 @@ export class GuitarAudioEngine {
     oscillator.stop(now + 0.05);
   }
 
-  playNote(stringIndex, fret, { capo = getCapoFromUi(), harmonic = false, slideToFret = null, slideSeconds = 0, slideRelationId = '' } = {}) {
+  playNote(stringIndex, fret, {
+    capo = getCapoFromUi(),
+    harmonic = false,
+    slideToFret = null,
+    slideSeconds = 0,
+    slideRelationId = '',
+    nextSameStringSeconds = null,
+    dampPrevious = true
+  } = {}) {
     if (!this.context || !this.masterGain || !this.samples.buffer || /^x$/i.test(String(fret))) return;
     const string = clamp(Math.round(Number(stringIndex) || 0), 0, STRING_TUNING.length - 1);
     const pitch = pitchPlanForTab(string, fret, { capo, slideToFret, slideSeconds });
     const plan = samplePlanForTab(string, pitch.startFret, { capo });
     const slideSteps = pitch.sliding ? frettedSlideSteps(pitch.startFret, pitch.targetFret, pitch.glideSeconds) : [];
     const now = this.context.currentTime;
-    this.stopStringVoice(string);
+    if (dampPrevious) this.stopStringVoice(string);
 
     const filter = this.context.createBiquadFilter();
     const gain = this.context.createGain();
     filter.type = harmonic ? 'highpass' : 'lowpass';
     filter.frequency.setValueAtTime(harmonic ? 520 : 15000, now);
     filter.Q.setValueAtTime(harmonic ? 0.75 : 0.35, now);
-    gain.gain.setValueAtTime(harmonic ? 0.86 : 1, now);
+    const level = harmonic ? 0.86 : 1;
+    gain.gain.setValueAtTime(level, now);
     const { source, basePlaybackRate } = this.connectSample(plan, now, filter, slideSteps);
     filter.connect(gain);
     gain.connect(this.masterGain);
+
+    const nextDelay = Number(nextSameStringSeconds);
+    if (!pitch.sliding && Number.isFinite(nextDelay) && nextDelay > SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS) {
+      const nextAttackTime = now + nextDelay;
+      const releaseEnd = nextAttackTime - SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS;
+      const releaseStart = Math.max(now, releaseEnd - (SAME_STRING_DAMP_LEAD_SECONDS - SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS));
+      gain.gain.setValueAtTime(level, releaseStart);
+      gain.gain.linearRampToValueAtTime(0, releaseEnd);
+      try { source.stop(nextAttackTime); } catch {}
+    }
 
     const minimumRate = Math.max(0.25, Math.min(basePlaybackRate, ...slideSteps.map(step => basePlaybackRate * step.playbackRate)));
     let stopped = false;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { frettedSlideSteps, pitchPlanForTab, stringLevelDb } from '../src/editor/audio-engine.js';
-import { samplePlanForTab, SAMPLE_COUNT, SAMPLE_DURATION_SECONDS, SAMPLE_FRETS_BY_STRING } from '../src/editor/sample-bank.js';
+import { samplePlanForTab, SAMPLE_ATTACK_PREROLL_SECONDS, SAMPLE_COUNT, SAMPLE_DURATION_SECONDS, SAMPLE_FRETS_BY_STRING } from '../src/editor/sample-bank.js';
 import { playbackNoteSchedule } from '../src/editor/playback-articulation.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 
@@ -23,9 +23,10 @@ const upArpeggio = scheduleFor({ type: 'arpeggio', direction: 'up' });
 assert.ok(upArpeggio.at(-1).delayMs > downStrum.at(-1).delayMs);
 
 assert.equal(stringLevelDb(0), 0);
-assert.equal(stringLevelDb(5), 0, 'peak-normalized recordings must not receive per-string engine gain');
+assert.equal(stringLevelDb(5), 0, 'relative sample loudness must be mastered into the bank, not patched per string at runtime');
 assert.equal(SAMPLE_COUNT, 42);
 assert.equal(SAMPLE_DURATION_SECONDS, 3);
+assert.equal(SAMPLE_ATTACK_PREROLL_SECONDS, 0.02);
 let expectedIndex = 0;
 SAMPLE_FRETS_BY_STRING.forEach((frets, stringIndex) => frets.forEach(fret => {
   const plan = samplePlanForTab(stringIndex, fret);
@@ -79,17 +80,26 @@ assert.equal(Object.hasOwn(sourceNote, 'arc'), false);
 const audioSource = await readFile(new URL('../src/editor/audio-engine.js', import.meta.url), 'utf8');
 const bankSource = await readFile(new URL('../src/editor/sample-bank.js', import.meta.url), 'utf8');
 const controllerSource = await readFile(new URL('../src/editor/playback-controller.js', import.meta.url), 'utf8');
-const sampleAsset = await stat(new URL('../assets/audio/guitar-samples-v1.m4a', import.meta.url));
-assert.ok(sampleAsset.size > 2_000_000);
+const audioAssetNames = (await readdir(new URL('../assets/audio/', import.meta.url)))
+  .filter(name => /^guitar-samples.*\.m4a$/i.test(name))
+  .sort();
+assert.deepEqual(audioAssetNames, ['guitar-samples.m4a'], 'the repository must keep only the current recorded guitar bank');
+const sampleAsset = await stat(new URL('../assets/audio/guitar-samples.m4a', import.meta.url));
+assert.ok(sampleAsset.size > 1_800_000);
 assert.match(bankSource, /fetch\(SAMPLE_BANK_URL, \{ cache: 'force-cache' \}\)/, 'bank must preload through browser cache');
 assert.match(bankSource, /context\.decodeAudioData\(encoded\)/, 'bank must decode once before playback');
-assert.match(audioSource, /source\.start\(startTime, plan\.offsetSeconds, SAMPLE_DURATION_SECONDS\)/, 'notes must use fixed bank slices');
+assert.match(audioSource, /plan\.offsetSeconds \+ SAMPLE_ATTACK_PREROLL_SECONDS[\s\S]*SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS/s, 'the physically aligned bank must use one fixed 20 ms safe pre-roll');
 assert.match(audioSource, /basePlaybackRate \* step\.playbackRate/, 'slides must move relative to the selected recorded anchor');
-assert.match(audioSource, /this\.stopStringVoice\(string\);/);
+assert.match(audioSource, /SAME_STRING_DAMP_LEAD_SECONDS = 0\.025/, 'sequenced same-string notes should begin damping before the next attack');
+assert.match(audioSource, /SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0\.002/, 'the old string voice should reach silence just before the next attack');
+assert.match(audioSource, /linearRampToValueAtTime\(0, releaseEnd\)/, 'sequenced damping must finish before the following note starts');
+assert.match(audioSource, /if \(dampPrevious\) this\.stopStringVoice\(string\);/, 'manual audition may still damp immediately while score playback uses pre-scheduled damping');
 assert.match(audioSource, /activeVoices = Array\(STRING_TUNING\.length\)\.fill\(null\)/);
 assert.doesNotMatch(audioSource, /pluckBuffer|addPickNoise|Math\.random\(\)/, 'recorded samples must be the only guitar source');
 assert.match(audioSource, /void engine\.samples\.preload\(\)/, 'network preload must start before Play');
-assert.match(controllerSource, /playbackNoteSchedule\(event, beatMs\)/);
+assert.match(controllerSource, /function buildNextStringDelayMap\(playback, beatMs\)[\s\S]*playbackNoteSchedule\(event, beatMs\)[\s\S]*delays\.set\(previous\.noteId/s, 'playback must derive exact next attacks per string including articulation delay');
+assert.match(controllerSource, /nextSameStringSeconds:[\s\S]*state\.nextStringDelayMs/s, 'each plucked note must receive its next same-string attack gap');
+assert.match(controllerSource, /dampPrevious: false/, 'score playback must rely on pre-note damping instead of post-attack overlap');
 assert.match(controllerSource, /audio\.hasActiveSlide\(string, note\.slideArrivalRelationId\)/);
 
 console.log('technique audio tests passed');
