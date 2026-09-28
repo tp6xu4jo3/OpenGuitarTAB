@@ -1,0 +1,33 @@
+name: Import sample bank
+
+on:
+  push:
+    branches:
+      - feat/sample-audio-engine
+    paths:
+      - .github/workflows/import-sample-bank.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sample-audio-engine
+      - name: Download sample bank
+        env:
+          SAMPLE_URL: "https://sdmntprnznorth.oaiusercontent.com/files/00000000-6d4c-820b-bf7e-878f59a74a1d/raw?se=2026-09-28T19%3A46%3A43Z&sp=r&sv=2026-02-06&sr=b&scid=96b2853d-fe85-55dd-b9fe-cdaeddb482c0&skoid=f5e14fda-2af7-44a3-9d18-d372ffcad871&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-28T13%3A19%3A57Z&ske=2026-09-29T13%3A19%3A57Z&sks=b&skv=2026-02-06&sig=6z4nRUfQ0lVSBTU3am%2BPkm7R9iFMixxSXdAf874InnM%3D"
+        run: |
+          mkdir -p assets/audio
+          curl --fail --location "$SAMPLE_URL" --output assets/audio/guitar-samples-v1.m4a
+          echo "71c5a79787795993cb917a19c23eef6ad83b1a871bb95d191154d5aa9fbbd5b6  assets/audio/guitar-samples-v1.m4a" | sha256sum --check
+      - name: Commit sample bank
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/audio/guitar-samples-v1.m4a
+          git commit -m "feat: add recorded guitar sample bank"
+          git push origin HEAD:feat/sample-audio-engine
