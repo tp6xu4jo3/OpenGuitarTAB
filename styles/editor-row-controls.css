@@ -6,12 +6,4 @@
 .row-boundary-button{box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#000;cursor:pointer;pointer-events:auto;box-shadow:0 6px 14px rgba(30,215,96,.20);transition:background .14s ease,transform .14s ease}
 .row-boundary-button:hover,.row-boundary-button:focus-visible{background:#3be477;transform:scale(1.05);outline:none}
 .row-boundary-button svg{width:18px;height:18px;display:block;overflow:visible;fill:none;stroke:currentColor;stroke-width:2.35;stroke-linecap:round;stroke-linejoin:round}
-.row-drop-zone{position:absolute;left:0;right:0;height:50%;z-index:60;pointer-events:none}
-.row-drop-zone-before{top:0}
-.row-drop-zone-after{bottom:0}
-.structure-drag-row-active .row-drop-zone{pointer-events:auto}
-.row-drop-zone .structure-drop-indicator{left:50px;right:8px;height:3px}
-.row-drop-zone-before .structure-drop-indicator{top:0;transform:translateY(-50%)}
-.row-drop-zone-after .structure-drop-indicator{bottom:0;transform:translateY(50%)}
-.row-insert-zone>.structure-drop-indicator{left:50px;right:8px;top:50%;height:3px;transform:translateY(-50%)}
-@media(max-width:900px){.row-insert-zone::before,.row-drop-zone .structure-drop-indicator,.row-insert-zone>.structure-drop-indicator{left:50px}}
+.row-boundary-drop-target{position:absolute;left:0;right:0;top:-12px;bottom:-12px;z-index:60;pointer-events:none}.structure-drag-row-active .row-boundary-drop-target{pointer-events:auto;cursor:grabbing}.structure-drag-row-active .row-insert-controls{opacity:0!important;pointer-events:none!important}.row-boundary-drop-target .structure-drop-indicator{left:50px;right:8px;top:50%;height:3px;transform:translateY(-50%)}@media(max-width:900px){.row-insert-zone::before,.row-boundary-drop-target .structure-drop-indicator{left:50px}}

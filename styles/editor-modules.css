@@ -23,14 +23,7 @@
 .measure-module-hitbox:hover{background:transparent;border-color:#1ed760}
 .structure-drag-measure-active .measure-module-hitbox:hover,.structure-drag-measure-active .measure-module-hitbox.is-selected{border-color:transparent;box-shadow:none}
 .structure-drag-measure-active .measure-module-hitbox{z-index:20}
-.measure-drop-zone{position:absolute;top:0;bottom:0;width:50%;z-index:1;pointer-events:none}
-.measure-drop-zone-before{left:0}
-.measure-drop-zone-after{right:0}
-.structure-drag-measure-active .measure-drop-zone{pointer-events:auto}
-.structure-drop-indicator{position:absolute;z-index:2;border-radius:2px;background:#1ed760;pointer-events:none}
-.measure-drop-zone .structure-drop-indicator{top:0;bottom:0;width:3px}
-.measure-drop-zone-before .structure-drop-indicator{left:0;transform:translateX(-50%)}
-.measure-drop-zone-after .structure-drop-indicator{right:0;transform:translateX(50%)}
+.measure-drop-boundary{position:absolute;top:0;height:var(--staff-height);z-index:21;pointer-events:none;cursor:grabbing}.structure-drag-measure-active .measure-drop-boundary{pointer-events:auto}.structure-drop-indicator{position:absolute;z-index:2;border-radius:2px;background:#1ed760;pointer-events:none}.measure-drop-boundary .structure-drop-indicator{left:var(--drop-indicator-x);top:0;bottom:0;width:3px;transform:translateX(-50%)}
 .measure-module-hitbox:active{cursor:grabbing}
 .measure-module-hitbox.is-selected{background:transparent;border-color:#1ed760;box-shadow:none}
 .measure-module-hitbox.is-dragging{opacity:.28}

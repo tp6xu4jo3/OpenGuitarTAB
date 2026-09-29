@@ -71,16 +71,33 @@ function cloneMeasureWithFreshIds(sourceMeasure, idFactory, { measureId = null }
   return { measure, eventIdMap, noteIdMap, groupIdMap };
 }
 
-function cloneRelationsWithMap(relations, noteIdMap, idFactory) {
+function relationMeasureIds(relation) {
+  const ids = [];
+  for (const position of [relation?.fromPosition, relation?.toPosition]) {
+    if (position?.measureId) ids.push(String(position.measureId));
+  }
+  return [...new Set(ids)];
+}
+
+function cloneRelationsWithMap(relations, noteIdMap, measureIdMap, idFactory) {
   const copied = [];
   for (const source of relations || []) {
     const ids = relationNoteIds(source);
     if (!ids.length || ids.some(id => !noteIdMap.has(id))) continue;
+    const measureIds = relationMeasureIds(source);
+    if (measureIds.some(id => !measureIdMap.has(id))) continue;
     const relation = cloneValue(source);
     relation.id = idFactory('r');
     if (relation.fromNoteId) relation.fromNoteId = noteIdMap.get(String(relation.fromNoteId));
     if (relation.toNoteId) relation.toNoteId = noteIdMap.get(String(relation.toNoteId));
     if (Array.isArray(relation.noteIds)) relation.noteIds = relation.noteIds.map(id => noteIdMap.get(String(id))).filter(Boolean);
+    for (const key of ['fromPosition', 'toPosition']) {
+      if (!relation[key]?.measureId) continue;
+      relation[key] = {
+        ...relation[key],
+        measureId: measureIdMap.get(String(relation[key].measureId))
+      };
+    }
     copied.push(relation);
   }
   return copied;
@@ -146,7 +163,8 @@ export class EditorClipboard {
     const removedNoteIds = noteIdsInMeasures([target]);
     const cleaned = relationsWithoutNotes(source, removedNoteIds);
     const cloned = cloneMeasureWithFreshIds(this.payload.measure, idFactory, { measureId: target.id });
-    const addedRelations = cloneRelationsWithMap(this.payload.relations, cloned.noteIdMap, idFactory);
+    const measureIdMap = new Map([[String(this.payload.measure.id), String(target.id)]]);
+    const addedRelations = cloneRelationsWithMap(this.payload.relations, cloned.noteIdMap, measureIdMap, idFactory);
     const measures = source.measures.slice();
     measures[targetIndex] = cloned.measure;
     const next = {
@@ -179,12 +197,14 @@ export class EditorClipboard {
     const removedNoteIds = noteIdsInMeasures(removedMeasures);
     const cleaned = relationsWithoutNotes(source, removedNoteIds);
     const noteIdMap = new Map();
+    const measureIdMap = new Map();
     const clonedMeasures = this.payload.measures.map(sourceMeasure => {
       const cloned = cloneMeasureWithFreshIds(sourceMeasure, idFactory);
       cloned.noteIdMap.forEach((value, key) => noteIdMap.set(key, value));
+      measureIdMap.set(String(sourceMeasure.id), String(cloned.measure.id));
       return cloned.measure;
     });
-    const addedRelations = cloneRelationsWithMap(this.payload.relations, noteIdMap, idFactory);
+    const addedRelations = cloneRelationsWithMap(this.payload.relations, noteIdMap, measureIdMap, idFactory);
 
     const measures = source.measures.slice();
     measures.splice(start, targetIds.length, ...clonedMeasures);
