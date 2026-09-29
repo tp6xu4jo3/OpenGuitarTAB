@@ -1,0 +1,62 @@
+name: Apply final-row drag canonical cleanup v3
+on: [push]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/final-row-drag-canonical-cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply canonical cleanup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-final-row-drag-canonical-cleanup.py')
+          s = p.read_text()
+          marker = '# Ensure final production editor no longer contains the dead break field.'
+          start = s.index(marker)
+          end = s.index("print('Applied final-row, drag-indicator, and canonical editor cleanup')", start)
+          s = s[:start] + s[end:]
+          p.write_text(s)
+          PY
+          python scripts/apply-final-row-drag-canonical-cleanup.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('tests/editor-architecture.test.mjs')
+          s = p.read_text()
+          pattern = r"\nfor\(const file of \['model\.js','migrate-v2\.js','commands\.js','structure-commands\.js','clipboard\.js'\]\)\{[\s\S]*?\n\}\n"
+          replacement = """
+          const modelSource=read('src/editor/model.js');
+          assert.match(modelSource,/delete layout\.systemBreakAfter/,'V3 normalization must strip the obsolete legacy break field at the input boundary');
+          assert.equal((modelSource.match(/systemBreakAfter/g)||[]).length,1,'model may mention the obsolete break field only to strip it');
+          for(const file of ['migrate-v2.js','commands.js','structure-commands.js','clipboard.js']){
+            const source=read(`src/editor/${file}`);
+            assert.equal(source.includes('systemBreakAfter'),false,`${file} must not maintain obsolete systemBreakAfter persistence`);
+          }
+          """
+          s, count = re.subn(pattern, replacement, s, count=1)
+          if count != 1:
+            raise SystemExit(f'architecture legacy-break assertion repair expected once, got {count}')
+          p.write_text(s)
+          PY
+      - name: Test
+        run: npm test
+      - name: Benchmark
+        run: npm run benchmark:editor-layout
+      - name: Check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-final-row-drag-canonical-cleanup.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v2.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v3.yml scripts/apply-final-row-drag-canonical-cleanup.py
+          git add src/editor styles tests
+          git commit -m "fix: preserve final row width and canonicalize editor invalidation"
+          git push origin HEAD:fix/final-row-drag-canonical-cleanup
