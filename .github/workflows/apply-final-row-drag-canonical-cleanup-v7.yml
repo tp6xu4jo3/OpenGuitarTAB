@@ -63,12 +63,15 @@ jobs:
 
           ui = Path('tests/ui-layout-regression.test.mjs')
           s = ui.read_text()
-          old1 = "assert.match(structure,/measureIdsForSystem\\(system\\)/,'row actions must target the measures visible in that wrapped row');"
-          new1 = "assert.doesNotMatch(structure,/measureIdsForSystem\\(system\\)/,'visual wrapping must not redefine logical row identity');"
-          old2 = "assert.match(structure,/deleteMeasures\\(documentModel, target\\.measureIds\\)/,'deleting a wrapped row must delete only its visible measures');"
-          new2 = "assert.match(structure,/deleteSystem\\(documentModel, target\\.rowIndex\\)/,'all row actions must target the same logical source row');"
-          if old1 not in s or old2 not in s: raise SystemExit('stale wrapped-row assertions missing')
-          ui.write_text(s.replace(old1,new1,1).replace(old2,new2,1))
+          replacements = [
+            ("assert.match(structure,/measureIdsForSystem\\(system\\)/,'row actions must target the measures visible in that wrapped row');", "assert.doesNotMatch(structure,/measureIdsForSystem\\(system\\)/,'visual wrapping must not redefine logical row identity');"),
+            ("assert.match(structure,/deleteMeasures\\(documentModel, target\\.measureIds\\)/,'deleting a wrapped row must delete only its visible measures');", "assert.match(structure,/deleteSystem\\(documentModel, target\\.rowIndex\\)/,'all row actions must target the same logical source row');"),
+            ("assert.match(renderer,/this\\.documentIndex = indexDocument\\(this\\.document\\)/,'Sparse renderer must reuse a document relation index between local layout operations');", "assert.match(renderer,/this\\.documentIndex = updateDocumentIndex\\(this\\.documentIndex, this\\.document/,'Sparse renderer must incrementally refresh and reuse the canonical document index between local layout operations');")
+          ]
+          for old,new in replacements:
+            if old not in s: raise SystemExit(f'stale UI regression assertion missing: {old[:100]}')
+            s=s.replace(old,new,1)
+          ui.write_text(s)
           PY
       - name: Test
         run: npm test
