@@ -773,47 +773,83 @@ export class SparseScoreRenderer {
     const geometry = columnGeometryForMeasure(this.document, measure, measureWidth, this.documentIndex);
     const cursorLeft = geometry.percentForKey(fractionKey(at)) ?? visualPercentageForAt(measure, at);
     Object.assign(input.style, { position: 'absolute', left: `${cursorLeft}%`, top: `${((Number(string) + 0.5) / this.stringCount) * 100}%`, transform: 'translate(-50%, -50%)' });
+
+    const noteNode = staff.querySelector(`.v3-note[data-at="${escapeSelector(fractionKey(at))}"][data-string="${Number(string)}"]`);
+    noteNode?.classList.add('is-editing');
     let cancelled = false;
     let committed = false;
+    let finished = false;
+    const logicalTarget = {
+      measureId: String(measureId),
+      string: Number(string),
+      at: cloneValue(at),
+      duration: cloneValue(duration || BASE_GRID_STEP)
+    };
+    const close = () => {
+      if (finished) return;
+      finished = true;
+      noteNode?.classList.remove('is-editing');
+      if (this.cursor === input) this.cursor = null;
+      input.remove();
+    };
     const commit = () => {
-      if (committed || cancelled) return;
+      if (committed || cancelled) return false;
       committed = true;
       const nextValue = normalizeFret(input.value);
-      if (nextValue === originalValue) return;
-      this.onCommitNote?.({ measureId: String(measureId), string: Number(string), at: cloneValue(at), duration: cloneValue(duration || BASE_GRID_STEP), fret: nextValue });
+      if (nextValue === originalValue) return false;
+      this.onCommitNote?.({ ...logicalTarget, fret: nextValue });
+      return true;
     };
+    const moveCursor = target => {
+      commit();
+      close();
+      const next = target || logicalTarget;
+      const nextTarget = this.root?.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(next.measureId)}"][data-at="${escapeSelector(fractionKey(next.at))}"]`);
+      if (nextTarget) window.jumpToInput?.(nextTarget, false);
+      return this.showCursor({
+        ...next,
+        initialValue: this.cursorValueAt(next.measureId, next.at, next.string)
+      });
+    };
+
     input.addEventListener('input', () => {
       const normalized = normalizeFret(input.value);
       if (input.value !== normalized) input.value = normalized;
     });
     input.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { event.preventDefault(); cancelled = true; this.hideCursor(); return; }
-      if (event.key === 'Enter') { event.preventDefault(); commit(); this.hideCursor(); return; }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelled = true;
+        close();
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+        close();
+        return;
+      }
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         input.value = '';
-        commit();
-        this.hideCursor();
+        moveCursor(logicalTarget);
         return;
       }
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const direction = event.key.replace('Arrow', '').toLowerCase();
-      const navigation = { measureId: String(measureId), string: Number(string), at: cloneValue(at), direction };
-      const next = this.navigateCursor(navigation);
-      commit();
-      this.hideCursor();
-      if (!next) return;
-      requestAnimationFrame(() => {
-        const nextTarget = this.root?.querySelector(`.v3-column-target[data-measure-id="${escapeSelector(next.measureId)}"][data-at="${escapeSelector(fractionKey(next.at))}"]`);
-        if (nextTarget) window.jumpToInput?.(nextTarget, false);
-        this.showCursor(next);
+      const next = this.navigateCursor({
+        measureId: logicalTarget.measureId,
+        string: logicalTarget.string,
+        at: logicalTarget.at,
+        direction
       });
+      moveCursor(next || logicalTarget);
     });
     input.addEventListener('blur', () => {
+      if (finished) return;
       commit();
-      if (this.cursor === input) this.cursor = null;
-      input.remove();
+      close();
     }, { once: true });
     staff.appendChild(input);
     this.cursor = input;
@@ -821,4 +857,5 @@ export class SparseScoreRenderer {
     input.select();
     return input;
   }
+
 }

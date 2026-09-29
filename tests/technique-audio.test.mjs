@@ -86,6 +86,7 @@ const audioAssetNames = (await readdir(new URL('../assets/audio/', import.meta.u
 assert.deepEqual(audioAssetNames, ['guitar-samples.m4a'], 'the repository must keep only the current recorded guitar bank');
 const sampleAsset = await stat(new URL('../assets/audio/guitar-samples.m4a', import.meta.url));
 assert.ok(sampleAsset.size > 1_800_000);
+assert.match(bankSource, /guitar-samples\.m4a\?rev=20260929b/, 'the one current bank URL must change revision when its bytes change');
 assert.match(bankSource, /fetch\(SAMPLE_BANK_URL, \{ cache: 'force-cache' \}\)/, 'bank must preload through browser cache');
 assert.match(bankSource, /context\.decodeAudioData\(encoded\)/, 'bank must decode once before playback');
 assert.match(audioSource, /plan\.offsetSeconds \+ SAMPLE_ATTACK_PREROLL_SECONDS[\s\S]*SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS/s, 'the physically aligned bank must use one fixed 20 ms safe pre-roll');

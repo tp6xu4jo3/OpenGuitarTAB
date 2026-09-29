@@ -8,6 +8,8 @@ let installed = false;
 let activeDropTarget = null;
 let activeDragPayload = null;
 let activeDropLookup = null;
+let dragFrame = 0;
+let pendingDragNode = null;
 
 function clearDropTarget() {
   activeDropTarget?.classList?.remove('is-chord-drop-target');
@@ -76,26 +78,43 @@ function handleDragStart(event) {
   chordButton.classList.add('is-dragging');
 }
 
+function updateChordDropTarget(node) {
+  const target = targetFromNode(node);
+  const column = columnNodeForTarget(target);
+  if (column === activeDropTarget) return;
+  clearDropTarget();
+  activeDropTarget = column;
+  activeDropTarget?.classList.add('is-chord-drop-target');
+}
+
+function scheduleChordDropTarget(node) {
+  pendingDragNode = node;
+  if (dragFrame) return;
+  dragFrame = requestAnimationFrame(() => {
+    dragFrame = 0;
+    const targetNode = pendingDragNode;
+    pendingDragNode = null;
+    updateChordDropTarget(targetNode);
+  });
+}
+
+function clearDragSchedule() {
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  pendingDragNode = null;
+}
+
 function handleDragOver(event) {
   if (isEditingBlocked() || !activeDragPayload) return;
-  const target = targetFromNode(event.target);
-  if (!target) {
-    clearDropTarget();
-    return;
-  }
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-  const column = columnNodeForTarget(target);
-  if (column !== activeDropTarget) {
-    clearDropTarget();
-    activeDropTarget = column;
-    activeDropTarget?.classList.add('is-chord-drop-target');
-  }
+  scheduleChordDropTarget(event.target);
 }
 
 function handleDrop(event) {
   const payload = activeDragPayload || payloadFromTransfer(event.dataTransfer);
   const target = targetFromNode(event.target);
+  clearDragSchedule();
   clearDropTarget();
   activeDragPayload = null;
   activeDropLookup = null;
@@ -115,6 +134,7 @@ function handleDrop(event) {
 
 function handleDragEnd(event) {
   event.target?.closest?.('[data-chord-id]')?.classList.remove('is-dragging');
+  clearDragSchedule();
   activeDragPayload = null;
   activeDropLookup = null;
   clearDropTarget();

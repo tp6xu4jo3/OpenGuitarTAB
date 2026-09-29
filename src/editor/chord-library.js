@@ -56,6 +56,7 @@ const OPEN_VOICINGS = Object.freeze({
   'A:maj': Object.freeze([0, 2, 2, 2, 0, 'x']),
   'A:m': Object.freeze([0, 1, 2, 2, 0, 'x']),
   'D:m': Object.freeze([1, 3, 2, 0, 'x', 'x']),
+  'D:m7': Object.freeze([1, 1, 2, 0, 'x', 'x']),
   'E:m': Object.freeze([0, 0, 0, 2, 2, 0])
 });
 

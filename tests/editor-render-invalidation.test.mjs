@@ -12,8 +12,10 @@ const commandsSource=await readFile(new URL('../src/editor/commands.js',import.m
 assert.match(rendererSource,/rebuildNavigationIndex\(\)[\s\S]*editableTimesForMeasure\(measure\)[\s\S]*navigationLookup/s,'navigation should be indexed from document rhythmic times when grid structure changes');
 assert.match(rendererSource,/navigateCursor\([\s\S]*navigationLookup\.get/s,'arrow navigation should use the cached rhythmic navigation index');
 assert.doesNotMatch(rendererSource,/navigateCursor\([\s\S]*querySelectorAll\('\.v3-column-target/s,'arrow navigation must not rescan and sort every DOM column per key press');
-assert.match(rendererSource,/const navigation = \{ measureId:[\s\S]*const next = this\.navigateCursor\(navigation\);[\s\S]*commit\(\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*this\.showCursor\(next\)/s,'arrow navigation should resolve its destination before commit replaces the current measure DOM');
-assert.match(rendererSource,/event\.key === 'Delete' \|\| event\.key === 'Backspace'[\s\S]*input\.value = '';[\s\S]*commit\(\);[\s\S]*this\.hideCursor\(\)/s,'Delete and Backspace should commit note removal immediately');
+assert.match(rendererSource,/const next = this\.navigateCursor\([\s\S]*moveCursor\(next \|\| logicalTarget\)/s,'arrow navigation should resolve the logical destination and move without a frame gap');
+const cursorMethod=rendererSource.slice(rendererSource.lastIndexOf('  showCursor({'));
+assert.doesNotMatch(cursorMethod,/requestAnimationFrame/,'keyboard cursor movement must not leave an empty animation-frame focus gap');
+assert.match(cursorMethod,/event\.key === 'Delete' \|\| event\.key === 'Backspace'[\s\S]*input\.value = '';[\s\S]*moveCursor\(logicalTarget\)/s,'Delete and Backspace should delete immediately while keeping the same logical cell selected');
 assert.match(rendererSource,/this\.cursor = input;\s*input\.focus\(\{ preventScroll: true \}\);\s*input\.select\(\);/s,'cursor focus should be synchronous so repeated arrow keys are not lost between animation frames');
 
 assert.doesNotMatch(rendererSource,/editorPlayback\?\.invalidate|updateProgressRange/,'renderer completion must not own playback invalidation or playback-index rebuilding');

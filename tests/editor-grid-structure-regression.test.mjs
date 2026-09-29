@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDocumentV3 } from '../src/editor/model.js';
 import { buildAdaptiveLayout, buildSystems, columnGeometryForMeasure, measureComplexity } from '../src/editor/layout.js';
-import { deleteMeasures, deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
+import { deleteMeasureAt, deleteMeasures, deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt } from '../src/editor/structure-commands.js';
 
 function plainMeasure(id,{mark=false,harmonic=false}={}){
   return {id,timeSignature:{numerator:4,denominator:4},groups:[],events:[{id:`${id}-e`,at:[0,1],duration:[1,4],marks:mark?[{id:`${id}-mk`,type:'strum',direction:'up'}]:[],notes:[{id:`${id}-n`,string:0,fret:'5',techniques:harmonic?[{id:`${id}-h`,type:'harmonic',touchFret:17}]:[]}]}]};
@@ -50,6 +50,10 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
   assert.equal(buildSystems(inserted).length,3);
   const deleted=deleteSystem(inserted,1).document;
   assert.equal(buildSystems(deleted).length,2,'inserted row must also be deletable');
+}
+{
+  const deleted=deleteMeasureAt(twoRows(),0,1).document;
+  assert.deepEqual(buildSystems(deleted).map(row=>row.map(m=>m.id)),[['m1','m3','m4','m5'],['m6','m7','m8']], 'deleting from a non-final row must pull the next row forward');
 }
 {
   const deleted=deleteMeasures(twoRows(),['m3','m4']).document;

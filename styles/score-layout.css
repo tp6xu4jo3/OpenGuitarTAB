@@ -7,5 +7,6 @@
 .content.score-view .score-density-segment{box-sizing:border-box;flex:0 0 auto;width:min(var(--score-density-width,100%),100%);max-width:100%;min-width:0;margin:0!important;grid-template-columns:0 minmax(0,1fr)!important;gap:0!important}
 .content.score-view .score-density-segment>.layout-rail-placeholder{display:none!important}
 .content.score-view .score-density-segment>.adaptive-layout-stack{grid-column:2;gap:0}
+.content.score-view .score-density-line>.score-density-segment:not(:last-child) .v3-measure:last-child .v3-staff::after{display:none}
 .content.score-view .adaptive-tab-system>.adaptive-layout-stack{grid-column:2}
 @media(max-width:760px){.content.score-view .score-density-line{gap:0}}

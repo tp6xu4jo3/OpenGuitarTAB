@@ -16,6 +16,8 @@ let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
 let dragGeometry = null;
+let dragFrame = 0;
+let pendingDragPoint = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -401,28 +403,41 @@ function handleRendered(event) {
   }
 }
 
-function captureDragGeometry() {
-  const rows = [...document.querySelectorAll('.row-insert-zone')].map(zone => {
-    const rect = zone.getBoundingClientRect();
-    return { index: Number(zone.dataset.insertIndex), zone, centerY: rect.top + rect.height / 2 };
-  });
-  const grids = [...document.querySelectorAll('.v3-grid[data-row]')].map(grid => {
-    const rect = grid.getBoundingClientRect();
-    const rowIndex = Number(grid.dataset.row);
-    const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
-    const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-    const boundaries = Array.from({ length: count + 1 }, (_, localBoundary) => ({
-      boundary: start + localBoundary,
-      x: rect.left + rect.width * boundaryPercent(grid, localBoundary) / 100,
-      node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start + localBoundary}"]`)
-    }));
-    return { rowIndex, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, boundaries };
-  });
+function captureDragGeometry(type) {
+  const rows = type === 'row'
+    ? [...document.querySelectorAll('.row-insert-zone')].map(zone => {
+        const rect = zone.getBoundingClientRect();
+        return { index: Number(zone.dataset.insertIndex), zone, centerY: rect.top + rect.height / 2 };
+      })
+    : [];
+  const grids = type === 'measure'
+    ? [...document.querySelectorAll('.v3-grid[data-row]')].map(grid => {
+        const rect = grid.getBoundingClientRect();
+        const rowIndex = Number(grid.dataset.row);
+        const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
+        const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
+        const widths = measureWidths(grid);
+        let cumulative = 0;
+        const boundaries = [{ boundary: start, x: rect.left, node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start}"]`) }];
+        for (let localBoundary = 1; localBoundary <= count; localBoundary++) {
+          cumulative += widths[localBoundary - 1] || 0;
+          boundaries.push({
+            boundary: start + localBoundary,
+            x: rect.left + rect.width * cumulative / 100,
+            node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start + localBoundary}"]`)
+          });
+        }
+        return { rowIndex, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, boundaries };
+      })
+    : [];
   return { rows, grids };
 }
 
 function beginDrag() {
-  dragGeometry = captureDragGeometry();
+  dragGeometry = captureDragGeometry(dragState?.type);
+  pendingDragPoint = null;
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
   clearDropUi();
 }
 
@@ -464,15 +479,42 @@ function setActiveDrop(next) {
   activeDrop = next;
 }
 
-function updateDropUi(event) {
+function updateDropUi(clientX, clientY) {
   if (!dragState) { clearDropUi(); return; }
   if (dragState.type === 'row') {
-    const target = rowBoundaryFromPoint(event.clientY);
+    const target = rowBoundaryFromPoint(clientY);
     setActiveDrop(target ? { type: 'row', index: target.index, node: target.zone } : null);
     return;
   }
-  const target = measureBoundaryFromPoint(event.clientX, event.clientY);
+  const target = measureBoundaryFromPoint(clientX, clientY);
   setActiveDrop(target ? { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary, node: target.node } : null);
+}
+
+function scheduleDropUi(event) {
+  pendingDragPoint = { x: event.clientX, y: event.clientY };
+  if (dragFrame) return;
+  dragFrame = requestAnimationFrame(() => {
+    dragFrame = 0;
+    const point = pendingDragPoint;
+    pendingDragPoint = null;
+    if (point) updateDropUi(point.x, point.y);
+  });
+}
+
+function flushDropUi(event) {
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  pendingDragPoint = null;
+  updateDropUi(event.clientX, event.clientY);
+}
+
+function resetDrag() {
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  pendingDragPoint = null;
+  dragState = null;
+  dragGeometry = null;
+  clearDropUi();
 }
 
 function commitDrop() {
@@ -490,23 +532,17 @@ function installDragHandlers() {
   document.addEventListener('dragover', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
-    updateDropUi(event);
+    scheduleDropUi(event);
   }, true);
   document.addEventListener('drop', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
     event.stopPropagation();
-    updateDropUi(event);
+    flushDropUi(event);
     commitDrop();
-    dragState = null;
-    dragGeometry = null;
-    clearDropUi();
+    resetDrag();
   }, true);
-  window.addEventListener('dragend', () => {
-    dragState = null;
-    dragGeometry = null;
-    clearDropUi();
-  }, true);
+  window.addEventListener('dragend', resetDrag, true);
 }
 
 function installGlobalActions() {

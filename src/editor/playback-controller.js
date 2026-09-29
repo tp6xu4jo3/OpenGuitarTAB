@@ -98,19 +98,31 @@ function clearEventTimers() {
   state.eventTimers = [];
 }
 
-function followPlaybackLine(node, key) {
-  if (!node || key === state.lastCenteredKey) return;
-  const sheet = node.closest('.sheet');
+function playbackVisualRows() {
+  const tabArea = document.getElementById('tabArea');
+  if (!tabArea) return [];
+  const compactRows = [...tabArea.querySelectorAll(':scope > .score-density-line')];
+  return compactRows.length ? compactRows : [...tabArea.querySelectorAll(':scope > .tab-system')];
+}
+
+function followPlaybackLine(node) {
+  if (!node) return;
+  const visualRow = node.closest?.('.score-density-line') || node.closest?.('.tab-system') || node;
+  const rows = playbackVisualRows();
+  const rowIndex = rows.indexOf(visualRow);
+  if (rowIndex < 0) return;
+  const key = `row:${rowIndex}`;
+  if (key === state.lastCenteredKey) return;
+  state.lastCenteredKey = key;
+  if (rowIndex === 0 || rowIndex === rows.length - 1) return;
+  const sheet = visualRow.closest('.sheet');
   if (!sheet || sheet.clientHeight <= 0) return;
   const sheetRect = sheet.getBoundingClientRect();
-  const nodeRect = node.getBoundingClientRect();
-  const nodeCenter = nodeRect.top + nodeRect.height / 2;
-  const centerInContent = sheet.scrollTop + (nodeCenter - sheetRect.top);
+  const rowRect = visualRow.getBoundingClientRect();
+  const rowCenter = rowRect.top + rowRect.height / 2;
+  const centerInContent = sheet.scrollTop + (rowCenter - sheetRect.top);
   const maxScrollTop = Math.max(0, sheet.scrollHeight - sheet.clientHeight);
-  if (nodeRect.top < sheetRect.top || nodeRect.bottom > sheetRect.bottom) {
-    sheet.scrollTo({ top: clamp(centerInContent - sheet.clientHeight / 2, 0, maxScrollTop), behavior: 'smooth' });
-  }
-  state.lastCenteredKey = key;
+  sheet.scrollTo({ top: clamp(centerInContent - sheet.clientHeight / 2, 0, maxScrollTop), behavior: 'smooth' });
 }
 
 function measureNodeForEntry(entry) {
@@ -146,7 +158,7 @@ function highlightEntry(entry) {
   }
   staff.appendChild(bar);
   state.beatBar = bar;
-  followPlaybackLine(measureNode?.closest('.tab-system') || measureNode, `slot:${entry.measureId}:${entry.atBeats}`);
+  followPlaybackLine(measureNode?.closest('.tab-system') || measureNode);
 }
 
 function entryForIndex(index, playback = null) {
