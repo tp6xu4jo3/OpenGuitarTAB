@@ -245,13 +245,20 @@ function applyChord(document, command, idFactory) {
   };
 }
 
+function sameValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function updateEvent(document, eventId, updater, { playback = true, layoutKind = null } = {}) {
   for (let measureIndex = 0; measureIndex < document.measures.length; measureIndex++) {
     const sourceMeasure = document.measures[measureIndex];
     const eventIndex = sourceMeasure.events.findIndex(event => event.id === eventId);
     if (eventIndex < 0) continue;
+    const sourceEvent = sourceMeasure.events[eventIndex];
+    const updatedEvent = updater(cloneValue(sourceEvent));
+    if (!updatedEvent || sameValue(sourceEvent, updatedEvent)) return { document, changeSet: createChangeSet() };
     const measure = cloneValue(sourceMeasure);
-    measure.events[eventIndex] = updater(measure.events[eventIndex]);
+    measure.events[eventIndex] = updatedEvent;
     return {
       document: withMeasure(document, measureIndex, measure),
       changeSet: changedMeasure(measure.id, { playback, layoutFrom: layoutKind ? measure.id : null, layoutKind })
@@ -266,8 +273,11 @@ function updateNote(document, noteId, updater, { playback = false, layoutKind = 
     for (let eventIndex = 0; eventIndex < sourceMeasure.events.length; eventIndex++) {
       const noteIndex = sourceMeasure.events[eventIndex].notes.findIndex(note => note.id === noteId);
       if (noteIndex < 0) continue;
+      const sourceNote = sourceMeasure.events[eventIndex].notes[noteIndex];
+      const updatedNote = updater(cloneValue(sourceNote));
+      if (!updatedNote || sameValue(sourceNote, updatedNote)) return { document, changeSet: createChangeSet() };
       const measure = cloneValue(sourceMeasure);
-      measure.events[eventIndex].notes[noteIndex] = updater(measure.events[eventIndex].notes[noteIndex]);
+      measure.events[eventIndex].notes[noteIndex] = updatedNote;
       return {
         document: withMeasure(document, measureIndex, measure),
         changeSet: changedMeasure(measure.id, { playback, layoutFrom: layoutKind ? measure.id : null, layoutKind })
@@ -364,7 +374,7 @@ function addMark(document, command, idFactory) {
     const isSweep = ['strum', 'arpeggio'].includes(mark.type);
     const retained = isSweep ? marks.filter(item => !['strum', 'arpeggio'].includes(item.type)) : marks;
     return { ...event, marks: [...retained, mark] };
-  }, { playback: false, layoutKind });
+  }, { playback: Boolean(layoutKind), layoutKind });
 }
 
 function deleteMark(document, markId) {
@@ -374,7 +384,7 @@ function deleteMark(document, markId) {
   return updateEvent(document, location.eventId, event => ({
     ...event,
     marks: (event.marks || []).filter(mark => mark.id !== markId)
-  }), { playback: false, layoutKind });
+  }), { playback: Boolean(layoutKind), layoutKind });
 }
 
 function applyRhythmAt(document, command, idFactory, transformer) {
@@ -455,6 +465,7 @@ function addRelation(document, command, idFactory) {
     document: { ...document, relations: [...(document.relations || []), relation] },
     changeSet: createChangeSet({
       measures,
+      playback: relation.type === 'slide' ? measures : [],
       relations: [relation.id],
       layoutFrom,
       layoutKind: layoutFrom ? LAYOUT_INVALIDATION.METRICS : null
@@ -472,6 +483,7 @@ function deleteRelation(document, relationId) {
     document: { ...document, relations: document.relations.filter(item => item.id !== relationId) },
     changeSet: createChangeSet({
       measures,
+      playback: relation.type === 'slide' ? measures : [],
       relations: [relationId],
       layoutFrom,
       layoutKind: layoutFrom ? LAYOUT_INVALIDATION.METRICS : null
@@ -509,8 +521,7 @@ function deleteMeasure(document, measureId) {
   measures.splice(measureIndex, 1);
   let next = { ...document, measures };
   const pruned = pruneRelationsForMissingNotes(next, noteIds);
-  const breaks = (document.layout?.systemBreakAfter || []).filter(id => id !== measureId);
-  next = { ...next, relations: pruned.relations, layout: { ...(document.layout || {}), systemBreakAfter: breaks } };
+  next = { ...next, relations: pruned.relations };
   return {
     document: next,
     changeSet: createChangeSet({

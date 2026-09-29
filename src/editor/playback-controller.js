@@ -98,23 +98,23 @@ function clearEventTimers() {
   state.eventTimers = [];
 }
 
-function playbackVisualRows() {
-  const tabArea = document.getElementById('tabArea');
-  if (!tabArea) return [];
-  const compactRows = [...tabArea.querySelectorAll(':scope > .score-density-line')];
-  return compactRows.length ? compactRows : [...tabArea.querySelectorAll(':scope > .tab-system')];
+function hasLaterVisualRow(visualRow) {
+  const selector = visualRow?.classList?.contains('score-density-line') ? '.score-density-line' : '.tab-system';
+  for (let sibling = visualRow?.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    if (sibling.matches?.(selector)) return true;
+  }
+  return false;
 }
 
 function followPlaybackLine(node) {
   if (!node) return;
   const visualRow = node.closest?.('.score-density-line') || node.closest?.('.tab-system') || node;
-  const rows = playbackVisualRows();
-  const rowIndex = rows.indexOf(visualRow);
-  if (rowIndex < 0) return;
+  const rowIndex = Number(visualRow?.dataset?.visualRow ?? visualRow?.dataset?.scoreLine);
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
   const key = `row:${rowIndex}`;
   if (key === state.lastCenteredKey) return;
   state.lastCenteredKey = key;
-  if (rowIndex === 0 || rowIndex === rows.length - 1) return;
+  if (rowIndex === 0 || !hasLaterVisualRow(visualRow)) return;
   const sheet = visualRow.closest('.sheet');
   if (!sheet || sheet.clientHeight <= 0) return;
   const sheetRect = sheet.getBoundingClientRect();

@@ -188,7 +188,7 @@ function segmentAllocation(measures, metrics, baseWidth) {
   };
 }
 
-function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeasuresPerSystem, metrics, minMeasureWidth) {
+function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeasuresPerSystem, metrics, minMeasureWidth, isFinalSourceSystem = false) {
   const result = [];
   let cursor = 0;
   const sourceMeasureCount = measures.length;
@@ -205,7 +205,11 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
     }
     if (!count) count = 1;
     const slice = measures.slice(cursor, cursor + count);
-    const rowMeasureWidth = Math.max(base.width, availableWidth / Math.max(1, slice.length));
+    const isFinalSlice = cursor + count >= measures.length;
+    const keepNaturalFinalWidth = isFinalSourceSystem && isFinalSlice && slice.length < base.slots;
+    const rowMeasureWidth = keepNaturalFinalWidth
+      ? base.width
+      : Math.max(base.width, availableWidth / Math.max(1, slice.length));
     const allocation = segmentAllocation(slice, metrics, rowMeasureWidth);
     result.push({
       sourceSystemIndex,
@@ -238,7 +242,9 @@ export function buildAdaptiveSystemLayout(measures, {
   const context = documentModel ? sourceDocument(documentModel) : sourceDocument({ version: 3, measures: sourceMeasures, relations: [], layout: {} });
   const index = documentIndex || indexDocument(context);
   const metrics = buildMetricsForMeasures(context, sourceMeasures, minMeasureWidth, index);
-  return splitLogicalSystem(sourceMeasures, Number(sourceSystemIndex) || 0, width, maxMeasuresPerSystem, metrics, minMeasureWidth);
+  const finalMeasureId = String(context.measures.at(-1)?.id || '');
+  const isFinalSourceSystem = Boolean(finalMeasureId && String(sourceMeasures.at(-1)?.id || '') === finalMeasureId);
+  return splitLogicalSystem(sourceMeasures, Number(sourceSystemIndex) || 0, width, maxMeasuresPerSystem, metrics, minMeasureWidth, isFinalSourceSystem);
 }
 
 export function buildAdaptiveLayout(documentModel, {

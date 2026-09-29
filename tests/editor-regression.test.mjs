@@ -57,6 +57,17 @@ dispatch({type:'note/set',measureId:'m-regression-2',at:[9,8],duration:[1,8],str
 
 const song={id:'song-regression',name:'Regression',tempo:120,capo:0,document:documentModel};
 const store=new ScoreStore(song);
+{
+  const beforeUpdatedAt=song.updatedAt;
+  let emits=0;
+  const unsubscribe=store.subscribe(()=>{emits+=1;});
+  const noOp=store.dispatch({type:'note/technique/remove',noteId:'n-harmonic',techniqueType:'does-not-exist'});
+  unsubscribe();
+  assert.equal(noOp.document,store.getDocument(),'no-op commands must keep the same canonical document object');
+  assert.equal(song.updatedAt,beforeUpdatedAt,'no-op commands must not dirty persistence timestamps');
+  assert.equal(emits,0,'no-op commands must not notify renderers');
+}
+assert.equal(Object.hasOwn(store.getDocument().layout,'systemBreakAfter'),false,'obsolete systemBreakAfter must be stripped at the V3 normalization boundary');
 store.prepareForPersistence({tempo:132,capo:2});
 const reloadedSong=deserializeSong(serializeSong(song));
 const reloaded=new ScoreStore(reloadedSong).getDocument();

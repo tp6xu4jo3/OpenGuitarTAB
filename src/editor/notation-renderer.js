@@ -1,3 +1,4 @@
+import { mergeChangeSets } from './commands.js';
 import { fractionKey, indexDocument, updateDocumentIndex } from './model.js';
 import { RelationRenderer } from './relation-renderer.js';
 import { isScoreViewActive } from './view-state.js';
@@ -218,16 +219,7 @@ export class NotationRenderer {
     this.document = documentModel || this.document;
     if (!this.document || !this.root) return;
     if (!changeSet || changeSet.document) this.fullRenderPending = true;
-    if (changeSet) {
-      const previous = this.pendingChangeSet || {};
-      this.pendingChangeSet = {
-        ...previous,
-        ...changeSet,
-        measures: [...new Set([...(previous.measures || []), ...(changeSet.measures || [])])],
-        relations: [...new Set([...(previous.relations || []), ...(changeSet.relations || [])])],
-        document: Boolean(previous.document || changeSet.document)
-      };
-    }
+    if (changeSet) this.pendingChangeSet = mergeChangeSets(this.pendingChangeSet, changeSet);
     if (this.pendingFrame) return;
     this.pendingFrame = requestAnimationFrame(() => {
       this.pendingFrame = 0;

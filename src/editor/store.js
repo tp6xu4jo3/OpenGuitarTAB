@@ -2,6 +2,16 @@ import { applyCommand, createChangeSet } from './commands.js';
 import { cloneValue, isDocumentV3, normalizeDocumentV3 } from './model.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
 
+function changeSetHasChanges(changeSet = {}) {
+  return Boolean(
+    changeSet.document
+    || changeSet.layoutFrom
+    || (changeSet.measures || []).length
+    || (changeSet.playback || []).length
+    || (changeSet.relations || []).length
+  );
+}
+
 export class ScoreStore {
   constructor(song = null) {
     this.song = null;
@@ -41,6 +51,7 @@ export class ScoreStore {
 
   commit(nextDocument, changeSet = createChangeSet(), { touch = true, silent = false } = {}) {
     if (!nextDocument) return { document: this.document, changeSet };
+    if (nextDocument === this.document && !changeSetHasChanges(changeSet)) return { document: this.document, changeSet };
     this.document = isDocumentV3(nextDocument) ? nextDocument : normalizeDocumentV3(nextDocument);
     if (this.song) {
       this.song.document = this.document;

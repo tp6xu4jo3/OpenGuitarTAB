@@ -188,15 +188,10 @@ export class EditorClipboard {
 
     const measures = source.measures.slice();
     measures.splice(start, targetIds.length, ...clonedMeasures);
-    const liveMeasureIds = new Set(measures.map(measure => measure.id));
-    const existingBreaks = (source.layout?.systemBreakAfter || []).filter(id => liveMeasureIds.has(id));
-    const newBreak = clonedMeasures.at(-1)?.id || null;
-    const systemBreakAfter = [...new Set([...existingBreaks, ...(newBreak ? [newBreak] : [])])];
     const next = {
       ...source,
       measures,
-      relations: [...cleaned.relations, ...addedRelations],
-      layout: { ...(source.layout || {}), systemBreakAfter }
+      relations: [...cleaned.relations, ...addedRelations]
     };
     return {
       document: next,

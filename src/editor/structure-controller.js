@@ -1,7 +1,6 @@
 import { buildSystems } from './layout.js';
 import {
   deleteMeasureAt,
-  deleteMeasures,
   deleteSystem,
   insertMeasureAt,
   insertSystem,
@@ -30,11 +29,7 @@ function setSelected(target) {
   document.querySelectorAll('.editor-row-module.is-selected,.measure-module-hitbox.is-selected').forEach(node => node.classList.remove('is-selected'));
   if (!selected) return;
   if (selected.type === 'row') {
-    const visualRow = Number(selected.visualRowIndex);
-    const selector = Number.isInteger(visualRow)
-      ? `.editor-row-module[data-visual-row="${visualRow}"]`
-      : `.editor-row-module[data-row="${selected.rowIndex}"]`;
-    const nodes = [...document.querySelectorAll(selector)];
+    const nodes = [...document.querySelectorAll(`.editor-row-module[data-row="${selected.rowIndex}"]`)];
     nodes.forEach(node => node.classList.add('is-selected'));
     const focusTarget = nodes[0];
     focusNode(focusTarget?.querySelector('.row-module-handle,.visual-row-handle') || focusTarget);
@@ -88,10 +83,7 @@ function structuralAction(target, action) {
     if (action === 'insert-before') return commitResult(insertSystem(documentModel, target.rowIndex), `已新增第 ${target.rowIndex + 1} 列`, { type: 'row', rowIndex: target.rowIndex });
     if (action === 'insert-after') return commitResult(insertSystem(documentModel, target.rowIndex + 1), `已新增第 ${target.rowIndex + 2} 列`, { type: 'row', rowIndex: target.rowIndex + 1 });
     if (action === 'delete') {
-      const result = target.measureIds?.length
-        ? deleteMeasures(documentModel, target.measureIds)
-        : deleteSystem(documentModel, target.rowIndex);
-      return commitResult(result, `已刪除第 ${Number(target.visualRowIndex ?? target.rowIndex) + 1} 列`);
+      return commitResult(deleteSystem(documentModel, target.rowIndex), `已刪除第 ${target.rowIndex + 1} 列`);
     }
   }
 
@@ -282,27 +274,22 @@ function makeInsertZone(index) {
   return zone;
 }
 
-function measureIdsForSystem(system) {
-  return [...system.querySelectorAll('.v3-grid')]
-    .flatMap(grid => String(grid.dataset.measureIds || '').split(',').filter(Boolean));
-}
-
 function rowTargetForSystem(system) {
   if (!system) return null;
   const rowIndex = Number(system.dataset.sourceRow ?? system.dataset.row);
   const visualRowIndex = Number(system.dataset.visualRow);
   if (!Number.isInteger(rowIndex) || !Number.isInteger(visualRowIndex)) return null;
-  return { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
+  return { type: 'row', rowIndex, visualRowIndex };
 }
 
 function syncHandleMetadata(handle, target) {
   if (!handle || !target) return;
   handle.dataset.row = String(target.rowIndex);
   handle.dataset.visualRow = String(target.visualRowIndex);
-  handle.setAttribute('aria-label', `第 ${target.visualRowIndex + 1} 列，可拖曳其來源列排序`);
+  handle.setAttribute('aria-label', `第 ${target.rowIndex + 1} 列，可拖曳排序`);
   const label = handle.querySelector('.row-module-label');
-  if (label) label.textContent = `第 ${target.visualRowIndex + 1} 列`;
-  handle.querySelector('.row-module-more')?.setAttribute('aria-label', `第 ${target.visualRowIndex + 1} 列操作`);
+  if (label) label.textContent = `第 ${target.rowIndex + 1} 列`;
+  handle.querySelector('.row-module-more')?.setAttribute('aria-label', `第 ${target.rowIndex + 1} 列操作`);
 }
 
 function syncVisualRowMetadata(system, visualRowIndex) {
@@ -331,7 +318,7 @@ function decorateSystem(system, visualRowIndex) {
   system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
   system.querySelectorAll('.row-drop-zone').forEach(node => node.remove());
   system.querySelector('.layout-rail-placeholder')?.remove();
-  const target = { type: 'row', rowIndex, visualRowIndex, measureIds: measureIdsForSystem(system) };
+  const target = { type: 'row', rowIndex, visualRowIndex };
   system.prepend(makeRowHandle(target, { sourceStart }));
   system.append(makeRowDropZone(rowIndex, 'before'), makeRowDropZone(rowIndex + 1, 'after'));
   system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
@@ -478,7 +465,8 @@ function finishPointerDrag(event, cancelled = false) {
   const active = dragPointer.active;
   if (active && !cancelled) {
     event.preventDefault();
-    commitDropFromElement(event.target);
+    const dropElement = document.elementFromPoint(event.clientX, event.clientY) || event.target;
+    commitDropFromElement(dropElement);
   } else if (!active && !cancelled && state) {
     if (state.type === 'row') setSelected({ type: 'row', rowIndex: state.rowIndex });
     else setSelected({ type: 'measure', rowIndex: state.rowIndex, measureIndex: state.measureIndex });

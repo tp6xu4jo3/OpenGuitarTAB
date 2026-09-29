@@ -3,6 +3,7 @@
 .content.edit-view .editor-row-module{position:relative;margin:0;padding:10px 8px;grid-template-columns:46px minmax(0,1fr);gap:10px;border:1px solid transparent;border-radius:16px;transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease}
 .content.edit-view .editor-row-module:hover,.content.edit-view .editor-row-module.is-selected{border-color:#1ed760;background:#fcfdfc}
 .content.edit-view .editor-row-module.is-selected{box-shadow:0 0 0 2px rgba(30,215,96,.10)}
+.structure-drag-row-active .content.edit-view .editor-row-module:hover,.structure-drag-row-active .content.edit-view .editor-row-module.is-selected{border-color:transparent;background:transparent;box-shadow:none}
 .content.edit-view .editor-row-module.is-dragging{opacity:.48;transform:scale(.992)}
 .row-module-handle{box-sizing:border-box;width:46px;min-width:46px;min-height:var(--system-height);padding:8px 3px;border:1px solid rgba(30,215,96,.22);border-radius:13px;background:#eaf8ef;color:#1f4930;cursor:grab;touch-action:none;user-select:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}
 .row-module-handle:hover{background:#def5e6;border-color:rgba(30,215,96,.42)}
@@ -20,6 +21,7 @@
 .content.edit-view .note-input:focus{border-color:#b8b8b8;box-shadow:none}
 .measure-module-hitbox{position:absolute;top:0;height:var(--staff-height);z-index:3;box-sizing:border-box;border:1px solid transparent;border-radius:8px;background:transparent;cursor:grab;touch-action:none;user-select:none;transition:border-color .08s ease}
 .measure-module-hitbox:hover{background:transparent;border-color:#1ed760}
+.structure-drag-measure-active .measure-module-hitbox:hover,.structure-drag-measure-active .measure-module-hitbox.is-selected{border-color:transparent;box-shadow:none}
 .structure-drag-measure-active .measure-module-hitbox{z-index:20}
 .measure-drop-zone{position:absolute;top:0;bottom:0;width:50%;z-index:1;pointer-events:none}
 .measure-drop-zone-before{left:0}

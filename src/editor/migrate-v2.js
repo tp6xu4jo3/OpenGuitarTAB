@@ -108,16 +108,14 @@ export function migrateSongToDocumentV3(song) {
 
   const rows = Array.isArray(song?.rows) && song.rows.length ? song.rows : [[]];
   const measures = [];
-  const systemBreakAfter = [];
   rows.forEach((row, rowIndex) => {
     const count = clampMeasureCount(song?.rowMeasureCounts?.[rowIndex]);
     for (let measureIndex = 0; measureIndex < count; measureIndex++) {
       measures.push(legacyMeasureToV3(song, rowIndex, measureIndex));
     }
-    if (measures.length) systemBreakAfter.push(measures.at(-1).id);
   });
 
-  return createDocumentV3({ measures, relations: [], layout: { systemBreakAfter } });
+  return createDocumentV3({ measures, relations: [] });
 }
 
 export function ensureSongDocumentV3(song) {

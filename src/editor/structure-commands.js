@@ -17,12 +17,10 @@ function normalizeSystems(document) {
 
 function flattenSystems(document, systems, { relations = document.relations || [] } = {}) {
   const measures = systems.flat();
-  const systemBreakAfter = systems.map(system => system.at(-1)?.id).filter(Boolean);
   return normalizeDocumentV3({
     ...cloneValue(document),
     measures,
-    relations: cloneValue(relations),
-    layout: { ...(cloneValue(document.layout) || {}), systemBreakAfter }
+    relations: cloneValue(relations)
   });
 }
 
