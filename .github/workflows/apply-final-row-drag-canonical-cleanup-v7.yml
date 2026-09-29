@@ -94,7 +94,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/apply-final-row-drag-canonical-cleanup.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v2.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v3.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v4.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v5.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v6.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v7.yml scripts/apply-final-row-drag-canonical-cleanup.py
+          git rm -f .github/workflows/apply-final-row-drag-canonical-cleanup.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v2.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v3.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v4.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v5.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v6.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v7.yml scripts/apply-final-row-drag-canonical-cleanup.py
           git add src/editor styles tests
           git commit -m "fix: preserve final row width and canonicalize editor invalidation"
           git push origin HEAD:fix/final-row-drag-canonical-cleanup
