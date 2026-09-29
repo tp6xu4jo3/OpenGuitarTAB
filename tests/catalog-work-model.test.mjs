@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cleanSongForWrite } from '../api/index.js';
+import { enrichSongMedia, normalizeArtistMedia } from '../src/catalog/media.js';
 import {
   aggregateCatalogWorks,
   deriveLegacyWorkId,
@@ -27,6 +28,7 @@ const works = aggregateCatalogWorks([
     name: '同一首歌',
     artist: '同一位作者',
     album: 'Album',
+    artistImage: 'artist.jpg',
     cover: 'cover.jpg',
     playStyle: 'chord',
     difficulty: 2,
@@ -41,6 +43,7 @@ const works = aggregateCatalogWorks([
     name: '同一首歌',
     artist: '同一位作者',
     album: 'Album',
+    artistImage: 'artist.jpg',
     cover: 'cover.jpg',
     playStyle: 'fingerstyle',
     difficulty: 5,
@@ -68,6 +71,7 @@ assert.equal(shared.name, '同一首歌');
 assert.equal(shared.artist, '同一位作者');
 assert.equal(shared.album, 'Album');
 assert.equal(shared.cover, 'cover.jpg');
+assert.equal(shared.artistImage, 'artist.jpg');
 assert.deepEqual(shared.arrangements.map(item => item.arrangementId), ['arr-a1', 'arr-a2']);
 assert.equal(Object.hasOwn(shared, 'difficulty'), false, 'difficulty belongs to Arrangement, not Work');
 assert.equal(Object.hasOwn(shared, 'playStyle'), false, 'playStyle belongs to Arrangement, not Work');
@@ -79,17 +83,39 @@ const persisted = cleanSongForWrite({
   id: 'song-persist',
   name: 'Persisted Work',
   artist: 'Artist',
+  album: 'Album',
+  cover: 'must-not-persist.jpg',
+  artistImage: 'must-not-persist-artist.jpg',
   document: { version: 3, measures: [{ id: 'm1', timeSignature: { numerator: 4, denominator: 4 }, events: [], groups: [] }], relations: [], layout: { systemBreakAfter: [] } }
 }, { owner: 'test', public: false });
 assert.match(persisted.workId, /^work-/);
 assert.match(persisted.arrangementId, /^arr-/);
+assert.equal(Object.hasOwn(persisted, 'cover'), false, 'album covers belong to artists.json, never a persisted song JSON');
+assert.equal(Object.hasOwn(persisted, 'artistImage'), false, 'artist images belong to artists.json, never a persisted song JSON');
 const persistedAgain = cleanSongForWrite(persisted, { owner: 'test', public: false });
 assert.equal(persistedAgain.workId, persisted.workId);
 assert.equal(persistedAgain.arrangementId, persisted.arrangementId);
 
+const media = normalizeArtistMedia({
+  version: 2,
+  artists: {
+    Artist: {
+      image: 'artist.jpg',
+      albums: { Album: { cover: 'album.jpg' } },
+      songs: { 'song-without-album': { cover: 'fallback.jpg' } }
+    }
+  }
+});
+assert.deepEqual(enrichSongMedia({ id: 'song-persist', artist: 'Artist', album: 'Album' }, media), {
+  id: 'song-persist', artist: 'Artist', album: 'Album', artistImage: 'artist.jpg', cover: 'album.jpg'
+});
+assert.equal(enrichSongMedia({ id: 'song-without-album', artist: 'Artist', album: '' }, media).cover, 'fallback.jpg');
+
 const root = fileURLToPath(new URL('..', import.meta.url));
 const apiSource = readFileSync(join(root, 'api/index.js'), 'utf8');
 assert.match(apiSource, /works:\s*aggregateCatalogWorks\(songs\)/);
+assert.match(apiSource, /readCatalogIndex\(PUBLIC_FOLDER_ID\)[\s\S]*readCatalogIndex\(TEST_FOLDER_ID\)[\s\S]*readArtistMedia\(\)/, 'catalog must use metadata indexes plus centralized media');
+assert.doesNotMatch(apiSource, /PUBLIC_CATALOG_CACHE_TTL_MS|publicCatalogCache/,'catalog consistency must not depend on warm-instance memory caches');
 assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must preserve workId but create a new arrangementId');
 assert.match(apiSource, /'workId'[\s\S]*'arrangementId'/, 'Drive JSON persistence must include both catalog identities');
 
