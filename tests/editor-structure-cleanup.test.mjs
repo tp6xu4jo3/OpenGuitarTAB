@@ -10,6 +10,7 @@ const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controlle
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
 const insertZoneCss=await readFile(new URL('../styles/editor-insert-zones.css',import.meta.url),'utf8');
 const rowControlsCss=await readFile(new URL('../styles/editor-row-controls.css',import.meta.url),'utf8');
+const editorV3Css=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
 
 assert.match(structureSource,/function rowTargetForSystem\(system\)[\s\S]*dataset\.visualRow[\s\S]*measureIdsForSystem\(system\)/s,'row actions should resolve their target from live system metadata');
 assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*beginPointerDrag\(event, \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must resolve live row metadata before pointer drag starts');
@@ -27,13 +28,16 @@ assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*commitDrop
 assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|updateDropUi|elementsFromPoint|setPointerCapture|releasePointerCapture|measure-insert-boundary|row-drag-active|measure-drag-active|addEventListener\('dragover'/,'legacy hover-target and native DnD paths must be deleted');
 assert.doesNotMatch(insertZoneCss,/drop-before|drop-after|measure-insert-boundary|measure-drag-grip|is-drag-target|measure-insert-shift/,'legacy insertion drag CSS must be removed');
 assert.doesNotMatch(rowControlsCss,/\.row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
-assert.match(rowControlsCss,/structure-drag-row-active \.row-insert-zone:hover::after/,'row drag feedback should use native CSS hover only');
-assert.match(chordDragSource,/activeDropLookup = captureDropLookup\(\)/,'chord dragging should cache column targets once at drag start');
-const chordDragOver=chordDragSource.slice(chordDragSource.indexOf('function handleDragOver('),chordDragSource.indexOf('function handleDrop('));
-assert.doesNotMatch(chordDragOver,/document\.querySelector/,'chord dragover must not perform global document lookups');
-assert.match(chordDragOver,/updateChordDropTarget\(event\.target\)/,'chord hover feedback should follow the current native drag target immediately');
-assert.doesNotMatch(chordDragSource,/scheduleChordDropTarget|pendingDragNode|dragFrame/,'chord dragging should not queue hover feedback behind requestAnimationFrame');
-assert.match(chordDragSource,/function handleDrop\(event\)[\s\S]*payloadFromTransfer\(event\.dataTransfer\)/s,'the chord payload should be read only when the user drops');
+assert.match(rowControlsCss,/structure-drag-row-active \.row-drop-zone:hover::after/,'row drag feedback must follow native hover over full-row drop zones');
+assert.match(structureSource,/dataset\.dropRowBoundary/,'structure decoration must install explicit row drop boundaries');
+assert.match(structureSource,/dataset\.dropMeasureBoundary/,'structure decoration must install explicit measure drop boundaries');
+assert.doesNotMatch(dropResolution,/getBoundingClientRect|querySelector|elementsFromPoint/,'final structure drop resolution must read only the hovered drop-zone dataset');
+const chordPointerMove=chordDragSource.slice(chordDragSource.indexOf('function handlePointerMove('),chordDragSource.indexOf('function applyChordDrop('));
+assert.doesNotMatch(chordPointerMove,/querySelector|elementFromPoint|elementsFromPoint|getBoundingClientRect|classList\.remove/,'chord pointermove must only cross the drag threshold and activate native hover');
+assert.match(chordPointerMove,/Math\.hypot[\s\S]*classList\.add\('chord-drag-active'\)/s,'chord dragging must activate one root hover state after the movement threshold');
+assert.match(chordDragSource,/function finishPointerDrag\(event[\s\S]*targetFromNode\(event\.target\)[\s\S]*applyChordDrop/s,'chord target resolution and mutation must happen only on pointerup');
+assert.doesNotMatch(chordDragSource,/dragstart|dragover|dragend|dataTransfer|CHORD_DRAG_MIME|activeDropLookup|activeDropTarget|captureDropLookup|is-chord-drop-target/,'legacy HTML5 chord drag state must be deleted');
+assert.match(editorV3Css,/\.chord-drag-active \.v3-column-target:hover::after\{[^}]*width:3px[^}]*background:#1ed760/s,'chord green indicator must be driven directly by native hover');
 for(const source of [controllerSource,chordDragSource]){
   assert.equal(source.includes('isEditingBlocked'),true,'editor interactions should use canonical view-state editing blocking');
   assert.equal(source.includes('isPreviewActive'),false,'editor controllers should not duplicate preview/score blocking logic');

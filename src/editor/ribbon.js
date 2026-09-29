@@ -196,7 +196,6 @@ export class EditorRibbon {
         const voicing = chord.voicings[0];
         if (!voicing) return;
         const chordButton = button('editor-chord-button', chord.symbol);
-        chordButton.draggable = true;
         chordButton.dataset.chordId = chord.id;
         chordButton.dataset.voicingId = voicing.id;
         chordButton.title = `${chord.symbol} · ${voicingText(voicing.frets)}`;

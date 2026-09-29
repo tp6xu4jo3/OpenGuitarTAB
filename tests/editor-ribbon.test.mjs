@@ -21,7 +21,7 @@ assert.match(controller,/isContinuous\(RIBBON_SECTIONS\.CHORD\)/);
 assert.match(ribbon,/createContinuousButton\(RIBBON_SECTIONS\.TECHNIQUE\)/);
 assert.match(ribbon,/createContinuousButton\(RIBBON_SECTIONS\.CHORD\)/);
 assert.match(ribbon,/onChordSelect\?\.\(\{ chordId:/);
-assert.match(ribbon,/draggable = true/,'clickable chords must remain draggable too');
+assert.doesNotMatch(ribbon,/draggable\s*=\s*true/,'chord buttons must not revive the throttled HTML5 drag path');
 assert.match(styles,/\.editor-ribbon-tab\{[^}]*background:#1ed760/s);
 assert.match(styles,/\.editor-continuous-button/);
 assert.match(styles,/\.editor-chord-button\.is-active/);
