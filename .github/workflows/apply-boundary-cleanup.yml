@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: python scripts/apply-boundary-cleanup.py
+      - run: |
+          python scripts/apply-boundary-cleanup.py
+          sed -i '/^\.measure-module-badge{display:none!important}$/d' styles/editor-insert-zones.css
       - run: npm test
       - run: npm run benchmark:editor-layout
       - run: npm run check
