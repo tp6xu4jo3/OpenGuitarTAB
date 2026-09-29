@@ -34,7 +34,7 @@ Controller code may coordinate interactions, but it must not create a second dat
 ## Production rendering
 
 - `renderer.js` — the production `SparseScoreRenderer`. It renders sparse V3 events directly, owns the visible TAB grid, adaptive visual rows, local measure updates, and a document-derived navigation index.
-- `notation-renderer.js` — notation/technique/chord overlay rendering. A render pass builds one V3 document index and shares it with relation rendering.
+- `notation-renderer.js` — notation/technique/chord overlay rendering. It maintains the V3 document index incrementally from ChangeSets and shares that index with relation rendering.
 - `relation-renderer.js` — SVG slide/tie/slur rendering. Relations are Note-ID based and use continuation segments when endpoints cross visual grids/systems.
 - `layout.js` — shared adaptive layout for edit and score views. Normal layout wraps source systems responsively; compact score mode packs source-system segments by available width and notation complexity.
 
@@ -69,7 +69,7 @@ The renderer builds an ordered navigation index when grid/document structure cha
 
 - `playback-index.js` — builds the playable timeline directly from V3 fractions and editable times.
 - `playback-controller.js` — owns playback-index invalidation/rebuild policy, scheduling, progress, and playhead state.
-- `audio-engine.js` — Web Audio guitar synthesis only.
+- `audio-engine.js` — Web Audio scheduling and guitar playback backed by the recorded M4A sample bank with same-string pitch shifting.
 
 Playback invalidation is driven by `ChangeSet.playback`, not render completion. Playback-index rebuilding is lazy: ordinary note-content edits may keep the existing timeline topology for navigation/progress until playback actually needs fresh event/note data, while grid/structure changes mark the timeline topology dirty immediately.
 

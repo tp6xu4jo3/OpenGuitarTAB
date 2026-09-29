@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { createDocumentV3, fractionKey } from '../src/editor/model.js';
 import { ensureSongDocumentV3 } from '../src/editor/migrate-v2.js';
 import { editableTimesForMeasure } from '../src/editor/rhythm-grid.js';
@@ -12,6 +12,8 @@ const insertZoneCss=await readFile(new URL('../styles/editor-insert-zones.css',i
 const rowControlsCss=await readFile(new URL('../styles/editor-row-controls.css',import.meta.url),'utf8');
 const editorV3Css=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
 const editorModulesCss=await readFile(new URL('../styles/editor-modules.css',import.meta.url),'utf8');
+const styleFiles=(await readdir(new URL('../styles/',import.meta.url))).filter(name=>name.endsWith('.css'));
+const productionCss=(await Promise.all(styleFiles.map(name=>readFile(new URL(`../styles/${name}`,import.meta.url),'utf8')))).join('\n');
 
 assert.match(structureSource,/function rowTargetForSystem\(system\)[\s\S]*dataset\.visualRow[\s\S]*return \{ type: 'row', rowIndex, visualRowIndex \}/s,'row actions should resolve one logical source-row identity from live system metadata');
 assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*beginPointerDrag\(event, \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must resolve live row metadata before pointer drag starts');
@@ -41,6 +43,11 @@ assert.match(structureSource,/for \(let localBoundary = 0; localBoundary <= coun
 assert.match(editorModulesCss,/\.measure-drop-boundary \.structure-drop-indicator/,'measure drag feedback must anchor the shared insertion indicator to a canonical nearest-boundary target');
 assert.doesNotMatch(structureSource,/measure-drop-zone-before|measure-drop-zone-after|makeMeasureDropZone/,'measure dragging must not duplicate interior boundaries as left and right half-zones');
 assert.doesNotMatch(editorModulesCss,/measure-drop-zone-before|measure-drop-zone-after|\.measure-drop-zone\{/,'legacy duplicated measure half-zones must be removed');
+for(const deadSelector of ['.content.edit-view .cell','.content.edit-view .small-cell','.content.edit-view .note-input','.measure-module-badge','.row-insert-button']){
+  assert.equal(productionCss.includes(deadSelector),false,`obsolete Dense/insert selector should be removed from production styles: ${deadSelector}`);
+}
+assert.equal(productionCss.includes('.row-insert-zone:hover::before'),false,'legacy row hover pseudo-line must not coexist with the shared structure-drop-indicator');
+assert.equal(rowControlsCss.includes('.row-insert-zone::before'),false,'canonical row controls must not neutralize an old pseudo-line with an override');
 assert.match(editorModulesCss,/structure-drag-row-active \.content\.edit-view \.editor-row-module:hover[^}]*border-color:transparent/s,'row drag must suppress the ordinary green row outline so only one insertion bar remains');
 assert.match(editorModulesCss,/structure-drag-measure-active \.measure-module-hitbox:hover[^}]*border-color:transparent/s,'measure drag must suppress the ordinary green measure outline so only one insertion bar remains');
 assert.match(structureSource,/row-boundary-drop-target\[data-drop-row-boundary\]/,'row drop resolution must read the one canonical row-boundary target');

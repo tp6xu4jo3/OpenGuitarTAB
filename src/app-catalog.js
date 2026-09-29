@@ -6,6 +6,7 @@ let catalogBrowser = null;
 let libraryBrowser = null;
 let catalogLoadError = '';
 let libraryLoadError = '';
+let catalogLoadGeneration = 0;
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -320,12 +321,15 @@ function renderLibraryGrid() {
 }
 
 async function loadCatalog() {
+  const generation = ++catalogLoadGeneration;
   try {
     const result = await dataSource.catalog();
+    if (generation !== catalogLoadGeneration) return;
     catalogWorks = Array.isArray(result.works) ? result.works : [];
     catalogLoadError = '';
     renderCatalog();
   } catch (error) {
+    if (generation !== catalogLoadGeneration) return;
     console.error(error);
     catalogWorks = [];
     catalogLoadError = dataSourceLoadErrorMessage(error, '公共曲譜');

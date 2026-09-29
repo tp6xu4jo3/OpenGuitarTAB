@@ -40,10 +40,17 @@ const meta = { owner: 'admin', public: true };
     relations: [],
     layout: { systemBreakAfter: ['m1'] }
   };
-  const persisted = cleanSongForWrite({ ...baseSong, document }, meta);
-  assert.deepEqual(persisted.document, document);
+  const persisted = cleanSongForWrite({ ...baseSong, rowMeasureCounts: [1], document }, meta);
+  assert.equal(persisted.document.version, 3);
+  assert.deepEqual(persisted.document.layout, {}, 'V3 persistence must normalize obsolete systemBreakAfter data away');
+  assert.equal(Object.hasOwn(persisted, 'rows'), false, 'V3 persistence must not write legacy rows');
+  assert.equal(Object.hasOwn(persisted, 'rhythmRows'), false, 'V3 persistence must not write legacy rhythmRows');
+  assert.equal(Object.hasOwn(persisted, 'rowMeasureCounts'), false, 'V3 persistence must not write legacy rowMeasureCounts');
   const serialized = JSON.parse(JSON.stringify(persisted));
-  assert.deepEqual(serialized.document, document);
+  assert.equal(Object.hasOwn(serialized, 'rows'), false);
+  assert.equal(Object.hasOwn(serialized, 'rhythmRows'), false);
+  assert.equal(Object.hasOwn(serialized, 'rowMeasureCounts'), false);
+  assert.deepEqual(serialized.document.layout, {});
 }
 
 {

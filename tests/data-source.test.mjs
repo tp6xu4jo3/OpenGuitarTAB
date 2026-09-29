@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LocalTestDataSource, LOCAL_TEST_STORAGE_KEY } from '../src/data/local-test-data-source.js';
 import { ServerDataSource } from '../src/data/server-data-source.js';
+import { settledMapWithConcurrency } from '../api/index.js';
 import { createDataSource } from '../src/data/data-source.js';
 import { DATA_SOURCE_TARGET } from '../src/data/runtime-target.js';
 
@@ -63,6 +64,101 @@ await reopened.reset();
 assert.equal((await reopened.library()).songs.find(song => song.id === 'song-a').name, 'Alpha', 'reset must restore repo fixtures');
 assert.ok(fetchCalls.every(url => !url.includes('/api')), 'LocalTestDataSource must never call /api');
 assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTestDataSource may fetch only static test fixtures');
+
+
+{
+  const catalogOnlyCalls = [];
+  const source = new LocalTestDataSource({
+    storage: new MemoryStorage(),
+    baseHref,
+    now,
+    fetchImpl: async input => {
+      const url = String(input);
+      catalogOnlyCalls.push(url);
+      return { ok: responses.has(url), status: responses.has(url) ? 200 : 404, json: async () => structuredClone(responses.get(url)) };
+    }
+  });
+  const result = await source.catalog();
+  assert.deepEqual(catalogOnlyCalls, [`${baseHref}test-data/pages/catalog.json`], 'catalog must read metadata only, not every song document');
+  assert.equal(result.songs.length, 2);
+  assert.equal(result.songs.every(song => !Object.hasOwn(song, 'document') && !Object.hasOwn(song, 'rows')), true, 'catalog metadata must not carry score documents');
+}
+
+{
+  let attempts = 0;
+  const source = new LocalTestDataSource({
+    storage: new MemoryStorage(),
+    baseHref,
+    now,
+    fetchImpl: async input => {
+      const url = String(input);
+      if (url.endsWith('/test-data/pages/catalog.json') && attempts++ === 0) {
+        return { ok: false, status: 503, json: async () => ({}) };
+      }
+      return { ok: responses.has(url), status: responses.has(url) ? 200 : 404, json: async () => structuredClone(responses.get(url)) };
+    }
+  });
+  await assert.rejects(source.fixtureCatalog(), /TEST_FIXTURE_503/);
+  const retry = await source.fixtureCatalog();
+  assert.equal(Array.isArray(retry.works), true);
+  assert.equal(attempts, 2, 'a rejected catalog Promise must be evicted so the next call retries');
+}
+
+{
+  let songAttempts = 0;
+  const source = new LocalTestDataSource({
+    storage: new MemoryStorage(),
+    baseHref,
+    now,
+    fetchImpl: async input => {
+      const url = String(input);
+      if (url.endsWith('/test-data/pages/songs/pages-a.json') && songAttempts++ === 0) {
+        return { ok: false, status: 503, json: async () => ({}) };
+      }
+      return { ok: responses.has(url), status: responses.has(url) ? 200 : 404, json: async () => structuredClone(responses.get(url)) };
+    }
+  });
+  const meta = catalog.works[0].arrangements[0];
+  await assert.rejects(source.fixtureSong({ ...meta, name: 'Alpha', artist: 'Artist A', album: 'One' }), /TEST_FIXTURE_503/);
+  const retry = await source.fixtureSong({ ...meta, name: 'Alpha', artist: 'Artist A', album: 'One' });
+  assert.equal(retry.id, 'song-a');
+  assert.equal(songAttempts, 2, 'a rejected song Promise must be evicted so the next call retries');
+}
+
+{
+  const lazyCalls = [];
+  const source = new LocalTestDataSource({
+    storage: new MemoryStorage(),
+    baseHref,
+    now,
+    fetchImpl: async input => {
+      const url = String(input);
+      lazyCalls.push(url);
+      return { ok: responses.has(url), status: responses.has(url) ? 200 : 404, json: async () => structuredClone(responses.get(url)) };
+    }
+  });
+  const loaded = await source.loadSong('pages-a');
+  assert.equal(loaded.song.id, 'song-a');
+  assert.equal(lazyCalls.includes(`${baseHref}test-data/pages/songs/pages-a.json`), true);
+  assert.equal(lazyCalls.includes(`${baseHref}test-data/pages/songs/pages-b.json`), false, 'loading one fixture must not download unrelated scores');
+}
+
+{
+  let active = 0;
+  let maxActive = 0;
+  const values = Array.from({ length: 12 }, (_, index) => index);
+  const results = await settledMapWithConcurrency(values, 3, async value => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise(resolve => setTimeout(resolve, 2));
+    active -= 1;
+    if (value === 5) throw new Error('expected');
+    return value * 2;
+  });
+  assert.equal(maxActive <= 3, true, 'Drive JSON reads must respect the configured concurrency bound');
+  assert.equal(results[5].status, 'rejected');
+  assert.equal(results[6].value, 12);
+}
 
 const originalFetch = globalThis.fetch;
 let defaultFetchCalls = 0;
