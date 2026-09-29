@@ -24,8 +24,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@media\(max-width:760px\)[\s\S]*#rhythmToggleButton\{grid-column:1;grid-row:1\}[\s\S]*#scoreDensityControl\{grid-column:2;grid-row:1\}/s,
-  'mobile playback layout must keep both mode switches together on the first row'
+  /@media\(max-width:760px\)[\s\S]*#rhythmToggleButton\{grid-column:1\/3;grid-row:1[\s\S]*#scoreDensityControl\{grid-column:3\/5;grid-row:1[\s\S]*\.capo-box\{grid-column:5;grid-row:1[\s\S]*\.tempo-box\{grid-column:6;grid-row:1[\s\S]*\.progress-box\{grid-column:1\/4;grid-row:2[\s\S]*\.playback-sound-controls\{grid-column:4\/6;grid-row:2[\s\S]*\.play-button\{grid-column:6;grid-row:2/s,
+  'mobile playback layout should consume the available width in two rows before its narrow fallback'
 );
 assert.match(
   viewState,

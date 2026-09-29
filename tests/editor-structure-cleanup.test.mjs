@@ -18,11 +18,14 @@ assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes mus
 const dragUpdate=structureSource.slice(structureSource.indexOf('function updateDropUi('),structureSource.indexOf('function commitDrop('));
 assert.doesNotMatch(dragUpdate,/querySelectorAll|getBoundingClientRect|elementFromPoint/,'dragover must use the drag-start geometry snapshot without forcing layout reads or document scans');
 assert.match(structureSource,/function captureDragGeometry\(type\)[\s\S]*getBoundingClientRect[\s\S]*function beginDrag\(\)[\s\S]*dragGeometry = captureDragGeometry\(dragState\?\.type\)/s,'drag geometry should be measured once and only for the active drag type');
-assert.match(structureSource,/function scheduleDropUi\(event\)[\s\S]*requestAnimationFrame/s,'native dragover bursts should coalesce to at most one drop-target update per frame');
+assert.match(structureSource,/document\.addEventListener\('dragover'[\s\S]*updateDropUi\(event\.clientX, event\.clientY\)/s,'every native dragover should immediately refresh the latest geometric drop target');
+assert.doesNotMatch(structureSource,/scheduleDropUi|pendingDragPoint|dragFrame/,'structure dragging should not add a frame queue on top of native dragover');
 assert.match(chordDragSource,/activeDropLookup = captureDropLookup\(\)/,'chord dragging should cache column targets once at drag start');
 const chordDragOver=chordDragSource.slice(chordDragSource.indexOf('function handleDragOver('),chordDragSource.indexOf('function handleDrop('));
 assert.doesNotMatch(chordDragOver,/document\.querySelector/,'chord dragover must not perform global document lookups');
-assert.match(chordDragSource,/function scheduleChordDropTarget\(node\)[\s\S]*requestAnimationFrame/s,'chord drag highlighting should also be frame-coalesced');
+assert.match(chordDragOver,/updateChordDropTarget\(event\.target\)/,'chord hover feedback should follow the current native drag target immediately');
+assert.doesNotMatch(chordDragSource,/scheduleChordDropTarget|pendingDragNode|dragFrame/,'chord dragging should not queue hover feedback behind requestAnimationFrame');
+assert.match(chordDragSource,/function handleDrop\(event\)[\s\S]*payloadFromTransfer\(event\.dataTransfer\)/s,'the chord payload should be read only when the user drops');
 for(const source of [controllerSource,chordDragSource]){
   assert.equal(source.includes('isEditingBlocked'),true,'editor interactions should use canonical view-state editing blocking');
   assert.equal(source.includes('isPreviewActive'),false,'editor controllers should not duplicate preview/score blocking logic');

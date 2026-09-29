@@ -16,8 +16,6 @@ let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
 let dragGeometry = null;
-let dragFrame = 0;
-let pendingDragPoint = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -435,9 +433,6 @@ function captureDragGeometry(type) {
 
 function beginDrag() {
   dragGeometry = captureDragGeometry(dragState?.type);
-  pendingDragPoint = null;
-  if (dragFrame) cancelAnimationFrame(dragFrame);
-  dragFrame = 0;
   clearDropUi();
 }
 
@@ -490,28 +485,7 @@ function updateDropUi(clientX, clientY) {
   setActiveDrop(target ? { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary, node: target.node } : null);
 }
 
-function scheduleDropUi(event) {
-  pendingDragPoint = { x: event.clientX, y: event.clientY };
-  if (dragFrame) return;
-  dragFrame = requestAnimationFrame(() => {
-    dragFrame = 0;
-    const point = pendingDragPoint;
-    pendingDragPoint = null;
-    if (point) updateDropUi(point.x, point.y);
-  });
-}
-
-function flushDropUi(event) {
-  if (dragFrame) cancelAnimationFrame(dragFrame);
-  dragFrame = 0;
-  pendingDragPoint = null;
-  updateDropUi(event.clientX, event.clientY);
-}
-
 function resetDrag() {
-  if (dragFrame) cancelAnimationFrame(dragFrame);
-  dragFrame = 0;
-  pendingDragPoint = null;
   dragState = null;
   dragGeometry = null;
   clearDropUi();
@@ -532,13 +506,13 @@ function installDragHandlers() {
   document.addEventListener('dragover', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
-    scheduleDropUi(event);
+    updateDropUi(event.clientX, event.clientY);
   }, true);
   document.addEventListener('drop', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
     event.stopPropagation();
-    flushDropUi(event);
+    updateDropUi(event.clientX, event.clientY);
     commitDrop();
     resetDrag();
   }, true);
