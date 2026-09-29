@@ -1,0 +1,35 @@
+name: Apply canonical boundary cleanup
+
+on:
+  push:
+    branches:
+      - refactor/persistence-localtest-drag-cleanup
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/persistence-localtest-drag-cleanup
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python scripts/apply-boundary-cleanup.py
+      - run: npm test
+      - run: npm run benchmark:editor-layout
+      - run: npm run check
+      - run: npm run build
+      - name: Commit validated cleanup
+        run: |
+          rm scripts/apply-boundary-cleanup.py
+          rm .github/workflows/apply-boundary-cleanup.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "refactor: clean persistence and test boundaries"
+          git push origin HEAD:refactor/persistence-localtest-drag-cleanup
