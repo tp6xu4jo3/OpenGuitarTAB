@@ -84,6 +84,7 @@ export function aggregateCatalogWorks(arrangements = []) {
         name: String(source.name || '未命名曲譜'),
         artist: String(source.artist || ''),
         album: String(source.album || ''),
+        artistImage: String(source.artistImage || ''),
         cover: String(source.cover || ''),
         arrangements: []
       };
@@ -92,6 +93,7 @@ export function aggregateCatalogWorks(arrangements = []) {
       if (!work.name && source.name) work.name = String(source.name);
       if (!work.artist && source.artist) work.artist = String(source.artist);
       if (!work.album && source.album) work.album = String(source.album);
+      if (!work.artistImage && source.artistImage) work.artistImage = String(source.artistImage);
       if (!work.cover && source.cover) work.cover = String(source.cover);
     }
     work.arrangements.push(arrangementFromCatalogMeta(source));
