@@ -91,6 +91,7 @@ assert.match(playbackCss,/\.mode-toggle-label\{[^}]*word-break:keep-all[^}]*over
 assert.match(responsiveCss,/\.editor-ribbon\{[^}]*width:100%[^}]*max-width:100%[^}]*overflow:hidden/s,'mobile ribbon must stay inside the viewport');
 assert.match(responsiveCss,/\.editor-ribbon-section\{[^}]*width:100%[^}]*overflow-x:auto[^}]*touch-action:pan-x/s,'mobile ribbon contents must scroll horizontally instead of overflowing the viewport');
 assert.match(responsiveCss,/\.editor-ribbon-tabs\{[^}]*width:100%[^}]*overflow-x:auto/s,'mobile ribbon tabs must remain horizontally reachable on narrow screens');
+assert.match(responsiveCss,/@media \(max-width:1500px\)[\s\S]*\.editor-view \.editor-ribbon\{[^}]*width:100%[^}]*overflow:hidden[\s\S]*\.editor-view \.editor-ribbon-section\{[^}]*width:100%[^}]*overflow-x:auto/s,'narrow desktop and tablet ribbons must use a viewport-width scroll container');
 assert.match(responsiveCss,/\.mobile-menu-button\{position:absolute/,'mobile navigation button must scroll with the page instead of covering titles');
 assert.match(responsiveCss,/\.catalog-view,\.library-view\{position:relative;padding-top:88px\}/,'mobile catalog must reserve space above the title');
 assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width must be capped by the visible viewport');

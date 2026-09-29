@@ -14,7 +14,6 @@ let installed = false;
 let selected = null;
 let contextTarget = null;
 let dragState = null;
-let activeDrop = null;
 let dragPointer = null;
 
 function toast(message) { window.showToast?.(message); }
@@ -221,16 +220,9 @@ function boundaryPercent(grid, localBoundary) {
 }
 
 function addMeasureUi(grid, rowIndex) {
-  grid.querySelectorAll('.measure-module-hitbox,.measure-insert-boundary').forEach(node => node.remove());
+  grid.querySelectorAll('.measure-module-hitbox').forEach(node => node.remove());
   const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
   const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-  for (let localBoundary = 0; localBoundary <= count; localBoundary++) {
-    const line = document.createElement('div');
-    line.className = 'measure-insert-boundary';
-    line.dataset.boundary = String(start + localBoundary);
-    line.style.left = `${boundaryPercent(grid, localBoundary)}%`;
-    grid.appendChild(line);
-  }
   for (let localMeasure = 0; localMeasure < count; localMeasure++) {
     const measureIndex = start + localMeasure;
     const left = boundaryPercent(grid, localMeasure);
@@ -398,76 +390,70 @@ function beginPointerDrag(event, state, sourceNode) {
     startY: event.clientY,
     active: false
   };
-  clearDropUi();
-  try { sourceNode.setPointerCapture?.(event.pointerId); } catch {}
 }
 
-function hitAtPoint(selector, x, y) {
-  for (const node of document.elementsFromPoint(x, y)) {
-    const match = node.closest?.(selector);
-    if (match) return match;
-  }
-  return null;
+function dropElementAt(x, y) {
+  return document.elementFromPoint(x, y);
 }
 
-function rowDropTarget(x, y) {
-  const zone = hitAtPoint('.row-insert-zone', x, y);
+function rowDropTargetFromElement(element, y) {
+  const zone = element?.closest?.('.row-insert-zone');
   if (zone) {
     const index = Number(zone.dataset.insertIndex);
-    return Number.isInteger(index) ? { type: 'row', index, node: zone } : null;
+    return Number.isInteger(index) ? { index } : null;
   }
-  const row = hitAtPoint('.editor-row-module', x, y);
+  const row = element?.closest?.('.editor-row-module');
   if (!row) return null;
   const rowIndex = Number(row.dataset.sourceRow ?? row.dataset.row);
   if (!Number.isInteger(rowIndex)) return null;
   const rect = row.getBoundingClientRect();
-  const index = rowIndex + (y >= rect.top + rect.height / 2 ? 1 : 0);
-  const node = document.querySelector(`.row-insert-zone[data-insert-index="${index}"]`) || row;
-  return { type: 'row', index, node };
+  return { index: rowIndex + (y >= rect.top + rect.height / 2 ? 1 : 0) };
 }
 
-function measureDropTarget(x, y) {
-  const hitbox = hitAtPoint('.measure-module-hitbox', x, y);
+function measureDropTargetFromElement(element, x) {
+  const hitbox = element?.closest?.('.measure-module-hitbox');
   if (!hitbox) return null;
   const rowIndex = Number(hitbox.dataset.row);
   const measureIndex = Number(hitbox.dataset.measure);
   if (!Number.isInteger(rowIndex) || !Number.isInteger(measureIndex)) return null;
   const rect = hitbox.getBoundingClientRect();
-  const boundary = measureIndex + (x >= rect.left + rect.width / 2 ? 1 : 0);
-  const grid = hitbox.closest('.v3-grid');
-  const node = grid?.querySelector(`.measure-insert-boundary[data-boundary="${boundary}"]`) || hitbox;
-  return { type: 'measure', rowIndex, boundary, node };
+  return {
+    rowIndex,
+    boundary: measureIndex + (x >= rect.left + rect.width / 2 ? 1 : 0)
+  };
 }
 
-function updateDropUi(clientX, clientY) {
-  if (!dragState) { clearDropUi(); return; }
-  setActiveDrop(dragState.type === 'row'
-    ? rowDropTarget(clientX, clientY)
-    : measureDropTarget(clientX, clientY));
-}
-
-function commitDrop() {
+function commitDropAt(x, y) {
   const store = currentStore();
-  if (!store || !dragState || !activeDrop) return;
+  if (!store || !dragState) return false;
+  const element = dropElementAt(x, y);
+  if (!element) return false;
   const documentModel = store.getDocument();
-  if (dragState.type === 'row' && activeDrop.type === 'row') {
-    commitResult(moveSystem(documentModel, dragState.rowIndex, activeDrop.index), '已移動列');
-  } else if (dragState.type === 'measure' && activeDrop.type === 'measure') {
-    commitResult(moveMeasureAt(documentModel, dragState.rowIndex, dragState.measureIndex, activeDrop.rowIndex, activeDrop.boundary), '已移動小節');
+  if (dragState.type === 'row') {
+    const target = rowDropTargetFromElement(element, y);
+    if (!target) return false;
+    return commitResult(moveSystem(documentModel, dragState.rowIndex, target.index), '已移動列');
   }
+  if (dragState.type === 'measure') {
+    const target = measureDropTargetFromElement(element, x);
+    if (!target) return false;
+    return commitResult(
+      moveMeasureAt(documentModel, dragState.rowIndex, dragState.measureIndex, target.rowIndex, target.boundary),
+      '已移動小節'
+    );
+  }
+  return false;
 }
 
 function resetDrag() {
-  if (dragPointer?.visualNode) dragPointer.visualNode.classList.remove('is-dragging');
-  if (dragPointer?.sourceNode && dragPointer.pointerId != null) {
-    try {
-      if (dragPointer.sourceNode.hasPointerCapture?.(dragPointer.pointerId)) dragPointer.sourceNode.releasePointerCapture(dragPointer.pointerId);
-    } catch {}
-  }
-  document.documentElement.classList.remove('row-drag-active');
+  dragPointer?.visualNode?.classList.remove('is-dragging');
+  document.documentElement.classList.remove(
+    'structure-drag-active',
+    'structure-drag-row-active',
+    'structure-drag-measure-active'
+  );
   dragPointer = null;
   dragState = null;
-  clearDropUi();
 }
 
 function handlePointerMove(event) {
@@ -477,10 +463,9 @@ function handlePointerMove(event) {
     if (distance < 5) return;
     dragPointer.active = true;
     dragPointer.visualNode?.classList.add('is-dragging');
-    if (dragState?.type === 'row') document.documentElement.classList.add('row-drag-active');
+    document.documentElement.classList.add('structure-drag-active', `structure-drag-${dragState.type}-active`);
   }
   event.preventDefault();
-  updateDropUi(event.clientX, event.clientY);
 }
 
 function finishPointerDrag(event, cancelled = false) {
@@ -488,8 +473,8 @@ function finishPointerDrag(event, cancelled = false) {
   const state = dragState;
   const active = dragPointer.active;
   if (active && !cancelled) {
-    updateDropUi(event.clientX, event.clientY);
-    commitDrop();
+    event.preventDefault();
+    commitDropAt(event.clientX, event.clientY);
   } else if (!active && !cancelled && state) {
     if (state.type === 'row') setSelected({ type: 'row', rowIndex: state.rowIndex });
     else setSelected({ type: 'measure', rowIndex: state.rowIndex, measureIndex: state.measureIndex });
