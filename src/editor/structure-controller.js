@@ -212,25 +212,20 @@ function boundaryPercent(grid, localBoundary) {
   return widths.slice(0, safe).reduce((sum, value) => sum + value, 0);
 }
 
-function makeMeasureDropZone(rowIndex, boundary, edge) {
+function makeMeasureDropBoundary(rowIndex, boundary, left, width, anchor) {
   const zone = document.createElement('div');
-  zone.className = `measure-drop-zone measure-drop-zone-${edge}`;
+  zone.className = 'measure-drop-boundary';
   zone.dataset.row = String(rowIndex);
   zone.dataset.dropMeasureBoundary = String(boundary);
   zone.setAttribute('aria-hidden', 'true');
-  return zone;
-}
-
-function makeRowDropZone(boundary, edge) {
-  const zone = document.createElement('div');
-  zone.className = `row-drop-zone row-drop-zone-${edge}`;
-  zone.dataset.dropRowBoundary = String(boundary);
-  zone.setAttribute('aria-hidden', 'true');
+  zone.style.left = `${left}%`;
+  zone.style.width = `${width}%`;
+  zone.style.setProperty('--drop-indicator-x', `${anchor}%`);
   return zone;
 }
 
 function addMeasureUi(grid, rowIndex) {
-  grid.querySelectorAll('.measure-module-hitbox').forEach(node => node.remove());
+  grid.querySelectorAll('.measure-module-hitbox,.measure-drop-boundary').forEach(node => node.remove());
   const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
   const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
   for (let localMeasure = 0; localMeasure < count; localMeasure++) {
@@ -243,13 +238,19 @@ function addMeasureUi(grid, rowIndex) {
     hitbox.dataset.measure = String(measureIndex);
     hitbox.style.left = `${left}%`;
     hitbox.style.width = `${Math.max(0, right - left)}%`;
-    hitbox.append(
-      makeMeasureDropZone(rowIndex, measureIndex, 'before'),
-      makeMeasureDropZone(rowIndex, measureIndex + 1, 'after')
-    );
     hitbox.addEventListener('pointerdown', event => beginPointerDrag(event, { type: 'measure', rowIndex, measureIndex }, hitbox));
     hitbox.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'measure', rowIndex, measureIndex }, event.clientX, event.clientY); });
     grid.appendChild(hitbox);
+  }
+  for (let localBoundary = 0; localBoundary <= count; localBoundary++) {
+    const boundary = boundaryPercent(grid, localBoundary);
+    const previous = localBoundary > 0 ? boundaryPercent(grid, localBoundary - 1) : boundary;
+    const next = localBoundary < count ? boundaryPercent(grid, localBoundary + 1) : boundary;
+    const zoneStart = localBoundary === 0 ? 0 : (previous + boundary) / 2;
+    const zoneEnd = localBoundary === count ? 100 : (boundary + next) / 2;
+    const width = Math.max(0.001, zoneEnd - zoneStart);
+    const anchor = Math.max(0, Math.min(100, (boundary - zoneStart) / width * 100));
+    grid.appendChild(makeMeasureDropBoundary(rowIndex, start + localBoundary, zoneStart, width, anchor));
   }
 }
 
@@ -257,7 +258,10 @@ function makeInsertZone(index) {
   const zone = document.createElement('div');
   zone.className = 'row-insert-zone';
   zone.dataset.insertIndex = String(index);
-  zone.dataset.dropRowBoundary = String(index);
+  const dropTarget = document.createElement('div');
+  dropTarget.className = 'row-boundary-drop-target';
+  dropTarget.dataset.dropRowBoundary = String(index);
+  dropTarget.setAttribute('aria-hidden', 'true');
   const controls = document.createElement('div');
   controls.className = 'row-insert-controls';
   const add = document.createElement('button');
@@ -271,7 +275,7 @@ function makeInsertZone(index) {
     insertSystemAtBoundary(index);
   });
   controls.appendChild(add);
-  zone.appendChild(controls);
+  zone.append(dropTarget, controls);
   return zone;
 }
 
@@ -317,11 +321,9 @@ function decorateSystem(system, visualRowIndex) {
   system.dataset.row = String(rowIndex);
   system.dataset.visualRow = String(visualRowIndex);
   system.querySelector('.row-module-handle,.visual-row-handle')?.remove();
-  system.querySelectorAll('.row-drop-zone').forEach(node => node.remove());
   system.querySelector('.layout-rail-placeholder')?.remove();
   const target = { type: 'row', rowIndex, visualRowIndex };
   system.prepend(makeRowHandle(target, { sourceStart }));
-  system.append(makeRowDropZone(rowIndex, 'before'), makeRowDropZone(rowIndex + 1, 'after'));
   system.querySelectorAll('.v3-grid').forEach(grid => addMeasureUi(grid, rowIndex));
   return { rowIndex, sourceStart };
 }
@@ -405,13 +407,13 @@ function beginPointerDrag(event, state, sourceNode) {
 }
 
 function rowDropTargetFromElement(element) {
-  const zone = element?.closest?.('[data-drop-row-boundary]');
+  const zone = element?.closest?.('.row-boundary-drop-target[data-drop-row-boundary]');
   const index = Number(zone?.dataset?.dropRowBoundary);
   return Number.isInteger(index) ? { index } : null;
 }
 
 function measureDropTargetFromElement(element) {
-  const zone = element?.closest?.('.measure-drop-zone[data-row][data-drop-measure-boundary]');
+  const zone = element?.closest?.('.measure-drop-boundary[data-row][data-drop-measure-boundary]');
   const rowIndex = Number(zone?.dataset?.row);
   const boundary = Number(zone?.dataset?.dropMeasureBoundary);
   return Number.isInteger(rowIndex) && Number.isInteger(boundary) ? { rowIndex, boundary } : null;
@@ -439,8 +441,8 @@ function commitDropFromElement(element) {
 
 function dragZoneFromElement(element) {
   if (!dragState || !element) return null;
-  if (dragState.type === 'row') return element.closest?.('[data-drop-row-boundary]') || null;
-  if (dragState.type === 'measure') return element.closest?.('.measure-drop-zone[data-row][data-drop-measure-boundary]') || null;
+  if (dragState.type === 'row') return element.closest?.('.row-boundary-drop-target[data-drop-row-boundary]') || null;
+  if (dragState.type === 'measure') return element.closest?.('.measure-drop-boundary[data-row][data-drop-measure-boundary]') || null;
   return null;
 }
 
