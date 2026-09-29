@@ -60,6 +60,15 @@ jobs:
           s=s.replace("assert.match(editorCss,/structure-drag-row-active", "assert.match(editorModulesCss,/structure-drag-row-active", 1)
           s=s.replace("assert.match(editorCss,/structure-drag-measure-active", "assert.match(editorModulesCss,/structure-drag-measure-active", 1)
           cleanup.write_text(s)
+
+          ui = Path('tests/ui-layout-regression.test.mjs')
+          s = ui.read_text()
+          old1 = "assert.match(structure,/measureIdsForSystem\\(system\\)/,'row actions must target the measures visible in that wrapped row');"
+          new1 = "assert.doesNotMatch(structure,/measureIdsForSystem\\(system\\)/,'visual wrapping must not redefine logical row identity');"
+          old2 = "assert.match(structure,/deleteMeasures\\(documentModel, target\\.measureIds\\)/,'deleting a wrapped row must delete only its visible measures');"
+          new2 = "assert.match(structure,/deleteSystem\\(documentModel, target\\.rowIndex\\)/,'all row actions must target the same logical source row');"
+          if old1 not in s or old2 not in s: raise SystemExit('stale wrapped-row assertions missing')
+          ui.write_text(s.replace(old1,new1,1).replace(old2,new2,1))
           PY
       - name: Test
         run: npm test
