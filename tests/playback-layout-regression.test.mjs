@@ -24,8 +24,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@media\(max-width:760px\)[\s\S]*\.editor-view \.header-meta-controls\{[^}]*min-width:max-content[\s\S]*\.editor-view \.tempo-box\{width:62px[\s\S]*\.editor-view \.capo-box\{width:76px[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content minmax\(30px,1fr\) minmax\(72px,1\.15fr\) 48px/s,
-  'mobile header must keep visible BPM/capo values on row one and all playback controls on row two'
+  /@media\(max-width:760px\)[\s\S]*\.header-meta-controls,\.editor-view \.play-panel\{display:contents\}[\s\S]*#rhythmToggleButton\{grid-column:1\/4;grid-row:2\}[\s\S]*#scoreDensityControl\{grid-column:4\/7;grid-row:2\}[\s\S]*\.tempo-box\{grid-column:7\/10;grid-row:2\}[\s\S]*\.capo-box\{grid-column:10\/13;grid-row:2\}[\s\S]*\.progress-box\{grid-column:1\/7;grid-row:3\}[\s\S]*\.playback-sound-controls\{grid-column:7\/11;grid-row:3\}[\s\S]*\.play-button\{grid-column:11\/13;grid-row:3\}/s,
+  'mobile header must keep title row clear and organize controls across rows two and three'
 );
 assert.match(
   viewState,
