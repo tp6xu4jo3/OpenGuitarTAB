@@ -15,7 +15,7 @@ export function normalizeArtistMedia(raw) {
   for (const [artistName, rawProfile] of Object.entries(artists)) {
     const artist = cleanText(artistName);
     if (!artist || !rawProfile || typeof rawProfile !== 'object' || Array.isArray(rawProfile)) continue;
-    const profile = { image: cleanUrl(rawProfile.image), albums: {} };
+    const profile = { image: cleanUrl(rawProfile.image), albums: {}, songs: {} };
     const rawAlbums = rawProfile.albums && typeof rawProfile.albums === 'object' && !Array.isArray(rawProfile.albums)
       ? rawProfile.albums
       : {};
@@ -24,6 +24,15 @@ export function normalizeArtistMedia(raw) {
       if (!album) continue;
       const cover = typeof rawAlbum === 'string' ? cleanUrl(rawAlbum) : cleanUrl(rawAlbum?.cover);
       if (cover) profile.albums[album] = { cover };
+    }
+    const rawSongs = rawProfile.songs && typeof rawProfile.songs === 'object' && !Array.isArray(rawProfile.songs)
+      ? rawProfile.songs
+      : {};
+    for (const [songId, rawSong] of Object.entries(rawSongs)) {
+      const id = cleanText(songId);
+      if (!id) continue;
+      const cover = typeof rawSong === 'string' ? cleanUrl(rawSong) : cleanUrl(rawSong?.cover);
+      if (cover) profile.songs[id] = { cover };
     }
     normalized.artists[artist] = profile;
   }
@@ -40,9 +49,10 @@ export function mediaForSong(raw, song) {
   const profile = mediaForArtist(raw, song?.artist);
   if (!profile) return { artistImage: '', cover: '' };
   const album = cleanText(song?.album);
+  const songId = cleanText(song?.id || song?.songId);
   return {
     artistImage: cleanUrl(profile.image),
-    cover: album ? cleanUrl(profile.albums?.[album]?.cover) : ''
+    cover: cleanUrl(profile.albums?.[album]?.cover) || cleanUrl(profile.songs?.[songId]?.cover)
   };
 }
 
