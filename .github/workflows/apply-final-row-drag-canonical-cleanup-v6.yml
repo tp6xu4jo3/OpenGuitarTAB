@@ -1,0 +1,98 @@
+name: Apply final-row drag canonical cleanup v6
+on: [push]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/final-row-drag-canonical-cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply canonical cleanup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-final-row-drag-canonical-cleanup.py')
+          s = p.read_text()
+          marker = '# Ensure final production editor no longer contains the dead break field.'
+          start = s.index(marker)
+          end = s.index("print('Applied final-row, drag-indicator, and canonical editor cleanup')", start)
+          p.write_text(s[:start] + s[end:])
+          PY
+          python scripts/apply-final-row-drag-canonical-cleanup.py
+          python - <<'PY'
+          from pathlib import Path
+
+          # The model keeps one compatibility-boundary mention solely to strip old input.
+          arch = Path('tests/editor-architecture.test.mjs')
+          s = arch.read_text()
+          old = """
+          for(const file of ['model.js','migrate-v2.js','commands.js','structure-commands.js','clipboard.js']){
+            const source=await readFile(new URL(`../src/editor/${file}`,import.meta.url),'utf8');
+            assert.equal(source.includes('systemBreakAfter'),false,`${file} must not retain obsolete systemBreakAfter persistence`);
+          }
+          """
+          new = """
+          const modelSource=read('src/editor/model.js');
+          assert.match(modelSource,/delete layout\\.systemBreakAfter/,'V3 normalization must strip the obsolete legacy break field at the input boundary');
+          assert.equal((modelSource.match(/systemBreakAfter/g)||[]).length,1,'model may mention the obsolete break field only to strip it');
+          for(const file of ['migrate-v2.js','commands.js','structure-commands.js','clipboard.js']){
+            const source=read(`src/editor/${file}`);
+            assert.equal(source.includes('systemBreakAfter'),false,`${file} must not maintain obsolete systemBreakAfter persistence`);
+          }
+          """
+          if old not in s:
+            raise SystemExit('architecture legacy-break block missing')
+          arch.write_text(s.replace(old,new,1))
+
+          cleanup = Path('tests/editor-structure-cleanup.test.mjs')
+          s = cleanup.read_text()
+          exact = [
+            (
+              "const editorV3Css=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');\n",
+              "const editorV3Css=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');\nconst editorModulesCss=await readFile(new URL('../styles/editor-modules.css',import.meta.url),'utf8');\n"
+            ),
+            (
+              "assert.match(structureSource,/function rowTargetForSystem\\(system\\)[\\s\\S]*dataset\\.visualRow[\\s\\S]*measureIdsForSystem\\(system\\)/s,'row actions should resolve their target from live system metadata');",
+              "assert.match(structureSource,/function rowTargetForSystem\\(system\\)[\\s\\S]*dataset\\.visualRow[\\s\\S]*return \\{ type: 'row', rowIndex, visualRowIndex \\}/s,'row actions should resolve one logical source-row identity from live system metadata');"
+            ),
+            (
+              "assert.doesNotMatch(structureSource,/document\\.elementFromPoint|document\\.elementsFromPoint/,'structure dragging must use the browser-resolved pointer event target without extra hit-testing');",
+              "assert.equal((structureSource.match(/document\\.elementFromPoint\\(/g)||[]).length,1,'structure dragging may coordinate-hit-test exactly once on pointerup for mouse/touch/pen');\nassert.doesNotMatch(structureSource,/document\\.elementsFromPoint/,'structure dragging must not scan stacked pointer targets');"
+            ),
+            (
+              "assert.match(structureSource,/function finishPointerDrag\\(event[\\s\\S]*commitDropFromElement\\(event\\.target\\)/s,'document mutation should use the final pointerup target directly');",
+              "assert.match(structureSource,/function finishPointerDrag\\(event[\\s\\S]*document\\.elementFromPoint\\(event\\.clientX, event\\.clientY\\)[\\s\\S]*commitDropFromElement\\(dropElement\\)/s,'structure drop should coordinate-hit-test exactly once only on pointerup');"
+            ),
+            (
+              "assert.match(chordDragSource,/function finishPointerDrag\\(event[\\s\\S]*targetFromNode\\(event\\.target\\)[\\s\\S]*applyChordDrop/s,'chord target resolution and mutation must happen only on pointerup');",
+              "assert.match(chordDragSource,/function finishPointerDrag\\(event[\\s\\S]*document\\.elementFromPoint\\(event\\.clientX, event\\.clientY\\)[\\s\\S]*targetFromNode\\(dropElement\\)[\\s\\S]*applyChordDrop/s,'chord drop should coordinate-hit-test exactly once only on pointerup');\nassert.equal((chordDragSource.match(/document\\.elementFromPoint\\(/g)||[]).length,1,'chord dragging may coordinate-hit-test exactly once on pointerup');"
+            )
+          ]
+          for old,new in exact:
+            if old not in s:
+              raise SystemExit(f'stale cleanup assertion missing: {old[:100]}')
+            s=s.replace(old,new,1)
+          s=s.replace("assert.match(editorCss,/structure-drag-row-active", "assert.match(editorModulesCss,/structure-drag-row-active", 1)
+          s=s.replace("assert.match(editorCss,/structure-drag-measure-active", "assert.match(editorModulesCss,/structure-drag-measure-active", 1)
+          cleanup.write_text(s)
+          PY
+      - name: Test
+        run: npm test
+      - name: Benchmark
+        run: npm run benchmark:editor-layout
+      - name: Check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-final-row-drag-canonical-cleanup.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v2.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v3.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v4.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v5.yml .github/workflows/apply-final-row-drag-canonical-cleanup-v6.yml scripts/apply-final-row-drag-canonical-cleanup.py
+          git add src/editor styles tests
+          git commit -m "fix: preserve final row width and canonicalize editor invalidation"
+          git push origin HEAD:fix/final-row-drag-canonical-cleanup
