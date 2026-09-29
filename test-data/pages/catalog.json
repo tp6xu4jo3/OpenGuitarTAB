@@ -6,7 +6,6 @@
       "name": "Summer",
       "artist": "久石讓",
       "album": "菊次郎の夏",
-      "cover": "",
       "arrangements": [
         {
           "id": "arr-drive-pages-summer",
@@ -34,7 +33,6 @@
       "name": "簡單愛",
       "artist": "周杰倫",
       "album": "范特西",
-      "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500",
       "arrangements": [
         {
           "id": "arr-drive-pages-jiandanai",
@@ -62,7 +60,6 @@
       "name": "安靜",
       "artist": "周杰倫",
       "album": "范特西",
-      "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500",
       "arrangements": [
         {
           "id": "arr-drive-1gelZK32Fuv0NlrBcqQJw46MKl116FI7M",
@@ -119,7 +116,6 @@
       "tempo": 97,
       "capo": 0,
       "beatsPerMeasure": 4,
-      "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500",
       "owner": "admin",
       "uploadedBy": "admin",
       "public": true,
@@ -140,7 +136,6 @@
       "tempo": 74,
       "capo": 3,
       "beatsPerMeasure": 4,
-      "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500",
       "owner": "admin",
       "uploadedBy": "admin",
       "public": true,

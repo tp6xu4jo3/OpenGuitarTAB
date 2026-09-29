@@ -1,5 +1,4 @@
 import { aggregateCatalogWorks } from './work-model.js';
-import { artistProfileFor } from './artist-profiles.js';
 
 function normalizeText(value) {
   return String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
@@ -57,6 +56,11 @@ function createElement(tag, className, text = '') {
 function artistInitial(artist) {
   const clean = String(artist || '').trim();
   return clean ? [...clean][0].toUpperCase() : '？';
+}
+
+function artistImageFromWorks(works, artist) {
+  const target = String(artist || '').trim();
+  return String(works.find(work => String(work?.artist || '').trim() === target && work?.artistImage)?.artistImage || '');
 }
 
 function createRailButton(direction, label, rail) {
@@ -174,7 +178,7 @@ export class SongBrowser {
     const avatar = createElement('span', 'artist-filter-avatar');
     const fallback = createElement('span', 'artist-filter-fallback', artistInitial(artist));
     avatar.appendChild(fallback);
-    const imageUrl = artistProfileFor(artist)?.image;
+    const imageUrl = artistImageFromWorks(this.works, artist);
     if (imageUrl) {
       const image = document.createElement('img');
       image.className = 'artist-filter-image';

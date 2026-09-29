@@ -10,10 +10,6 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(projectRoot, 'dist');
 
-async function build(target) {
-  await execFileAsync(process.execPath, ['scripts/build-static.mjs', `--target=${target}`], { cwd: projectRoot });
-}
-
 async function exists(filePath) {
   try {
     await access(filePath, constants.F_OK);
@@ -23,7 +19,7 @@ async function exists(filePath) {
   }
 }
 
-await build('production');
+await execFileAsync(process.execPath, ['scripts/build-static.mjs'], { cwd: projectRoot });
 assert.equal(
   await readFile(path.join(dist, 'src', 'data', 'runtime-target.js'), 'utf8'),
   "export const DATA_SOURCE_TARGET = 'server';\n",
@@ -35,14 +31,22 @@ assert.equal(
   'production output must not ship GitHub test fixtures'
 );
 
-await build('test-pages');
 assert.equal(
-  await readFile(path.join(dist, 'src', 'data', 'runtime-target.js'), 'utf8'),
+  await readFile(path.join(projectRoot, 'src', 'data', 'runtime-target.js'), 'utf8'),
   "export const DATA_SOURCE_TARGET = 'local-test';\n",
-  'GitHub Pages output must always use LocalTestDataSource'
+  'GitHub Pages repository source must use LocalTestDataSource'
 );
-assert.equal(await exists(path.join(dist, 'test-data', 'pages', 'catalog.json')), true);
-assert.equal(await exists(path.join(dist, 'test-data', 'pages', 'songs', 'pages-summer.json')), true);
+assert.equal(await exists(path.join(projectRoot, 'test-data', 'pages', 'catalog.json')), true);
+assert.equal(await exists(path.join(projectRoot, 'test-data', 'pages', 'artists.json')), true);
+assert.equal(await exists(path.join(projectRoot, 'test-data', 'pages', 'songs', 'pages-summer.json')), true);
 
-await build('production');
+const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+assert.equal('build:test-pages' in packageJson.scripts, false, 'the unused alternate Pages artifact build path must stay removed');
+
+await assert.rejects(
+  execFileAsync(process.execPath, ['scripts/build-static.mjs', '--target=test-pages'], { cwd: projectRoot }),
+  /Unknown build target: test-pages/,
+  'the obsolete second Pages build path must not silently reappear'
+);
+
 console.log('Build target tests passed');

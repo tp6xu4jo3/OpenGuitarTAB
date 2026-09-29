@@ -15,13 +15,21 @@ class MemoryStorage {
 const baseHref = 'https://tp6xu4jo3.github.io/OpenGuitarTAB/';
 const catalog = {
   works: [
-    { id: 'work-a', workId: 'work-a', name: 'Alpha', artist: 'Artist A', album: 'One', cover: '', arrangements: [{ id: 'arr-drive-pages-a', arrangementId: 'arr-drive-pages-a', workId: 'work-a', songId: 'song-a', source: 'fixture', playStyle: 'fingerstyle', difficulty: 2, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 90, capo: 1, beatsPerMeasure: 4, _driveFileId: 'pages-a', _driveFileName: 'pages-a.json', _driveModifiedTime: 'fixture-a' }] },
-    { id: 'work-b', workId: 'work-b', name: 'Beta', artist: 'Artist B', album: 'Two', cover: '', arrangements: [{ id: 'arr-drive-pages-b', arrangementId: 'arr-drive-pages-b', workId: 'work-b', songId: 'song-b', source: 'fixture', playStyle: 'chord', difficulty: 3, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 100, capo: 0, beatsPerMeasure: 4, _driveFileId: 'pages-b', _driveFileName: 'pages-b.json', _driveModifiedTime: 'fixture-b' }] }
+    { id: 'work-a', workId: 'work-a', name: 'Alpha', artist: 'Artist A', album: 'One', arrangements: [{ id: 'arr-drive-pages-a', arrangementId: 'arr-drive-pages-a', workId: 'work-a', songId: 'song-a', source: 'fixture', playStyle: 'fingerstyle', difficulty: 2, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 90, capo: 1, beatsPerMeasure: 4, _driveFileId: 'pages-a', _driveFileName: 'pages-a.json', _driveModifiedTime: 'fixture-a' }] },
+    { id: 'work-b', workId: 'work-b', name: 'Beta', artist: 'Artist B', album: 'Two', arrangements: [{ id: 'arr-drive-pages-b', arrangementId: 'arr-drive-pages-b', workId: 'work-b', songId: 'song-b', source: 'fixture', playStyle: 'chord', difficulty: 3, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 100, capo: 0, beatsPerMeasure: 4, _driveFileId: 'pages-b', _driveFileName: 'pages-b.json', _driveModifiedTime: 'fixture-b' }] }
   ]
+};
+const artists = {
+  version: 2,
+  artists: {
+    'Artist A': { image: 'artist-a.jpg', albums: { One: { cover: 'alpha-cover.jpg' } } },
+    'Artist B': { image: '', albums: { Two: { cover: 'beta-cover.jpg' } } }
+  }
 };
 const responses = new Map([
   [`${baseHref}test-data/pages/catalog.json`, catalog],
-  [`${baseHref}test-data/pages/songs/pages-a.json`, { id: 'song-a', name: 'Alpha', artist: 'Artist A', album: 'One', tempo: 90, capo: 1, beatsPerMeasure: 4, rows: [{}] }],
+  [`${baseHref}test-data/pages/artists.json`, artists],
+  [`${baseHref}test-data/pages/songs/pages-a.json`, { id: 'song-a', name: 'Alpha', artist: 'Artist A', album: 'One', cover: 'legacy-alpha-cover.jpg', tempo: 90, capo: 1, beatsPerMeasure: 4, rows: [{}] }],
   [`${baseHref}test-data/pages/songs/pages-b.json`, { id: 'song-b', name: 'Beta', artist: 'Artist B', album: 'Two', tempo: 100, capo: 0, beatsPerMeasure: 4, rows: [{}] }]
 ]);
 const fetchCalls = [];
@@ -49,11 +57,18 @@ const alpha = library.songs.find(song => song.id === 'song-a');
 assert.equal(alpha.workId, 'work-a');
 assert.equal(alpha.arrangementId, 'arr-drive-pages-a');
 assert.equal(alpha._driveFileId, 'pages-a');
+assert.equal(alpha.cover, 'alpha-cover.jpg', 'library media must be projected from artists.json instead of the song fixture');
+assert.equal(alpha.artistImage, 'artist-a.jpg');
 
 alpha.name = 'Alpha edited';
+const fetchCountBeforeSave = fetchCalls.length;
 const saved = await local.saveSong(alpha);
 assert.equal(saved.song._driveFileId, 'pages-a', 'saving a fixture must keep the same local fixture identity');
-assert.equal(JSON.parse(storage.getItem(LOCAL_TEST_STORAGE_KEY)).records['pages-a'].name, 'Alpha edited');
+const storedAlpha = JSON.parse(storage.getItem(LOCAL_TEST_STORAGE_KEY)).records['pages-a'];
+assert.equal(storedAlpha.name, 'Alpha edited');
+assert.equal(Object.hasOwn(storedAlpha, 'cover'), false, 'catalog media must never be persisted back into local song data');
+assert.equal(Object.hasOwn(storedAlpha, 'artistImage'), false, 'artist images must never be persisted back into local song data');
+assert.equal(fetchCalls.slice(fetchCountBeforeSave).some(url => url.endsWith('/songs/pages-b.json')), false, 'saving one fixture must not load unrelated full scores');
 
 const reopened = new LocalTestDataSource({ fetchImpl, storage, baseHref, now });
 library = await reopened.library();
@@ -64,7 +79,6 @@ await reopened.reset();
 assert.equal((await reopened.library()).songs.find(song => song.id === 'song-a').name, 'Alpha', 'reset must restore repo fixtures');
 assert.ok(fetchCalls.every(url => !url.includes('/api')), 'LocalTestDataSource must never call /api');
 assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTestDataSource may fetch only static test fixtures');
-
 
 {
   const catalogOnlyCalls = [];
@@ -79,9 +93,15 @@ assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTest
     }
   });
   const result = await source.catalog();
-  assert.deepEqual(catalogOnlyCalls, [`${baseHref}test-data/pages/catalog.json`], 'catalog must read metadata only, not every song document');
+  assert.deepEqual(new Set(catalogOnlyCalls), new Set([
+    `${baseHref}test-data/pages/catalog.json`,
+    `${baseHref}test-data/pages/artists.json`
+  ]), 'catalog must read only metadata and centralized media, not every song document');
+  assert.equal(catalogOnlyCalls.some(url => url.includes('/songs/')), false);
   assert.equal(result.songs.length, 2);
   assert.equal(result.songs.every(song => !Object.hasOwn(song, 'document') && !Object.hasOwn(song, 'rows')), true, 'catalog metadata must not carry score documents');
+  assert.equal(result.songs.find(song => song.id === 'song-a').cover, 'alpha-cover.jpg');
+  assert.equal(result.works.find(work => work.workId === 'work-a').artistImage, 'artist-a.jpg');
 }
 
 {
@@ -139,6 +159,7 @@ assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTest
   });
   const loaded = await source.loadSong('pages-a');
   assert.equal(loaded.song.id, 'song-a');
+  assert.equal(loaded.song.cover, 'alpha-cover.jpg');
   assert.equal(lazyCalls.includes(`${baseHref}test-data/pages/songs/pages-a.json`), true);
   assert.equal(lazyCalls.includes(`${baseHref}test-data/pages/songs/pages-b.json`), false, 'loading one fixture must not download unrelated scores');
 }
@@ -172,7 +193,7 @@ try {
   await defaultLocal.catalog();
   const defaultServer = new ServerDataSource({ origin: 'https://openguitartab.vercel.app' });
   await defaultServer.session();
-  assert.equal(defaultFetchCalls, 2, 'default local and server transports should call browser fetch with the correct receiver');
+  assert.equal(defaultFetchCalls, 3, 'local catalog reads metadata plus media and the server transport performs its session request');
 } finally {
   globalThis.fetch = originalFetch;
 }

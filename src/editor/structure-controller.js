@@ -465,11 +465,6 @@ function showDragIndicatorForElement(element) {
   if (indicator.parentElement !== zone) zone.appendChild(indicator);
 }
 
-function handlePointerOver(event) {
-  if (!dragPointer?.active || isEditingBlocked()) return;
-  showDragIndicatorForElement(event.target);
-}
-
 function resetDrag() {
   dragIndicator?.remove();
   dragPointer?.visualNode?.classList.remove('is-dragging');
@@ -482,8 +477,21 @@ function resetDrag() {
   dragState = null;
 }
 
+function handlePointerOver(event) {
+  if (!dragPointer?.active) return;
+  if (isEditingBlocked()) {
+    resetDrag();
+    return;
+  }
+  showDragIndicatorForElement(event.target);
+}
+
 function handlePointerMove(event) {
-  if (!dragPointer || event.pointerId !== dragPointer.pointerId || isEditingBlocked()) return;
+  if (!dragPointer || event.pointerId !== dragPointer.pointerId) return;
+  if (isEditingBlocked()) {
+    resetDrag();
+    return;
+  }
   if (!dragPointer.active) {
     const distance = Math.hypot(event.clientX - dragPointer.startX, event.clientY - dragPointer.startY);
     if (distance < 5) return;
@@ -499,11 +507,12 @@ function finishPointerDrag(event, cancelled = false) {
   if (!dragPointer || event.pointerId !== dragPointer.pointerId) return;
   const state = dragState;
   const active = dragPointer.active;
-  if (active && !cancelled) {
+  const blocked = isEditingBlocked();
+  if (active && !cancelled && !blocked) {
     event.preventDefault();
     const dropElement = document.elementFromPoint(event.clientX, event.clientY) || event.target;
     commitDropFromElement(dropElement);
-  } else if (!active && !cancelled && state) {
+  } else if (!active && !cancelled && !blocked && state) {
     if (state.type === 'row') setSelected({ type: 'row', rowIndex: state.rowIndex });
     else setSelected({ type: 'measure', rowIndex: state.rowIndex, measureIndex: state.measureIndex });
   }

@@ -7,6 +7,8 @@ let libraryBrowser = null;
 let catalogLoadError = '';
 let libraryLoadError = '';
 let catalogLoadGeneration = 0;
+let libraryLoadGeneration = 0;
+let previewLoadGeneration = 0;
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -30,7 +32,7 @@ function dataSourceLoadErrorMessage(error, subject) {
   }
   if (error?.status === 429) return `${subject}服務暫時受到流量限制，請稍後再試。`;
   if (dataSource.isLocalTest && String(error?.message || '').startsWith('TEST_FIXTURE_')) {
-    return `GitHub Test ${subject} fixture 載入失敗，請確認 Pages 使用 build:test-pages 或已發布 test-data/pages。`;
+    return `GitHub Test ${subject} fixture 載入失敗，請確認 Pages 已發布 test-data/pages。`;
   }
   return `${subject}載入失敗，請稍後再試。`;
 }
@@ -338,7 +340,9 @@ async function loadCatalog() {
 }
 
 async function loadUserLibrary() {
+  const generation = ++libraryLoadGeneration;
   const user = window.authState?.user;
+  const username = String(user?.username || '');
   if (!user) {
     songs = [];
     currentSongId = null;
@@ -349,6 +353,7 @@ async function loadUserLibrary() {
   }
   try {
     const result = await dataSource.library();
+    if (generation !== libraryLoadGeneration || String(window.authState?.user?.username || '') !== username) return;
     songs = (Array.isArray(result.songs) ? result.songs : []).map(hydrateSong);
     libraryLoadError = '';
     if (!songs.some(song => song.id === currentSongId)) currentSongId = songs[0]?.id || null;
@@ -363,6 +368,7 @@ async function loadUserLibrary() {
     renderSongList();
     renderLibraryGrid();
   } catch (error) {
+    if (generation !== libraryLoadGeneration || String(window.authState?.user?.username || '') !== username) return;
     console.error(error);
     songs = [];
     currentSongId = null;
@@ -382,8 +388,12 @@ async function openCatalogPreview(id) {
   const found = findCatalogArrangement(id);
   if (!found) { setRoute('#/catalog'); return; }
   const { arrangement } = found;
+  const generation = ++previewLoadGeneration;
+  const routeHash = location.hash;
   try {
-    previewSong = await fetchCatalogArrangement(arrangement);
+    const loaded = await fetchCatalogArrangement(arrangement);
+    if (generation !== previewLoadGeneration || location.hash !== routeHash) return;
+    previewSong = loaded;
     previewSong.id = `preview:${arrangement.arrangementId || arrangement.songId}`;
     previewSong._catalogFileId = arrangement._driveFileId;
     currentSongId = previewSong.id;
@@ -400,6 +410,7 @@ async function openCatalogPreview(id) {
     showPage('editor');
     window.editorV3?.renderCurrentSong?.();
   } catch (error) {
+    if (generation !== previewLoadGeneration || location.hash !== routeHash) return;
     console.error(error);
     showToast('曲譜預覽載入失敗');
     setRoute('#/catalog');
@@ -425,6 +436,7 @@ function handleRoute() {
   const parts = hash.slice(2).split('/');
   const route = parts[0] || 'catalog';
   const id = parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : null;
+  if (route !== 'preview') previewLoadGeneration += 1;
   if (route === 'catalog') {
     previewSong = null;
     setPreviewActive(false);
@@ -496,6 +508,8 @@ window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
   const pendingRoute = event.detail?.pendingRoute;
   if (!event.detail?.user) {
+    libraryLoadGeneration += 1;
+    previewLoadGeneration += 1;
     songs = [];
     currentSongId = null;
     previewSong = null;
@@ -512,6 +526,7 @@ window.addEventListener('opentab:auth-changed', async event => {
   if (pendingRoute) setRoute(pendingRoute);
 });
 window.addEventListener('opentab:test-data-reset', async () => {
+  previewLoadGeneration += 1;
   previewSong = null;
   setPreviewActive(false);
   await Promise.all([loadCatalog(), loadUserLibrary()]);

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "artists": {
+    "久石讓": {
+      "image": "",
+      "albums": {
+        "菊次郎の夏": {
+          "cover": "https://coverartarchive.org/release/63636c70-b9da-481e-9b5b-0eb77fc2786a/front-500"
+        }
+      }
+    },
+    "周杰倫": {
+      "image": "https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg",
+      "albums": {
+        "范特西": {
+          "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500"
+        }
+      }
+    }
+  }
+}
