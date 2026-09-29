@@ -20,6 +20,10 @@ jobs:
           node-version: 22
       - name: Rewrite canonical clipboard and drag modules
         run: python scripts/apply-clipboard-drag-boundaries.py
+      - name: Isolate generated ids in clipboard regression
+        shell: bash
+        run: |
+          python -c 'from pathlib import Path; p=Path("tests/editor-v3.test.mjs"); t=p.read_text(); t=t.replace("  const ids=idFactory();", "  const ids=(()=>{let sequence=0;return prefix=>`${prefix}-source-${++sequence}`;})();", 1); t=t.replace("  const pasted=clipboard.pasteMeasure(decorated,decorated.measures[1].id,{idFactory:idFactory()});", "  const pasted=clipboard.pasteMeasure(decorated,decorated.measures[1].id,{idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-measure-paste-${++sequence}`;})()});", 1); t=t.replace("  const systemPasted=systemClipboard.pasteSystem(decorated,sourceSystemIds,{idFactory:idFactory()});", "  const systemPasted=systemClipboard.pasteSystem(decorated,sourceSystemIds,{idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-system-paste-${++sequence}`;})()});", 1); p.write_text(t)'
       - run: npm test
       - run: npm run benchmark:editor-layout
       - run: npm run check
