@@ -103,8 +103,11 @@ let slideId;
   const sourceGroupIds=decorated.measures[0].groups.map(group=>group.id);
   const clipboard=new EditorClipboard();
   clipboard.copyMeasure(decorated,sourceMeasureId);
-  const pasted=clipboard.pasteMeasure(decorated,decorated.measures[1].id,{idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-measure-paste-${++sequence}`;})()});
+  const targetMeasureId=decorated.measures[1].id;
+  const pasted=clipboard.pasteMeasure(decorated,targetMeasureId,{idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-measure-paste-${++sequence}`;})()});
   assert.ok(pasted);
+  assert.equal(pasted.changeSet.layoutKind,'grid','pasting rhythm topology must invalidate the editable grid');
+  assert.equal(pasted.changeSet.layoutFrom,targetMeasureId);
   const target=pasted.document.measures[1];
   assert.notEqual(target.events[0].notes[0].techniques[0].id,sourceTechniqueId);
   assert.deepEqual(target.events.flatMap(event=>event.marks||[]).map(mark=>mark.type).sort(),['arpeggio','strum']);
@@ -127,11 +130,18 @@ let slideId;
   systemClipboard.copySystem(decorated,sourceSystemIds);
   const systemPasted=systemClipboard.pasteSystem(decorated,sourceSystemIds,{idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-system-paste-${++sequence}`;})()});
   assert.ok(systemPasted);
+  assert.deepEqual(systemPasted.document.measures.map(measure=>measure.id),sourceSystemIds,'row paste must preserve target measure identity');
+  assert.equal(systemPasted.changeSet.layoutKind,'grid','row paste must rebuild navigation/playback topology');
+  assert.equal(systemPasted.changeSet.layoutFrom,sourceSystemIds[0]);
   const pastedSystemMeasureId=systemPasted.document.measures[0].id;
-  assert.notEqual(pastedSystemMeasureId,sourceMeasureId);
   const systemArcs=systemPasted.document.relations.filter(relation=>relation.type==='arc');
   assert.equal(systemArcs.length,2);
-  assert.equal(systemArcs.every(relation=>relation.fromPosition?.measureId===pastedSystemMeasureId&&relation.toPosition?.measureId===pastedSystemMeasureId),true,'system paste must remap every positional relation to cloned measure ids');
+  assert.equal(systemArcs.every(relation=>relation.fromPosition?.measureId===pastedSystemMeasureId&&relation.toPosition?.measureId===pastedSystemMeasureId),true,'system paste must remap every positional relation to target measure ids');
+
+  const fourMeasureDocument=createBlankDocumentV3({systems:1,measuresPerSystem:4,idFactory:(()=>{let sequence=0;return prefix=>`${prefix}-shape-${++sequence}`;})()});
+  const mismatched=systemClipboard.pasteSystem(fourMeasureDocument,fourMeasureDocument.measures.map(measure=>measure.id));
+  assert.equal(mismatched,null,'row paste must reject a different measure count instead of silently repacking the document');
+  assert.deepEqual(buildSystems(fourMeasureDocument).map(system=>system.length),[4]);
 }
 {
   const song=structuredClone(legacySong);
