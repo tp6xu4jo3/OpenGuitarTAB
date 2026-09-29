@@ -3,6 +3,8 @@ name: Deploy GitHub Test
 on:
   push:
     branches: [main]
+  pull_request_target:
+    types: [closed]
   workflow_dispatch:
 
 permissions:
@@ -12,16 +14,19 @@ permissions:
 
 concurrency:
   group: github-pages-test
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
+    if: github.event_name != 'pull_request_target' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
