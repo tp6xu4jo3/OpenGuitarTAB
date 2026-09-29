@@ -416,10 +416,6 @@ function beginPointerDrag(event, state, sourceNode) {
   };
 }
 
-function dropElementAt(x, y) {
-  return document.elementFromPoint(x, y);
-}
-
 function rowDropTargetFromElement(element) {
   const zone = element?.closest?.('[data-drop-row-boundary]');
   const index = Number(zone?.dataset?.dropRowBoundary);
@@ -433,11 +429,9 @@ function measureDropTargetFromElement(element) {
   return Number.isInteger(rowIndex) && Number.isInteger(boundary) ? { rowIndex, boundary } : null;
 }
 
-function commitDropAt(x, y) {
+function commitDropFromElement(element) {
   const store = currentStore();
-  if (!store || !dragState) return false;
-  const element = dropElementAt(x, y);
-  if (!element) return false;
+  if (!store || !dragState || !element) return false;
   const documentModel = store.getDocument();
   if (dragState.type === 'row') {
     const target = rowDropTargetFromElement(element);
@@ -484,7 +478,7 @@ function finishPointerDrag(event, cancelled = false) {
   const active = dragPointer.active;
   if (active && !cancelled) {
     event.preventDefault();
-    commitDropAt(event.clientX, event.clientY);
+    commitDropFromElement(event.target);
   } else if (!active && !cancelled && state) {
     if (state.type === 'row') setSelected({ type: 'row', rowIndex: state.rowIndex });
     else setSelected({ type: 'measure', rowIndex: state.rowIndex, measureIndex: state.measureIndex });

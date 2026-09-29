@@ -21,10 +21,9 @@ assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes mus
 const pointerMove=structureSource.slice(structureSource.indexOf('function handlePointerMove('),structureSource.indexOf('function finishPointerDrag('));
 assert.doesNotMatch(pointerMove,/elementFromPoint|elementsFromPoint|getBoundingClientRect|querySelector/,'pointermove must only cross the drag threshold and let native hover follow the pointer');
 assert.match(pointerMove,/Math\.hypot[\s\S]*classList\.add\('structure-drag-active'/s,'pointermove should only activate the drag state after the movement threshold');
-const dropResolution=structureSource.slice(structureSource.indexOf('function dropElementAt('),structureSource.indexOf('function resetDrag('));
-assert.match(dropResolution,/document\.elementFromPoint\(x, y\)/,'drop must resolve the element under the final pointer exactly once');
-assert.equal((structureSource.match(/document\.elementFromPoint\(/g)||[]).length,1,'row and measure drag should share one final point lookup');
-assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*commitDropAt\(event\.clientX, event\.clientY\)/s,'document mutation should happen only on pointer release');
+const dropResolution=structureSource.slice(structureSource.indexOf('function rowDropTargetFromElement('),structureSource.indexOf('function resetDrag('));
+assert.doesNotMatch(structureSource,/document\.elementFromPoint|document\.elementsFromPoint/,'structure dragging must use the browser-resolved pointer event target without extra hit-testing');
+assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*commitDropFromElement\(event\.target\)/s,'document mutation should use the final pointerup target directly');
 assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|updateDropUi|elementsFromPoint|setPointerCapture|releasePointerCapture|measure-insert-boundary|row-drag-active|measure-drag-active|addEventListener\('dragover'/,'legacy hover-target and native DnD paths must be deleted');
 assert.doesNotMatch(insertZoneCss,/drop-before|drop-after|measure-insert-boundary|measure-drag-grip|is-drag-target|measure-insert-shift/,'legacy insertion drag CSS must be removed');
 assert.doesNotMatch(rowControlsCss,/\.row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
