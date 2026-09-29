@@ -184,7 +184,6 @@ export function createBlankDocumentV3({ beats = 4, systems = 4, measuresPerSyste
   const systemCount = Math.max(1, Math.trunc(Number(systems) || 4));
   const measureCount = Math.max(1, Math.min(4, Math.trunc(Number(measuresPerSystem) || 4)));
   const measures = [];
-  const systemBreakAfter = [];
   for (let systemIndex = 0; systemIndex < systemCount; systemIndex++) {
     for (let measureIndex = 0; measureIndex < measureCount; measureIndex++) {
       measures.push({
@@ -194,27 +193,22 @@ export function createBlankDocumentV3({ beats = 4, systems = 4, measuresPerSyste
         groups: []
       });
     }
-    systemBreakAfter.push(measures.at(-1).id);
   }
-  return createDocumentV3({ measures, layout: { systemBreakAfter }, idFactory });
+  return createDocumentV3({ measures, idFactory });
 }
 
 export function normalizeDocumentV3(document, { idFactory = createId } = {}) {
   const source = document && typeof document === 'object' ? cloneValue(document) : {};
   const measures = Array.isArray(source.measures) ? source.measures.map(measure => normalizeMeasure(measure, idFactory)) : [];
   if (!measures.length) measures.push(normalizeMeasure({}, idFactory));
-  const measureIds = new Set(measures.map(measure => measure.id));
-  const rawBreaks = Array.isArray(source.layout?.systemBreakAfter) ? source.layout.systemBreakAfter : [];
-  const systemBreakAfter = [...new Set(rawBreaks.map(String).filter(id => measureIds.has(id)))];
+  const layout = source.layout && typeof source.layout === 'object' ? cloneValue(source.layout) : {};
+  delete layout.systemBreakAfter;
   return {
     ...source,
     version: DOCUMENT_VERSION,
     measures,
     relations: Array.isArray(source.relations) ? source.relations.map(relation => normalizeRelation(relation, idFactory)) : [],
-    layout: {
-      ...(source.layout && typeof source.layout === 'object' ? source.layout : {}),
-      systemBreakAfter
-    }
+    layout
   };
 }
 

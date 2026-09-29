@@ -80,7 +80,10 @@ function applyChordDrop(payload, target) {
 function finishPointerDrag(event, cancelled = false) {
   if (!pointerDrag || event.pointerId !== pointerDrag.pointerId) return;
   const state = pointerDrag;
-  const target = state.active && !cancelled && !isEditingBlocked() ? targetFromNode(event.target) : null;
+  const dropElement = state.active && !cancelled && !isEditingBlocked()
+    ? document.elementFromPoint(event.clientX, event.clientY) || event.target
+    : null;
+  const target = dropElement ? targetFromNode(dropElement) : null;
   if (state.active) event.preventDefault();
   resetChordDrag();
   if (target) applyChordDrop(state.payload, target);

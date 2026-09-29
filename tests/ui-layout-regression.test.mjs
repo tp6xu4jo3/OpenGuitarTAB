@@ -77,8 +77,8 @@ assert.match(moduleCss,/\.visual-row-handle\{[^}]*flex-direction:column[^}]*gap:
 assert.match(moduleCss,/\.row-module-label\{[^}]*width:1\.7em[^}]*white-space:normal[^}]*word-break:keep-all[^}]*writing-mode:horizontal-tb/s,'two-digit row numbers must stay together on one horizontal line');
 assert.match(structure,/function makeRowHandle\(target,/,'every visual row must use the same row handle implementation');
 assert.match(structure,/grip\.textContent = '⠿'/,'every visual row must show the six-dot drag indicator');
-assert.match(structure,/measureIdsForSystem\(system\)/,'row actions must target the measures visible in that wrapped row');
-assert.match(structure,/deleteMeasures\(documentModel, target\.measureIds\)/,'deleting a wrapped row must delete only its visible measures');
+assert.doesNotMatch(structure,/measureIdsForSystem\(system\)/,'visual wrapping must not redefine logical row identity');
+assert.match(structure,/deleteSystem\(documentModel, target\.rowIndex\)/,'all row actions must target the same logical source row');
 assert.match(adaptiveCss,/\.content\.score-view \.adaptive-layout-stack\{grid-column:2\}/);
 assert.match(toolsCss,/\.notation-overlay\{z-index:10\}/);
 assert.match(toolsCss,/\.notation-relation\{[^}]*fill:none!important/s,'arcs must be stroked paths rather than filled semicircles');
@@ -95,7 +95,7 @@ assert.match(responsiveCss,/@media \(max-width:1500px\)[\s\S]*\.editor-view \.ed
 assert.match(responsiveCss,/\.mobile-menu-button\{position:absolute/,'mobile navigation button must scroll with the page instead of covering titles');
 assert.match(responsiveCss,/\.catalog-view,\.library-view\{position:relative;padding-top:88px\}/,'mobile catalog must reserve space above the title');
 assert.match(renderer,/Math\.min\(\.\.\.candidates\)/,'adaptive layout width must be capped by the visible viewport');
-assert.match(renderer,/this\.documentIndex = indexDocument\(this\.document\)/,'Sparse renderer must reuse a document relation index between local layout operations');
+assert.match(renderer,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document/,'Sparse renderer must incrementally refresh and reuse the canonical document index between local layout operations');
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)/,'score renderer must draw rhythm stems and beams using the same local column geometry as the TAB notes');
 assert.match(renderer,/createRhythmLayer\(measure, visualTimeByKey, geometry\)[\s\S]*v3-rhythm-stem[\s\S]*v3-rhythm-beam/s,'geometry-aware rhythm rendering must still create stems and beams');
 assert.match(renderer,/for \(const group of measure\.groups \|\| \[\]\)[\s\S]*group\?\.type !== 'tuplet'[\s\S]*v3-rhythm-tuplet-bracket/,'triplet brackets must come from group slots even when some slots contain no note');

@@ -79,7 +79,8 @@ assert.match(chordDragSource,/let pointerDrag = null/,'chord drag must use one p
 assert.doesNotMatch(chordDragSource,/draggingChord|activeDragPayload|activeDropLookup/,'legacy chord drag state must not coexist with pointer dragging');
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex, \{ overflowDirection: 'backward' \}\)/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex \+ 1, \{ overflowDirection: 'forward' \}\)/);
-assert.match(structureSource,/deleteMeasures\(documentModel, target\.measureIds\)/);
+assert.match(structureSource,/deleteSystem\(documentModel, target\.rowIndex\)/,'row delete must use the same logical source-system semantics as copy/paste/drag');
+assert.doesNotMatch(structureSource,/measureIdsForSystem|target\.measureIds/,'visual segment measure lists must not redefine row identity');
 assert.doesNotMatch(structureSource,/每列最多4個小節/);
 assert.match(rowCss,/\.row-insert-zone\{[^}]*z-index:40/s);
 console.log('editor grid and structure regression tests passed');

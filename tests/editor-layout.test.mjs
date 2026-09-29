@@ -35,6 +35,15 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
 }
 
 {
+  const documentModel=createDocumentV3({measures:['last-m1','last-m2','last-m3','last-m4','last-m5','last-m6'].map(id=>measure(id))});
+  const layout=buildAdaptiveLayout(documentModel,{availableWidth:1200});
+  assert.deepEqual(layout.systems.map(system=>system.measures.length),[4,2]);
+  assert.ok(Math.abs(layout.systems[0].widthPx-1200)<0.001,'non-final full rows must still fill the available width');
+  assert.ok(Math.abs(layout.systems[1].widthPx-600)<0.001,'only the final partial row should keep two natural 300px measure slots');
+  assert.ok(layout.systems[1].measureWidthsPx.every(width=>Math.abs(width-300)<0.001),'final-row measures must keep the same natural width as a full-row slot');
+}
+
+{
   const plain=measure('plain');
   const harmonic=measure('harmonic',{harmonic:true});
   const shortChord=measure('short-chord',{chordSymbol:'C'});

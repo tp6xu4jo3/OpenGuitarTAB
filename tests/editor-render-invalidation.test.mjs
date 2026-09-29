@@ -29,6 +29,8 @@ assert.match(applyLayoutChangeSource,/const segmentationChanged = !sameShape;/,'
 assert.match(applyLayoutChangeSource,/const visualRowStart = nextPlan\.systems\.findIndex\([\s\S]*const visualRowCount = nextSegments\.length/s,'renderer must derive the affected visual-row range from its layout plan');
 assert.doesNotMatch(applyLayoutChangeSource,/querySelectorAll\(':scope > \.tab-system'\)[\s\S]*dataset\.visualRow/s,'local layout replacement must not rescan every visual system to rewrite row metadata');
 
+assert.match(notationSource,/mergeChangeSets\(this\.pendingChangeSet, changeSet\)/,'notation scheduling must use the canonical ChangeSet merge priority');
+assert.match(rendererSource,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document/,'score renderer must share the canonical incremental document-index lifecycle');
 assert.match(notationSource,/this\.documentIndex = updateDocumentIndex\(this\.documentIndex, this\.document,[\s\S]*measures: changeSet\?\.measures[\s\S]*relations: changeSet\?\.relations/s,'notation should incrementally refresh its persistent document index');
 assert.match(notationSource,/const systems = new Set\(\)[\s\S]*for \(const measureId of dirty\)[\s\S]*closest\?\.\('\.tab-system'\)[\s\S]*for \(const sourceRow of layoutRows\)/s,'partial notation redraw should collect only dirty measure and affected source-row systems');
 assert.doesNotMatch(notationSource,/this\.document\.measures\.filter/,'notation partial rendering must not scan the full measure list');
@@ -76,12 +78,15 @@ function apply(command){const result=applyCommand(documentModel,command,{idFacto
   const strum=apply({type:'event/mark/add',eventId:'e-chord',mark:{type:'strum',direction:'up'}});
   assert.equal(strum.changeSet.layoutFrom,'m-technique');
   assert.equal(strum.changeSet.layoutKind,'metrics','left-side sweep needs metric recalculation');
+  assert.deepEqual(strum.changeSet.playback,['m-technique'],'strum changes must invalidate the cached playback event');
   const relation=apply({type:'relation/add',relation:{type:'slide',fromNoteId:'n-a',toNoteId:'n-next'}});
   assert.equal(relation.changeSet.layoutFrom,'m-technique','slide source columns should reserve right-side spacing immediately');
   assert.equal(relation.changeSet.layoutKind,'metrics');
+  assert.deepEqual(relation.changeSet.playback,['m-technique'],'slide creation must invalidate playback for its affected measure');
   const removed=apply({type:'relation/delete',relationId:relation.document.relations[0].id});
   assert.equal(removed.changeSet.layoutFrom,'m-technique','removing a slide should release its local spacing immediately');
   assert.equal(removed.changeSet.layoutKind,'metrics');
+  assert.deepEqual(removed.changeSet.playback,['m-technique'],'slide deletion must invalidate playback for its affected measure');
 }
 
 {

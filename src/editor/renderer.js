@@ -16,6 +16,7 @@ import {
   harmonicTechnique,
   indexDocument,
   isDocumentV3,
+  updateDocumentIndex,
   normalizeDocumentV3,
   normalizeFraction,
   noteDisplayValue,
@@ -222,9 +223,11 @@ export class SparseScoreRenderer {
       || changeSet.layoutKind === 'structure'
       || !this.measureIndexById.size;
     if (structureChanged) this.rebuildMeasureIndex();
-    if (!this.documentIndex || structureChanged || (changeSet?.relations || []).length) {
-      this.documentIndex = indexDocument(this.document);
-    }
+    this.documentIndex = updateDocumentIndex(this.documentIndex, this.document, {
+      measures: changeSet?.measures || [],
+      relations: changeSet?.relations || [],
+      structure: structureChanged
+    });
     const navigationChanged = structureChanged
       || changeSet?.layoutKind === 'grid'
       || !this.navigationEntries.length;

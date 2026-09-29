@@ -93,4 +93,13 @@ function walk(directory) {
 const forbiddenNames = /(?:^|[-_.])(fix|patch|hotpath|guard|override)(?:[-_.]|$)/i;
 walk(editorDir).forEach(path => assert.equal(forbiddenNames.test(path.split('/').pop()), false, `forbidden patch-style module name: ${path}`));
 
+
+const modelSource=read('src/editor/model.js');
+assert.match(modelSource,/delete layout\.systemBreakAfter/,'V3 normalization must strip the obsolete legacy break field at the input boundary');
+assert.equal((modelSource.match(/systemBreakAfter/g)||[]).length,1,'model may mention the obsolete break field only to strip it');
+for(const file of ['migrate-v2.js','commands.js','structure-commands.js','clipboard.js']){
+  const source=read(`src/editor/${file}`);
+  assert.equal(source.includes('systemBreakAfter'),false,`${file} must not maintain obsolete systemBreakAfter persistence`);
+}
+
 console.log('editor architecture tests passed');
