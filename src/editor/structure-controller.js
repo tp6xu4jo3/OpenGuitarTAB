@@ -15,6 +15,7 @@ let selected = null;
 let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
+let dragPointer = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -179,7 +180,6 @@ function makeRowMoreButton(handle) {
 function makeRowHandle(target, { sourceStart = false } = {}) {
   const handle = document.createElement('div');
   handle.className = `system-label ${sourceStart ? 'row-module-handle' : 'visual-row-handle'}`;
-  handle.draggable = true;
   handle.dataset.row = String(target.rowIndex);
   handle.dataset.visualRow = String(target.visualRowIndex);
   const grip = document.createElement('span');
@@ -190,23 +190,16 @@ function makeRowHandle(target, { sourceStart = false } = {}) {
   const more = makeRowMoreButton(handle);
   handle.append(grip, label, more);
   syncHandleMetadata(handle, target);
-  handle.addEventListener('click', event => {
+  handle.addEventListener('pointerdown', event => {
     if (event.target.closest('button')) return;
     const current = rowTargetForSystem(handle.closest('.tab-system'));
-    if (current) setSelected(current);
+    if (!current) return;
+    beginPointerDrag(event, { type: 'row', rowIndex: current.rowIndex }, handle);
   });
   handle.addEventListener('contextmenu', event => {
     event.preventDefault();
     const current = rowTargetForSystem(handle.closest('.tab-system'));
     if (current) openMenu(current, event.clientX, event.clientY);
-  });
-  handle.addEventListener('dragstart', event => {
-    const current = rowTargetForSystem(handle.closest('.tab-system'));
-    if (!current) return;
-    dragState = { type: 'row', rowIndex: current.rowIndex };
-    beginDrag();
-    event.dataTransfer?.setData('text/plain', `row:${current.rowIndex}`);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   });
   return handle;
 }
@@ -248,15 +241,8 @@ function addMeasureUi(grid, rowIndex) {
     hitbox.dataset.measure = String(measureIndex);
     hitbox.style.left = `${left}%`;
     hitbox.style.width = `${Math.max(0, right - left)}%`;
-    hitbox.draggable = true;
-    hitbox.addEventListener('click', () => setSelected({ type: 'measure', rowIndex, measureIndex }));
+    hitbox.addEventListener('pointerdown', event => beginPointerDrag(event, { type: 'measure', rowIndex, measureIndex }, hitbox));
     hitbox.addEventListener('contextmenu', event => { event.preventDefault(); openMenu({ type: 'measure', rowIndex, measureIndex }, event.clientX, event.clientY); });
-    hitbox.addEventListener('dragstart', event => {
-      dragState = { type: 'measure', rowIndex, measureIndex };
-      beginDrag();
-      event.dataTransfer?.setData('text/plain', `measure:${rowIndex}:${measureIndex}`);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-    });
     grid.appendChild(hitbox);
   }
 }
@@ -400,61 +386,64 @@ function handleRendered(event) {
   }
 }
 
-function beginDrag() {
+function beginPointerDrag(event, state, sourceNode) {
+  if (isEditingBlocked() || event.button !== 0 || dragPointer) return;
+  event.preventDefault();
+  dragState = state;
+  dragPointer = {
+    pointerId: event.pointerId,
+    sourceNode,
+    visualNode: state.type === 'row' ? sourceNode.closest('.editor-row-module') : sourceNode,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false
+  };
   clearDropUi();
+  try { sourceNode.setPointerCapture?.(event.pointerId); } catch {}
 }
 
-function eventElement(event) {
-  return event?.target instanceof Element ? event.target : null;
+function hitAtPoint(selector, x, y) {
+  for (const node of document.elementsFromPoint(x, y)) {
+    const match = node.closest?.(selector);
+    if (match) return match;
+  }
+  return null;
 }
 
-function rowDropTarget(event) {
-  const target = eventElement(event);
-  const zone = target?.closest('.row-insert-zone');
+function rowDropTarget(x, y) {
+  const zone = hitAtPoint('.row-insert-zone', x, y);
   if (zone) {
     const index = Number(zone.dataset.insertIndex);
     return Number.isInteger(index) ? { type: 'row', index, node: zone } : null;
   }
-  const row = target?.closest('.editor-row-module');
+  const row = hitAtPoint('.editor-row-module', x, y);
   if (!row) return null;
   const rowIndex = Number(row.dataset.sourceRow ?? row.dataset.row);
   if (!Number.isInteger(rowIndex)) return null;
   const rect = row.getBoundingClientRect();
-  const index = rowIndex + (Number(event.clientY) >= rect.top + rect.height / 2 ? 1 : 0);
-  return { type: 'row', index, node: row };
+  const index = rowIndex + (y >= rect.top + rect.height / 2 ? 1 : 0);
+  const node = document.querySelector(`.row-insert-zone[data-insert-index="${index}"]`) || row;
+  return { type: 'row', index, node };
 }
 
-function measureDropTarget(event) {
-  const target = eventElement(event);
-  const boundaryNode = target?.closest('.measure-insert-boundary');
-  if (boundaryNode) {
-    const grid = boundaryNode.closest('.v3-grid');
-    const rowIndex = Number(grid?.dataset.row);
-    const boundary = Number(boundaryNode.dataset.boundary);
-    if (Number.isInteger(rowIndex) && Number.isInteger(boundary)) {
-      return { type: 'measure', rowIndex, boundary, node: boundaryNode };
-    }
-  }
-  const hitbox = target?.closest('.measure-module-hitbox');
+function measureDropTarget(x, y) {
+  const hitbox = hitAtPoint('.measure-module-hitbox', x, y);
   if (!hitbox) return null;
   const rowIndex = Number(hitbox.dataset.row);
   const measureIndex = Number(hitbox.dataset.measure);
   if (!Number.isInteger(rowIndex) || !Number.isInteger(measureIndex)) return null;
   const rect = hitbox.getBoundingClientRect();
-  const boundary = measureIndex + (Number(event.clientX) >= rect.left + rect.width / 2 ? 1 : 0);
+  const boundary = measureIndex + (x >= rect.left + rect.width / 2 ? 1 : 0);
   const grid = hitbox.closest('.v3-grid');
   const node = grid?.querySelector(`.measure-insert-boundary[data-boundary="${boundary}"]`) || hitbox;
   return { type: 'measure', rowIndex, boundary, node };
 }
 
-function updateDropUi(event) {
+function updateDropUi(clientX, clientY) {
   if (!dragState) { clearDropUi(); return; }
-  setActiveDrop(dragState.type === 'row' ? rowDropTarget(event) : measureDropTarget(event));
-}
-
-function resetDrag() {
-  dragState = null;
-  clearDropUi();
+  setActiveDrop(dragState.type === 'row'
+    ? rowDropTarget(clientX, clientY)
+    : measureDropTarget(clientX, clientY));
 }
 
 function commitDrop() {
@@ -468,21 +457,51 @@ function commitDrop() {
   }
 }
 
-function installDragHandlers() {
-  document.addEventListener('dragover', event => {
-    if (!dragState || isEditingBlocked()) return;
-    event.preventDefault();
-    updateDropUi(event);
-  }, true);
-  document.addEventListener('drop', event => {
-    if (!dragState || isEditingBlocked()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    updateDropUi(event);
+function resetDrag() {
+  if (dragPointer?.visualNode) dragPointer.visualNode.classList.remove('is-dragging');
+  if (dragPointer?.sourceNode && dragPointer.pointerId != null) {
+    try {
+      if (dragPointer.sourceNode.hasPointerCapture?.(dragPointer.pointerId)) dragPointer.sourceNode.releasePointerCapture(dragPointer.pointerId);
+    } catch {}
+  }
+  document.documentElement.classList.remove('row-drag-active');
+  dragPointer = null;
+  dragState = null;
+  clearDropUi();
+}
+
+function handlePointerMove(event) {
+  if (!dragPointer || event.pointerId !== dragPointer.pointerId || isEditingBlocked()) return;
+  if (!dragPointer.active) {
+    const distance = Math.hypot(event.clientX - dragPointer.startX, event.clientY - dragPointer.startY);
+    if (distance < 5) return;
+    dragPointer.active = true;
+    dragPointer.visualNode?.classList.add('is-dragging');
+    if (dragState?.type === 'row') document.documentElement.classList.add('row-drag-active');
+  }
+  event.preventDefault();
+  updateDropUi(event.clientX, event.clientY);
+}
+
+function finishPointerDrag(event, cancelled = false) {
+  if (!dragPointer || event.pointerId !== dragPointer.pointerId) return;
+  const state = dragState;
+  const active = dragPointer.active;
+  if (active && !cancelled) {
+    updateDropUi(event.clientX, event.clientY);
     commitDrop();
-    resetDrag();
-  }, true);
-  window.addEventListener('dragend', resetDrag, true);
+  } else if (!active && !cancelled && state) {
+    if (state.type === 'row') setSelected({ type: 'row', rowIndex: state.rowIndex });
+    else setSelected({ type: 'measure', rowIndex: state.rowIndex, measureIndex: state.measureIndex });
+  }
+  resetDrag();
+}
+
+function installDragHandlers() {
+  document.addEventListener('pointermove', handlePointerMove, { capture: true, passive: false });
+  document.addEventListener('pointerup', event => finishPointerDrag(event), true);
+  document.addEventListener('pointercancel', event => finishPointerDrag(event, true), true);
+  window.addEventListener('blur', resetDrag);
 }
 
 function installGlobalActions() {

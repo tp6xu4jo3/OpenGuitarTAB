@@ -10,16 +10,17 @@ const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controlle
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
 
 assert.match(structureSource,/function rowTargetForSystem\(system\)[\s\S]*dataset\.visualRow[\s\S]*measureIdsForSystem\(system\)/s,'row actions should resolve their target from live system metadata');
-assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*dragState = \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must not retain a stale visualRow closure');
+assert.match(structureSource,/makeRowHandle\([\s\S]*rowTargetForSystem\(handle\.closest\('\.tab-system'\)\)[\s\S]*beginPointerDrag\(event, \{ type: 'row', rowIndex: current\.rowIndex \}/s,'row handle actions must resolve live row metadata before pointer drag starts');
 assert.match(structureSource,/function decorateSourceSystem\(sourceSystemIndex, \{[\s\S]*segmentationChanged = false,[\s\S]*visualRowStart = 0,[\s\S]*visualRowCount = 0/s,'local structure decoration must consume explicit renderer segmentation metadata');
 const localDecoration=structureSource.slice(structureSource.indexOf('function decorateSourceSystem('),structureSource.indexOf('function handleRendered('));
 assert.match(localDecoration,/if \(segmentationChanged\) \{[\s\S]*syncVisualRowMetadata\(systems\[visualRowIndex\], visualRowIndex\)/s,'only real segmentation changes should synchronize downstream visual-row metadata');
 assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
-const dragUpdate=structureSource.slice(structureSource.indexOf('function rowDropTarget('),structureSource.indexOf('function commitDrop('));
-assert.doesNotMatch(dragUpdate,/querySelectorAll|dragGeometry/,'drag hover must resolve only the element currently under the pointer, never scan every row/grid');
-assert.match(dragUpdate,/target\?\.closest\('\.editor-row-module'\)[\s\S]*target\?\.closest\('\.measure-module-hitbox'\)/s,'row and measure targets should come directly from the native hover target');
-assert.match(structureSource,/document\.addEventListener\('dragover'[\s\S]*updateDropUi\(event\)/s,'every native dragover should immediately refresh the DOM target under the pointer');
-assert.doesNotMatch(structureSource,/captureDragGeometry|rowBoundaryFromPoint|measureBoundaryFromPoint|scheduleDropUi|pendingDragPoint|dragFrame/,'structure dragging must not keep the old geometry-scan or frame-queue path');
+const dragUpdate=structureSource.slice(structureSource.indexOf('function hitAtPoint('),structureSource.indexOf('function commitDrop('));
+assert.match(dragUpdate,/document\.elementsFromPoint\(x, y\)/,'drag hover must hit-test only the current pointer location');
+assert.doesNotMatch(dragUpdate,/querySelectorAll|dragGeometry/,'drag hover must never scan every row or measure boundary');
+assert.match(structureSource,/document\.addEventListener\('pointermove'[\s\S]*handlePointerMove/s,'pointermove should drive hover feedback at pointer cadence');
+assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*updateDropUi\(event\.clientX, event\.clientY\);[\s\S]*commitDrop\(\)/s,'the final pointer position must be resolved immediately before the document mutation');
+assert.doesNotMatch(structureSource,/addEventListener\('dragover'|captureDragGeometry|scheduleDropUi|pendingDragPoint|dragFrame/,'row and measure dragging must have one pointer-event implementation');
 assert.match(chordDragSource,/activeDropLookup = captureDropLookup\(\)/,'chord dragging should cache column targets once at drag start');
 const chordDragOver=chordDragSource.slice(chordDragSource.indexOf('function handleDragOver('),chordDragSource.indexOf('function handleDrop('));
 assert.doesNotMatch(chordDragOver,/document\.querySelector/,'chord dragover must not perform global document lookups');
