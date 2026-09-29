@@ -8,7 +8,6 @@ const structureSource=await readFile(new URL('../src/editor/structure-controller
 const controllerSource=await readFile(new URL('../src/editor/controller.js',import.meta.url),'utf8');
 const chordDragSource=await readFile(new URL('../src/editor/chord-drag-controller.js',import.meta.url),'utf8');
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
-const insertZoneCss=await readFile(new URL('../styles/editor-insert-zones.css',import.meta.url),'utf8');
 const rowControlsCss=await readFile(new URL('../styles/editor-row-controls.css',import.meta.url),'utf8');
 const editorV3Css=await readFile(new URL('../styles/editor-v3.css',import.meta.url),'utf8');
 const editorModulesCss=await readFile(new URL('../styles/editor-modules.css',import.meta.url),'utf8');
@@ -23,14 +22,16 @@ assert.match(localDecoration,/if \(segmentationChanged\) \{[\s\S]*syncVisualRowM
 assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
 const pointerMove=structureSource.slice(structureSource.indexOf('function handlePointerMove('),structureSource.indexOf('function finishPointerDrag('));
 assert.doesNotMatch(pointerMove,/elementFromPoint|elementsFromPoint|getBoundingClientRect|querySelector/,'pointermove must only cross the drag threshold and let native hover follow the pointer');
+assert.match(pointerMove,/isEditingBlocked\(\)[\s\S]*resetDrag\(\)[\s\S]*return/s,'a structure drag must be cancelled as soon as editing becomes blocked');
 assert.match(pointerMove,/Math\.hypot[\s\S]*classList\.add\('structure-drag-active'/s,'pointermove should only activate the drag state after the movement threshold');
+const pointerOver=structureSource.slice(structureSource.indexOf('function handlePointerOver('),structureSource.indexOf('function handlePointerMove('));
+assert.match(pointerOver,/isEditingBlocked\(\)[\s\S]*resetDrag\(\)[\s\S]*return/s,'native hover updates must also cancel a structure drag after editing becomes blocked');
 const dropResolution=structureSource.slice(structureSource.indexOf('function rowDropTargetFromElement('),structureSource.indexOf('function resetDrag('));
 assert.equal((structureSource.match(/document\.elementFromPoint\(/g)||[]).length,1,'structure dragging may coordinate-hit-test exactly once on pointerup for mouse/touch/pen');
 assert.doesNotMatch(structureSource,/document\.elementsFromPoint/,'structure dragging must not scan stacked pointer targets');
-assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*document\.elementFromPoint\(event\.clientX, event\.clientY\)[\s\S]*commitDropFromElement\(dropElement\)/s,'structure drop should coordinate-hit-test exactly once only on pointerup');
+assert.match(structureSource,/function finishPointerDrag\(event[\s\S]*const blocked = isEditingBlocked\(\)[\s\S]*active && !cancelled && !blocked[\s\S]*document\.elementFromPoint\(event\.clientX, event\.clientY\)[\s\S]*commitDropFromElement\(dropElement\)/s,'pointerup must recheck editing state before committing a structure drop');
 assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|updateDropUi|elementsFromPoint|setPointerCapture|releasePointerCapture|measure-insert-boundary|row-drag-active|measure-drag-active|addEventListener\('dragover'/,'legacy hover-target and native DnD paths must be deleted');
 assert.equal((structureSource.match(/document\.elementFromPoint\(/g)||[]).length,1,'structure drag may hit-test only once at final pointerup');
-assert.doesNotMatch(insertZoneCss,/drop-before|drop-after|measure-insert-boundary|measure-drag-grip|is-drag-target|measure-insert-shift/,'legacy insertion drag CSS must be removed');
 assert.doesNotMatch(rowControlsCss,/\.row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
 assert.match(structureSource,/dragIndicator = document\.createElement\('div'\)[\s\S]*className = 'structure-drop-indicator'/s,'structure dragging must own one reusable DOM insertion indicator');
 assert.match(structureSource,/function handlePointerOver\(event\)[\s\S]*showDragIndicatorForElement\(event\.target\)/s,'native pointer target changes should move the single insertion indicator');
@@ -43,7 +44,7 @@ assert.match(structureSource,/for \(let localBoundary = 0; localBoundary <= coun
 assert.match(editorModulesCss,/\.measure-drop-boundary \.structure-drop-indicator/,'measure drag feedback must anchor the shared insertion indicator to a canonical nearest-boundary target');
 assert.doesNotMatch(structureSource,/measure-drop-zone-before|measure-drop-zone-after|makeMeasureDropZone/,'measure dragging must not duplicate interior boundaries as left and right half-zones');
 assert.doesNotMatch(editorModulesCss,/measure-drop-zone-before|measure-drop-zone-after|\.measure-drop-zone\{/,'legacy duplicated measure half-zones must be removed');
-for(const deadSelector of ['.content.edit-view .cell','.content.edit-view .small-cell','.content.edit-view .note-input','.measure-module-badge','.row-insert-button']){
+for(const deadSelector of ['.content.edit-view .cell','.content.edit-view .small-cell','.content.edit-view .note-input','.measure-module-badge','.row-insert-button','.measure-line']){
   assert.equal(productionCss.includes(deadSelector),false,`obsolete Dense/insert selector should be removed from production styles: ${deadSelector}`);
 }
 assert.equal(productionCss.includes('.row-insert-zone:hover::before'),false,'legacy row hover pseudo-line must not coexist with the shared structure-drop-indicator');
