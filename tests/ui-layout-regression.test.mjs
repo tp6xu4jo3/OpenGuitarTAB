@@ -85,7 +85,8 @@ assert.match(toolsCss,/\.notation-relation\{[^}]*fill:none!important/s,'arcs mus
 assert.match(toolsCss,/\.editor-ribbon-tab\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-continuous-button\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-ribbon-panel\{[^}]*width:max-content[^}]*max-width:100%/s,'tool panel border must shrink-wrap its contents');
-assert.match(playbackCss,/@media\(max-width:760px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content minmax\(0,1fr\)/s,'mobile playback controls must stay inside the viewport while keeping both mode switches intact');
+assert.match(playbackCss,/@media\(max-width:760px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/s,'mobile playback controls should fill the available row before wrapping');
+assert.match(responsiveCss,/@media \(max-width:760px\)[\s\S]*\.topbar\{grid-template-columns:max-content minmax\(0,1fr\);grid-template-rows:auto auto[\s\S]*\.editor-title-wrap\{grid-column:2;grid-row:1[\s\S]*\.play-panel\{grid-column:1\/-1;grid-row:2/s,'mobile header actions and title should share the first row to remove unused upper-right space');
 assert.match(playbackCss,/\.mode-toggle-label\{[^}]*word-break:keep-all[^}]*overflow-wrap:normal/s,'score mode labels must not break between Chinese characters');
 assert.match(responsiveCss,/\.editor-ribbon\{[^}]*width:max-content[^}]*max-width:100%/s,'mobile ribbon must shrink-wrap instead of spanning the score width');
 assert.match(responsiveCss,/\.editor-ribbon-section\{[^}]*width:max-content[^}]*overflow-x:auto[^}]*touch-action:pan-x/s,'mobile ribbon must support native horizontal swiping');

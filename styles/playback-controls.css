@@ -21,25 +21,36 @@
 }
 
 @media(max-width:760px){
-  .editor-view .play-panel{display:grid;grid-template-columns:max-content max-content minmax(0,1fr);align-items:center;gap:6px;width:100%;max-width:100%;overflow:visible}
-  .editor-view #rhythmToggleButton{grid-column:1;grid-row:1}
-  .editor-view #scoreDensityControl{grid-column:2;grid-row:1}
-  .editor-view .mode-toggle-button{min-height:34px;padding:4px 5px;font-size:12px;justify-content:flex-start}
-  .editor-view .mode-switch{width:40px;height:24px;flex-basis:40px}
-  .editor-view .mode-switch-thumb{top:3px;left:3px;width:18px;height:18px}
-  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(16px)}
-  .editor-view .capo-box{grid-column:1;grid-row:2}
-  .editor-view .tempo-box{grid-column:2;grid-row:2}
+  .editor-view .play-panel{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:center;gap:5px 6px;width:100%;max-width:100%;overflow:visible}
+  .editor-view #rhythmToggleButton{grid-column:1/3;grid-row:1;width:100%}
+  .editor-view #scoreDensityControl{grid-column:3/5;grid-row:1;width:100%}
+  .editor-view .mode-toggle-button{min-height:32px;padding:3px 4px;font-size:11px;justify-content:center}
+  .editor-view .mode-switch{width:36px;height:22px;flex-basis:36px}
+  .editor-view .mode-switch-thumb{top:3px;left:3px;width:16px;height:16px}
+  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(14px)}
+  .editor-view .capo-box{grid-column:5;grid-row:1}
+  .editor-view .tempo-box{grid-column:6;grid-row:1}
   .editor-view .capo-box,.editor-view .tempo-box{box-sizing:border-box;width:100%;min-width:0;justify-content:center;overflow:hidden}
-  .editor-view .playback-sound-controls{grid-column:3;grid-row:2;width:100%;box-sizing:border-box;justify-content:center;overflow:hidden}
-  .editor-view .playback-sound-toggle{min-width:0;flex:1 1 0;padding:0 6px}
-  .editor-view .progress-box{grid-column:1/3;grid-row:3;min-width:0;width:100%;max-width:100%;overflow:hidden}
-  .editor-view .play-button{grid-column:3;grid-row:3;width:100%;min-width:0;height:38px;font-size:14px}
-  .editor-view .tempo-box,.editor-view .capo-box,.editor-view .progress-box{gap:5px;padding:6px 8px}
-  .editor-view .tempo-box label,.editor-view .capo-box label,.editor-view .progress-label{font-size:12px}
-  .editor-view #tempoInput,.editor-view #capoInput{font-size:16px}
-  .editor-view #tempoInput{width:46px;min-width:0}
-  .editor-view #capoInput{width:32px;min-width:0}
-  .editor-view #playProgress{width:auto;min-width:56px;flex:1 1 80px}
+  .editor-view .progress-box{grid-column:1/4;grid-row:2;min-width:0;width:100%;max-width:100%;overflow:hidden}
+  .editor-view .playback-sound-controls{grid-column:4/6;grid-row:2;width:100%;box-sizing:border-box;justify-content:center;overflow:hidden}
+  .editor-view .playback-sound-toggle{min-width:0;flex:1 1 0;padding:0 4px;height:30px}
+  .editor-view .play-button{grid-column:6;grid-row:2;width:100%;min-width:0;height:34px;font-size:13px}
+  .editor-view .tempo-box,.editor-view .capo-box,.editor-view .progress-box{gap:4px;padding:5px 6px}
+  .editor-view .tempo-box label,.editor-view .capo-box label,.editor-view .progress-label{font-size:10px}
+  .editor-view #tempoInput,.editor-view #capoInput{font-size:14px}
+  .editor-view #tempoInput{width:34px;min-width:0}
+  .editor-view #capoInput{width:22px;min-width:0}
+  .editor-view #playProgress{width:auto;min-width:48px;flex:1 1 72px}
   .editor-view #progressLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
+@media(max-width:460px){
+  .editor-view .play-panel{grid-template-columns:max-content max-content minmax(0,1fr);gap:5px}
+  .editor-view #rhythmToggleButton{grid-column:1;grid-row:1;width:max-content}
+  .editor-view #scoreDensityControl{grid-column:2;grid-row:1;width:max-content}
+  .editor-view .capo-box{grid-column:3;grid-row:1}
+  .editor-view .tempo-box{grid-column:1;grid-row:2}
+  .editor-view .playback-sound-controls{grid-column:2/4;grid-row:2}
+  .editor-view .progress-box{grid-column:1/3;grid-row:3}
+  .editor-view .play-button{grid-column:3;grid-row:3}
 }

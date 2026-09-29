@@ -6,10 +6,8 @@ export const CHORD_DRAG_MIME = 'application/x-openguitartab-chord';
 
 let installed = false;
 let activeDropTarget = null;
-let activeDragPayload = null;
+let draggingChord = false;
 let activeDropLookup = null;
-let dragFrame = 0;
-let pendingDragNode = null;
 
 function clearDropTarget() {
   activeDropTarget?.classList?.remove('is-chord-drop-target');
@@ -71,7 +69,7 @@ function handleDragStart(event) {
   if (!chordButton || isEditingBlocked()) return;
   const payload = payloadFromChordButton(chordButton);
   if (!payload || !event.dataTransfer) return;
-  activeDragPayload = payload;
+  draggingChord = true;
   activeDropLookup = captureDropLookup();
   event.dataTransfer.effectAllowed = 'copy';
   event.dataTransfer.setData(CHORD_DRAG_MIME, JSON.stringify(payload));
@@ -87,36 +85,18 @@ function updateChordDropTarget(node) {
   activeDropTarget?.classList.add('is-chord-drop-target');
 }
 
-function scheduleChordDropTarget(node) {
-  pendingDragNode = node;
-  if (dragFrame) return;
-  dragFrame = requestAnimationFrame(() => {
-    dragFrame = 0;
-    const targetNode = pendingDragNode;
-    pendingDragNode = null;
-    updateChordDropTarget(targetNode);
-  });
-}
-
-function clearDragSchedule() {
-  if (dragFrame) cancelAnimationFrame(dragFrame);
-  dragFrame = 0;
-  pendingDragNode = null;
-}
-
 function handleDragOver(event) {
-  if (isEditingBlocked() || !activeDragPayload) return;
+  if (isEditingBlocked() || !draggingChord) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-  scheduleChordDropTarget(event.target);
+  updateChordDropTarget(event.target);
 }
 
 function handleDrop(event) {
-  const payload = activeDragPayload || payloadFromTransfer(event.dataTransfer);
+  const payload = payloadFromTransfer(event.dataTransfer);
   const target = targetFromNode(event.target);
-  clearDragSchedule();
   clearDropTarget();
-  activeDragPayload = null;
+  draggingChord = false;
   activeDropLookup = null;
   if (!payload || !target || isEditingBlocked()) return;
   event.preventDefault();
@@ -134,8 +114,7 @@ function handleDrop(event) {
 
 function handleDragEnd(event) {
   event.target?.closest?.('[data-chord-id]')?.classList.remove('is-dragging');
-  clearDragSchedule();
-  activeDragPayload = null;
+  draggingChord = false;
   activeDropLookup = null;
   clearDropTarget();
 }
