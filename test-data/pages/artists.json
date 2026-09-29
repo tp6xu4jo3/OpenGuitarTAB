@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "artists": {
+    "周杰倫": {
+      "image": "https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg",
+      "albums": {
+        "范特西": {
+          "cover": "https://coverartarchive.org/release/a112b020-59c7-3317-be2a-71b3b9b936d6/front-500"
+        }
+      }
+    }
+  }
+}
