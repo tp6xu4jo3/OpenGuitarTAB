@@ -184,6 +184,15 @@ export function insertMeasureAt(inputDocument, systemIndex, measureIndex, {
   };
 }
 
+function pullMeasuresForward(systems, startIndex) {
+  for (let index = startIndex; index < systems.length - 1; index++) {
+    while (systems[index].length < 4 && systems[index + 1]?.length) {
+      systems[index].push(systems[index + 1].shift());
+    }
+  }
+  while (systems.length > 1 && systems.at(-1)?.length === 0) systems.pop();
+}
+
 export function deleteMeasureAt(inputDocument, systemIndex, measureIndex) {
   const document = normalizeDocumentV3(inputDocument);
   const systems = normalizeSystems(document);
@@ -191,11 +200,13 @@ export function deleteMeasureAt(inputDocument, systemIndex, measureIndex) {
   if (!system || system.length <= 1) return { document, changeSet: createChangeSet() };
   const safe = Math.max(0, Math.min(system.length - 1, Math.trunc(Number(measureIndex) || 0)));
   const [removed] = system.splice(safe, 1);
+  pullMeasuresForward(systems, systemIndex);
   const pruned = pruneRelations(document.relations, notesInMeasures([removed]));
   const next = flattenSystems(document, systems, { relations: pruned.relations });
+  const affected = systems.slice(systemIndex).flat().map(measure => measure.id);
   return {
     document: next,
-    changeSet: structureChange([removed.id], system[Math.max(0, safe - 1)]?.id || system[0]?.id, { relations: pruned.removed })
+    changeSet: structureChange([removed.id, ...affected], systems[systemIndex]?.[Math.max(0, safe - 1)]?.id || systems[systemIndex]?.[0]?.id, { relations: pruned.removed })
   };
 }
 

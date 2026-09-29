@@ -7,6 +7,7 @@ import {
   CHORD_LIBRARY,
   CHORD_QUALITIES,
   CHORD_ROOTS,
+  STANDARD_TUNING,
   getChord,
   getChordVoicing,
   notesForVoicing,
@@ -37,6 +38,32 @@ assert.deepEqual(notesForVoicing(cOpen).map(note => [note.string, note.fret]), [
   [4, '3']
 ]);
 assert.equal(getChordVoicing(cMajor.id, cOpen.id)?.id, cOpen.id);
+
+const dMinor7 = getChord('D', 'm7');
+assert.ok(dMinor7);
+assert.deepEqual([...dMinor7.voicings[0].frets], [1, 1, 2, 0, 'x', 'x']);
+assert.equal(voicingText(dMinor7.voicings[0].frets), '1120xx', 'Dm7 open voicing must be 1120xx in string-1-to-string-6 order');
+
+const rootById = new Map(CHORD_ROOTS.map(root => [root.id, root]));
+const qualityById = new Map(CHORD_QUALITIES.map(quality => [quality.id, quality]));
+for (const chord of CHORD_LIBRARY) {
+  const root = rootById.get(chord.root);
+  const quality = qualityById.get(chord.quality);
+  const expected = new Set(quality.intervals.map(interval => (root.pitchClass + interval) % 12));
+  for (const voicing of chord.voicings) {
+    const notes = notesForVoicing(voicing);
+    assert.ok(notes.length >= expected.size, `${chord.id} must contain enough notes for its quality`);
+    const actual = new Set();
+    for (const note of notes) {
+      const fret = Number(note.fret);
+      assert.ok(Number.isInteger(fret) && fret >= 0 && fret <= 24, `${chord.id} contains an invalid fret`);
+      const pitch = (STANDARD_TUNING.openPitchClasses[note.string] + fret) % 12;
+      assert.equal(expected.has(pitch), true, `${chord.id} voicing contains a non-chord tone`);
+      actual.add(pitch);
+    }
+    for (const pitch of expected) assert.equal(actual.has(pitch), true, `${chord.id} voicing omits a required chord tone`);
+  }
+}
 
 let sequence = 0;
 const idFactory = prefix => `${prefix}-${++sequence}`;

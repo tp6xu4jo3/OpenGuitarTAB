@@ -12,7 +12,7 @@ const SAMPLE_START_INDEX = SAMPLE_FRETS_BY_STRING.map((_, index) =>
   SAMPLE_FRETS_BY_STRING.slice(0, index).reduce((sum, frets) => sum + frets.length, 0)
 );
 export const SAMPLE_COUNT = SAMPLE_FRETS_BY_STRING.reduce((sum, frets) => sum + frets.length, 0);
-export const SAMPLE_BANK_URL = new URL('../../assets/audio/guitar-samples.m4a', import.meta.url).href;
+export const SAMPLE_BANK_URL = new URL('../../assets/audio/guitar-samples.m4a?rev=20260929b', import.meta.url).href;
 const MIN_BANK_DURATION = SAMPLE_COUNT * SAMPLE_DURATION_SECONDS - 0.05;
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }

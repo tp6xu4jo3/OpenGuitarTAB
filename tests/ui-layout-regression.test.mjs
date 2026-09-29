@@ -57,6 +57,7 @@ assert.match(editorCss,/\.v3-string-line\{[^}]*background:#c6c6c6/s,'six TAB str
 assert.match(editorCss,/\.v3-note\{[^}]*z-index:8[^}]*background:transparent[^}]*color:#080808/s,'note numbers should be dark and transparent over the light-gray strings');
 assert.match(editorCss,/\.content\.score-view \.v3-note\{[^}]*background:transparent[^}]*color:#050505/s,'score-view notes must also have no white box');
 assert.match(editorCss,/\.v3-note-editor\{[^}]*background:transparent[^}]*color:#080808/s,'the active edit field must not restore a white box behind the note number');
+assert.match(editorCss,/\.v3-note\.is-editing\{visibility:hidden\}/,'the old note glyph must disappear while its editor is active');
 assert.match(editorCss,/\.content\.score-view \.v3-staff\{[^}]*top:32px[^}]*bottom:auto[^}]*height:112px[^}]*min-height:112px/s,'normal score view must keep a fixed six-string staff height');
 assert.match(scoreCss,/\.content\.score-view\.score-density-compact\{--rhythm-height:42px;--system-height:204px\}/,'compact mode must keep the same score-system height instead of compressing the staff');
 assert.match(editorCss,/\.score-density-line \.v3-grid\{height:204px\}/,'compact score segments must use the same fixed system height');
@@ -100,14 +101,17 @@ assert.match(renderer,/initialValue: this\.cursorValueAt/,'arrow navigation must
 const cursorStart=renderer.lastIndexOf('\n  showCursor({');
 const cursorSource=renderer.slice(cursorStart);
 assert.ok(cursorStart>=0,'renderer must expose one showCursor implementation');
-assert.ok(cursorSource.indexOf('this.cursor.blur()')>=0,'continuous editing must commit an existing cell before switching');
-assert.ok(cursorSource.indexOf('this.cursor.blur()')<cursorSource.indexOf('const measureNode ='),'continuous editing must resolve the next cell from the live DOM after the previous commit rerenders');
-assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\s\S]*const nextValue = normalizeFret\(input\.value\)[\s\S]*if \(nextValue === originalValue\) return;/,'unchanged keyboard navigation must not rewrite or erase existing notes');
+assert.ok(cursorSource.indexOf('this.cursor.blur()')>=0,'clicking a new cell must commit an existing editor first');
+assert.match(cursorSource,/noteNode\?\.classList\.add\('is-editing'\)/,'the renderer must hide the occupied note glyph while its editor owns the cell');
+assert.match(cursorSource,/const moveCursor = target =>[\s\S]*commit\(\);[\s\S]*close\(\);[\s\S]*this\.showCursor/s,'keyboard navigation should keep one logical cursor across DOM replacement');
+assert.doesNotMatch(cursorSource,/requestAnimationFrame/,'keyboard navigation must be synchronous after a local commit');
+assert.match(cursorSource,/const originalValue = normalizeFret\(initialValue\)[\s\S]*const nextValue = normalizeFret\(input\.value\)[\s\S]*if \(nextValue === originalValue\) return false;/,'unchanged keyboard navigation must not rewrite or erase existing notes');
 assert.doesNotMatch(notation,/appendRhythmBracket/,'triplet and 32nd subdivision must not render separate bracket labels');
 assert.match(notation,/function chordLaneY\(/,'chord labels need a dedicated lane above the first string');
 assert.match(notation,/\.v3-string-line\[data-string="0"\]/,'chord label position must anchor to string one rather than overlap the staff');
 assert.match(notation,/kind: 'group',[\s\S]*label: triplet \? '3' : '32'/,'edit mode must expose both triplet and thirty-second group markers for selection/deletion');
 assert.match(scoreCss,/\.content\.score-view \.score-density-line\{[^}]*gap:0/s,'compact score segments must join without horizontal gaps');
+assert.match(scoreCss,/score-density-segment:not\(:last-child\)[^}]*\.v3-measure:last-child \.v3-staff::after\{display:none\}/,'joined compact segments must draw a single boundary instead of overlapping two 2px lines');
 assert.match(headerCss,/\.preview-badge\{[^}]*display:inline-flex/s,'public preview badge should be visible only while preview state is active');
 assert.match(headerCss,/\.preview-badge\[hidden\]\{display:none!important\}/,'preview badge hidden state must remain authoritative');
 console.log('UI layout regression tests passed');

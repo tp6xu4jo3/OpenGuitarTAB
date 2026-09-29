@@ -5,6 +5,7 @@ const css = await readFile(new URL('../styles/playback-controls.css', import.met
 const headerCss = await readFile(new URL('../styles/header.css', import.meta.url), 'utf8');
 const viewState = await readFile(new URL('../src/editor/view-state.js', import.meta.url), 'utf8');
 const catalogSource = await readFile(new URL('../src/app-catalog.js', import.meta.url), 'utf8');
+const playbackSource = await readFile(new URL('../src/editor/playback-controller.js', import.meta.url), 'utf8');
 
 assert.match(
   css,
@@ -55,5 +56,8 @@ assert.match(
   'active mode switches must move the thumb to the on position'
 );
 assert.match(headerCss, /\.preview-badge\[hidden\]\{display:none!important\}/, 'preview badge visibility must follow its hidden state instead of being permanently suppressed');
+assert.match(playbackSource,/function playbackVisualRows\(\)[\s\S]*score-density-line[\s\S]*:scope > \.tab-system/s,'playback following must reason in visual rows for both compact and normal score modes');
+assert.match(playbackSource,/if \(rowIndex === 0 \|\| rowIndex === rows\.length - 1\) return;[\s\S]*sheet\.scrollTo/s,'first and final rows stay at their natural edges while every middle row centers immediately');
+assert.doesNotMatch(playbackSource,/nodeRect\.top < sheetRect\.top \|\| nodeRect\.bottom > sheetRect\.bottom/,'row centering must not wait until the row leaves the viewport');
 
 console.log('playback layout regression tests passed');

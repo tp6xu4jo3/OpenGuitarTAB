@@ -17,10 +17,12 @@ assert.match(localDecoration,/if \(segmentationChanged\) \{[\s\S]*syncVisualRowM
 assert.doesNotMatch(localDecoration,/decorateEditor\(/,'local layout changes must not fall back to full structure decoration');
 const dragUpdate=structureSource.slice(structureSource.indexOf('function updateDropUi('),structureSource.indexOf('function commitDrop('));
 assert.doesNotMatch(dragUpdate,/querySelectorAll|getBoundingClientRect|elementFromPoint/,'dragover must use the drag-start geometry snapshot without forcing layout reads or document scans');
-assert.match(structureSource,/function captureDragGeometry\(\)[\s\S]*getBoundingClientRect[\s\S]*function beginDrag\(\)[\s\S]*dragGeometry = captureDragGeometry\(\)/s,'drag geometry should be measured once when dragging starts');
+assert.match(structureSource,/function captureDragGeometry\(type\)[\s\S]*getBoundingClientRect[\s\S]*function beginDrag\(\)[\s\S]*dragGeometry = captureDragGeometry\(dragState\?\.type\)/s,'drag geometry should be measured once and only for the active drag type');
+assert.match(structureSource,/function scheduleDropUi\(event\)[\s\S]*requestAnimationFrame/s,'native dragover bursts should coalesce to at most one drop-target update per frame');
 assert.match(chordDragSource,/activeDropLookup = captureDropLookup\(\)/,'chord dragging should cache column targets once at drag start');
 const chordDragOver=chordDragSource.slice(chordDragSource.indexOf('function handleDragOver('),chordDragSource.indexOf('function handleDrop('));
 assert.doesNotMatch(chordDragOver,/document\.querySelector/,'chord dragover must not perform global document lookups');
+assert.match(chordDragSource,/function scheduleChordDropTarget\(node\)[\s\S]*requestAnimationFrame/s,'chord drag highlighting should also be frame-coalesced');
 for(const source of [controllerSource,chordDragSource]){
   assert.equal(source.includes('isEditingBlocked'),true,'editor interactions should use canonical view-state editing blocking');
   assert.equal(source.includes('isPreviewActive'),false,'editor controllers should not duplicate preview/score blocking logic');
