@@ -75,8 +75,8 @@ assert.match(editorCss,/data-at\$="\/1"[^}]*--v3-dot-size:14px[^}]*--v3-dot-fill
 assert.match(editorCss,/data-at\$="\/2"[^}]*--v3-dot-size:14px[^}]*--v3-dot-fill:#fff/s);
 assert.match(editorCss,/data-at\$="\/4"[^}]*--v3-dot-size:8px[^}]*--v3-dot-fill:#fff/s);
 assert.match(editorCss,/\.v3-slot-dot\{[^}]*border-radius:50%[^}]*background:var\(--v3-dot-fill\)/s,'slot affordances must remain circular when rendered per string');
-assert.match(chordDragSource,/let draggingChord = false/,'chord drag hover should track only whether a chord drag is active');
-assert.doesNotMatch(chordDragSource,/let activeDragPayload = null/,'chord payload data should not be retained for hover targeting');
+assert.match(chordDragSource,/let pointerDrag = null/,'chord drag must use one pointer-event state object');
+assert.doesNotMatch(chordDragSource,/draggingChord|activeDragPayload|activeDropLookup/,'legacy chord drag state must not coexist with pointer dragging');
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex, \{ overflowDirection: 'backward' \}\)/);
 assert.match(structureSource,/insertMeasureAt\(documentModel, target\.rowIndex, target\.measureIndex \+ 1, \{ overflowDirection: 'forward' \}\)/);
 assert.match(structureSource,/deleteMeasures\(documentModel, target\.measureIds\)/);

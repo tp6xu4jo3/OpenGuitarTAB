@@ -17,7 +17,9 @@
 .v3-column-target::after{content:'';position:absolute;left:var(--v3-anchor-x,50%);top:4px;bottom:4px;width:1px;background:transparent;transform:translateX(-.5px);transition:background .1s ease,width .1s ease}
 .content.edit-view .v3-column-target:hover::after{background:rgba(30,215,96,.22)}
 .v3-column-target.tool-range-source::after{background:#1ed760}
-.v3-column-target.is-chord-drop-target::after{width:2px;background:#1ed760}
+.chord-drag-active .v3-column-target{cursor:copy}
+.chord-drag-active .v3-note,.chord-drag-active .v3-note-editor,.chord-drag-active .technique-marker{pointer-events:none!important}
+.chord-drag-active .v3-column-target:hover::after{width:3px;background:#1ed760}
 .v3-event{position:absolute;top:0;bottom:0;width:0;pointer-events:none}
 .v3-note{position:absolute;left:0;z-index:8;box-sizing:border-box;min-width:22px;height:26px;padding:0 3px;border:0;border-radius:5px;transform:translate(-50%,-50%);background:transparent;color:#080808;font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center;white-space:nowrap;cursor:text;pointer-events:auto}
 .v3-note:hover,.v3-note:focus-visible{outline:1px solid #b6b6b6;background:transparent}

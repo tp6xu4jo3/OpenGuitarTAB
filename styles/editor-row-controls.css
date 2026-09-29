@@ -6,5 +6,13 @@
 .row-boundary-button{box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#1ed760;color:#000;cursor:pointer;pointer-events:auto;box-shadow:0 6px 14px rgba(30,215,96,.20);transition:background .14s ease,transform .14s ease}
 .row-boundary-button:hover,.row-boundary-button:focus-visible{background:#3be477;transform:scale(1.05);outline:none}
 .row-boundary-button svg{width:18px;height:18px;display:block;overflow:visible;fill:none;stroke:currentColor;stroke-width:2.35;stroke-linecap:round;stroke-linejoin:round}
+.row-drop-zone{position:absolute;left:0;right:0;height:50%;z-index:60;pointer-events:none}
+.row-drop-zone-before{top:0}
+.row-drop-zone-after{bottom:0}
+.structure-drag-row-active .row-drop-zone{pointer-events:auto}
+.row-drop-zone::after{content:'';position:absolute;left:50px;right:8px;height:3px;border-radius:2px;background:#1ed760;opacity:0;pointer-events:none}
+.row-drop-zone-before::after{top:0;transform:translateY(-50%)}
+.row-drop-zone-after::after{bottom:0;transform:translateY(50%)}
+.structure-drag-row-active .row-drop-zone:hover::after{opacity:1}
 .structure-drag-row-active .row-insert-zone:hover::after{content:'';position:absolute;left:50px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}
-@media(max-width:900px){.row-insert-zone::before,.structure-drag-row-active .row-insert-zone:hover::after{left:50px}}
+@media(max-width:900px){.row-insert-zone::before,.row-drop-zone::after,.structure-drag-row-active .row-insert-zone:hover::after{left:50px}}
