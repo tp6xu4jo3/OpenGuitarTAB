@@ -43,6 +43,10 @@ const dMinor7 = getChord('D', 'm7');
 assert.ok(dMinor7);
 assert.deepEqual([...dMinor7.voicings[0].frets], [1, 1, 2, 0, 'x', 'x']);
 assert.equal(voicingText(dMinor7.voicings[0].frets), '1120xx', 'Dm7 open voicing must be 1120xx in string-1-to-string-6 order');
+assert.equal(voicingText(getChord('D','maj7').voicings[0].frets), '2220xx', 'Dmaj7 must use the standard low open voicing');
+assert.equal(voicingText(getChord('D','sus2').voicings[0].frets), '0320xx', 'Dsus2 must use the standard open voicing');
+assert.equal(voicingText(getChord('D','sus4').voicings[0].frets), '3320xx', 'Dsus4 must use the standard open voicing');
+assert.equal(voicingText(getChord('B','m7').voicings[0].frets), '20202x', 'Bm7 must use the common open-position voicing');
 
 const rootById = new Map(CHORD_ROOTS.map(root => [root.id, root]));
 const qualityById = new Map(CHORD_QUALITIES.map(quality => [quality.id, quality]));
@@ -50,9 +54,14 @@ for (const chord of CHORD_LIBRARY) {
   const root = rootById.get(chord.root);
   const quality = qualityById.get(chord.quality);
   const expected = new Set(quality.intervals.map(interval => (root.pitchClass + interval) % 12));
+  const required = new Set(quality.intervals
+    .filter(interval => !(interval === 7 && quality.intervals.length >= 4))
+    .map(interval => (root.pitchClass + interval) % 12));
+  const defaultFrets = chord.voicings[0].frets.filter(fret => fret !== 'x').map(Number);
+  assert.ok(Math.max(0, ...defaultFrets) <= 7, `${chord.id} default voicing should stay in the low seven frets`);
   for (const voicing of chord.voicings) {
     const notes = notesForVoicing(voicing);
-    assert.ok(notes.length >= expected.size, `${chord.id} must contain enough notes for its quality`);
+    assert.ok(notes.length >= required.size, `${chord.id} must contain its essential chord tones`);
     const actual = new Set();
     for (const note of notes) {
       const fret = Number(note.fret);
@@ -61,7 +70,7 @@ for (const chord of CHORD_LIBRARY) {
       assert.equal(expected.has(pitch), true, `${chord.id} voicing contains a non-chord tone`);
       actual.add(pitch);
     }
-    for (const pitch of expected) assert.equal(actual.has(pitch), true, `${chord.id} voicing omits a required chord tone`);
+    for (const pitch of required) assert.equal(actual.has(pitch), true, `${chord.id} voicing omits an essential chord tone`);
   }
 }
 

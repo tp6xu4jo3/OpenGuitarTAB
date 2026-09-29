@@ -50,71 +50,122 @@ export const CHORD_QUALITIES = Object.freeze([
 
 const OPEN_VOICINGS = Object.freeze({
   'C:maj': Object.freeze([0, 1, 0, 2, 3, 'x']),
+  'C:maj7': Object.freeze([0, 0, 0, 2, 3, 'x']),
+  'C:7': Object.freeze([0, 1, 3, 2, 3, 'x']),
   'D:maj': Object.freeze([2, 3, 2, 0, 'x', 'x']),
-  'E:maj': Object.freeze([0, 0, 1, 2, 2, 0]),
-  'G:maj': Object.freeze([3, 0, 0, 0, 2, 3]),
-  'A:maj': Object.freeze([0, 2, 2, 2, 0, 'x']),
-  'A:m': Object.freeze([0, 1, 2, 2, 0, 'x']),
+  'D:maj7': Object.freeze([2, 2, 2, 0, 'x', 'x']),
+  'D:7': Object.freeze([2, 1, 2, 0, 'x', 'x']),
   'D:m': Object.freeze([1, 3, 2, 0, 'x', 'x']),
   'D:m7': Object.freeze([1, 1, 2, 0, 'x', 'x']),
-  'E:m': Object.freeze([0, 0, 0, 2, 2, 0])
+  'D:sus2': Object.freeze([0, 3, 2, 0, 'x', 'x']),
+  'D:sus4': Object.freeze([3, 3, 2, 0, 'x', 'x']),
+  'E:maj': Object.freeze([0, 0, 1, 2, 2, 0]),
+  'E:maj7': Object.freeze([0, 0, 1, 1, 2, 0]),
+  'E:7': Object.freeze([0, 0, 1, 0, 2, 0]),
+  'E:m': Object.freeze([0, 0, 0, 2, 2, 0]),
+  'E:m7': Object.freeze([0, 0, 0, 0, 2, 0]),
+  'E:sus4': Object.freeze([0, 0, 2, 2, 2, 0]),
+  'F:maj': Object.freeze([1, 1, 2, 3, 3, 1]),
+  'F:maj7': Object.freeze([0, 1, 2, 3, 'x', 'x']),
+  'F:m': Object.freeze([1, 1, 1, 3, 3, 1]),
+  'G:maj': Object.freeze([3, 0, 0, 0, 2, 3]),
+  'G:maj7': Object.freeze([2, 0, 0, 0, 'x', 3]),
+  'G:7': Object.freeze([1, 0, 0, 0, 2, 3]),
+  'A:maj': Object.freeze([0, 2, 2, 2, 0, 'x']),
+  'A:maj7': Object.freeze([0, 2, 1, 2, 0, 'x']),
+  'A:7': Object.freeze([0, 2, 0, 2, 0, 'x']),
+  'A:m': Object.freeze([0, 1, 2, 2, 0, 'x']),
+  'A:m7': Object.freeze([0, 1, 0, 2, 0, 'x']),
+  'A:sus2': Object.freeze([0, 0, 2, 2, 0, 'x']),
+  'A:sus4': Object.freeze([0, 3, 2, 2, 0, 'x']),
+  'Bb:maj': Object.freeze([1, 3, 3, 3, 1, 'x']),
+  'Bb:maj7': Object.freeze([1, 3, 2, 3, 1, 'x']),
+  'Bb:7': Object.freeze([1, 3, 1, 3, 1, 'x']),
+  'Bb:m': Object.freeze([1, 2, 3, 3, 1, 'x']),
+  'B:7': Object.freeze([2, 0, 2, 1, 2, 'x']),
+  'B:m7': Object.freeze([2, 0, 2, 0, 2, 'x'])
 });
 
 const ROOT_BY_ID = new Map(CHORD_ROOTS.map(root => [root.id, root]));
 const QUALITY_BY_ID = new Map(CHORD_QUALITIES.map(quality => [quality.id, quality]));
+const LOW_POSITION_MAX_FRET = 7;
 
 function pitchClass(value) {
   const numeric = Math.trunc(Number(value) || 0);
   return ((numeric % 12) + 12) % 12;
 }
 
-function nearestFret(openPitchClass, targetPitchClass, anchorFret) {
-  const base = pitchClass(targetPitchClass - openPitchClass);
-  let best = base;
-  let bestDistance = Infinity;
-  for (let octave = 0; octave <= 2; octave++) {
-    const fret = base + octave * 12;
-    const distance = Math.abs(fret - anchorFret);
-    if (distance < bestDistance) {
-      best = fret;
-      bestDistance = distance;
-    }
-  }
-  return best;
+function lowPositionScore(frets, root, quality) {
+  const allowed = new Set(quality.intervals.map(interval => pitchClass(root.pitchClass + interval)));
+  const required = new Set(quality.intervals
+    .filter(interval => !(interval === 7 && quality.intervals.length >= 4))
+    .map(interval => pitchClass(root.pitchClass + interval)));
+  const sounding = frets.flatMap((fret, string) => fret === 'x' ? [] : [{ string, fret }]);
+  if (!sounding.length) return Infinity;
+  const actual = new Set(sounding.map(({ string, fret }) => pitchClass(STANDARD_TUNING.openPitchClasses[string] + fret)));
+  if ([...actual].some(note => !allowed.has(note)) || [...required].some(note => !actual.has(note))) return Infinity;
+
+  const strings = sounding.map(note => note.string);
+  const first = Math.min(...strings);
+  const last = Math.max(...strings);
+  let internalMutes = 0;
+  for (let string = first; string <= last; string++) if (frets[string] === 'x') internalMutes += 1;
+
+  const positive = sounding.map(note => note.fret).filter(fret => fret > 0);
+  const maxFret = positive.length ? Math.max(...positive) : 0;
+  const minFret = positive.length ? Math.min(...positive) : 0;
+  const span = positive.length ? maxFret - minFret : 0;
+  const distinctFrets = new Set(positive).size;
+  const openCount = sounding.filter(note => note.fret === 0).length;
+  const requiredCount = required.size;
+  const idealStringCount = requiredCount === 2 ? 3 : requiredCount === 3 ? 6 : 5;
+  const bass = sounding.reduce((best, note) => note.string > best.string ? note : best, sounding[0]);
+  const bassPitch = pitchClass(STANDARD_TUNING.openPitchClasses[bass.string] + bass.fret);
+  const bassFloorPenalty = positive.length && bass.fret !== minFret ? Math.max(0, bass.fret - minFret) * 18 : 0;
+  let adjacentMotion = 0;
+  for (let index = 1; index < sounding.length; index++) adjacentMotion += Math.abs(sounding[index].fret - sounding[index - 1].fret);
+
+  return (bassPitch === root.pitchClass ? 0 : 120)
+    + maxFret * 10
+    + span * 18
+    + distinctFrets * 12
+    + internalMutes * 100
+    + Math.abs(sounding.length - idealStringCount) * 8
+    + positive.length
+    + (6 - sounding.length) * 2
+    - openCount * 4
+    + adjacentMotion * 2
+    + (5 - bass.string)
+    + bassFloorPenalty;
 }
 
-function movableVoicing(root, quality) {
-  const anchorBase = pitchClass(root.pitchClass - STANDARD_TUNING.openPitchClasses[5]);
-  const anchor = anchorBase === 0 ? 12 : anchorBase;
+function lowPositionVoicing(root, quality) {
+  const expected = new Set(quality.intervals.map(interval => pitchClass(root.pitchClass + interval)));
+  const candidates = STANDARD_TUNING.openPitchClasses.map(openPitch => [
+    'x',
+    ...Array.from({ length: LOW_POSITION_MAX_FRET + 1 }, (_, fret) => fret)
+      .filter(fret => expected.has(pitchClass(openPitch + fret)))
+  ]);
   const frets = Array(6).fill('x');
-  const unusedStrings = new Set([4, 3, 2, 1, 0]);
-  frets[5] = anchor;
+  let bestFrets = null;
+  let bestScore = Infinity;
 
-  for (const interval of quality.intervals.filter(value => value !== 0)) {
-    let best = null;
-    for (const string of unusedStrings) {
-      const target = pitchClass(root.pitchClass + interval);
-      const fret = nearestFret(STANDARD_TUNING.openPitchClasses[string], target, anchor);
-      const score = Math.abs(fret - anchor) * 10 + string;
-      if (!best || score < best.score) best = { string, fret, score };
+  const visit = string => {
+    if (string >= frets.length) {
+      const score = lowPositionScore(frets, root, quality);
+      if (score < bestScore) {
+        bestScore = score;
+        bestFrets = [...frets];
+      }
+      return;
     }
-    if (!best) continue;
-    frets[best.string] = best.fret;
-    unusedStrings.delete(best.string);
-  }
-
-  for (const string of unusedStrings) {
-    let best = null;
-    for (const interval of quality.intervals) {
-      const target = pitchClass(root.pitchClass + interval);
-      const fret = nearestFret(STANDARD_TUNING.openPitchClasses[string], target, anchor);
-      const score = Math.abs(fret - anchor) * 10 + interval;
-      if (!best || score < best.score) best = { fret, score };
+    for (const fret of candidates[string]) {
+      frets[string] = fret;
+      visit(string + 1);
     }
-    if (best) frets[string] = best.fret;
-  }
-
-  return frets;
+  };
+  visit(0);
+  return bestFrets || Array(6).fill('x');
 }
 
 function chordSymbol(root, quality) {
@@ -139,13 +190,13 @@ function buildChord(root, quality) {
       frets: open
     }));
   }
-  const movable = movableVoicing(root, quality);
-  const duplicateOpen = open && JSON.stringify(open) === JSON.stringify(movable);
+  const low = lowPositionVoicing(root, quality);
+  const duplicateOpen = open && JSON.stringify(open) === JSON.stringify(low);
   if (!duplicateOpen) {
     voicings.push(freezeVoicing({
-      id: `${id}:movable`,
+      id: `${id}:low`,
       tuning: STANDARD_TUNING.id,
-      frets: movable
+      frets: low
     }));
   }
   return Object.freeze({

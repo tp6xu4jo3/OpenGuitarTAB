@@ -104,9 +104,9 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
 
 {
   const documentModel=createDocumentV3({measures:['m1','m2','m3','m4'].map(id=>measure(id)),layout:{systemBreakAfter:['m2']}});
-  assert.deepEqual(buildSystems(documentModel).map(system=>system.map(item=>item.id)),[['m1','m2'],['m3','m4']]);
-  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems.map(system=>system.measureIds),[['m1','m2'],['m3','m4']]);
-  assert.ok(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems.every(system=>system.widthPx<1200),'short logical systems must keep natural width instead of stretching to the right edge');
+  assert.deepEqual(buildSystems(documentModel).map(system=>system.map(item=>item.id)),[['m1','m2','m3','m4']],'legacy early breaks must reflow forward into a full row');
+  assert.deepEqual(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems.map(system=>system.measureIds),[['m1','m2','m3','m4']]);
+  assert.ok(Math.abs(buildAdaptiveLayout(documentModel,{availableWidth:1200}).systems[0].widthPx-1200)<0.001,'full logical rows must fill the available score width');
 }
 
 {
@@ -135,7 +135,7 @@ function measure(id,{mark=null,harmonic=false,group=null,doubleDigits=false,chor
   assert.equal(wide.rows[0].plainNotation,true,'plain score rows should use non-adaptive equal measure widths');
   const firstRowWidths=wide.rows[0].segments.flatMap(segment=>segment.measureWidthsPx);
   assert.ok(firstRowWidths.every(width=>Math.abs(width-firstRowWidths[0])<0.001),'plain compact measures should remain equal width');
-  assert.ok(Math.abs(wide.rows[1].widthPx-wide.rows[0].widthPx/2)<0.001,'the final four-measure compact row must remain half-width instead of stretching to eight measures');
+  assert.ok(Math.abs(wide.rows[1].widthPx-wide.rows[0].widthPx)<0.001,'compact rows must stretch their final partial row to the same visual width');
   const narrow=buildCompactScoreLayout(documentModel,{availableWidth:460,minMeasureWidth:100});
   assert.ok(narrow.rows.length>=3);
   assert.ok(narrow.rows.every(row=>row.measureCount<=8));

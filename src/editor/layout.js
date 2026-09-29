@@ -31,17 +31,11 @@ function sourceDocument(document) {
 
 export function buildSystems(document, { maxMeasuresPerSystem = MAX_MEASURES_PER_SYSTEM } = {}) {
   const normalized = sourceDocument(document);
-  const breaks = new Set(normalized.layout?.systemBreakAfter || []);
+  const size = Math.max(1, Math.trunc(Number(maxMeasuresPerSystem) || MAX_MEASURES_PER_SYSTEM));
   const systems = [];
-  let current = [];
-  for (const measure of normalized.measures) {
-    current.push(measure);
-    if (breaks.has(measure.id) || current.length >= maxMeasuresPerSystem) {
-      systems.push(current);
-      current = [];
-    }
+  for (let index = 0; index < normalized.measures.length; index += size) {
+    systems.push(normalized.measures.slice(index, index + size));
   }
-  if (current.length) systems.push(current);
   return systems.length ? systems : [[]];
 }
 
@@ -211,7 +205,8 @@ function splitLogicalSystem(measures, sourceSystemIndex, availableWidth, maxMeas
     }
     if (!count) count = 1;
     const slice = measures.slice(cursor, cursor + count);
-    const allocation = segmentAllocation(slice, metrics, base.width);
+    const rowMeasureWidth = Math.max(base.width, availableWidth / Math.max(1, slice.length));
+    const allocation = segmentAllocation(slice, metrics, rowMeasureWidth);
     result.push({
       sourceSystemIndex,
       sourceMeasureCount,
@@ -270,15 +265,20 @@ export function buildAdaptiveLayout(documentModel, {
   return { availableWidth: width, systems, logicalSystems };
 }
 
-function finalizeCompactRow(row, gap) {
+function finalizeCompactRow(row, gap, availableWidth) {
   if (!row?.segments?.length) return null;
+  const rawContentWidth = row.segments.reduce((sum, segment) =>
+    sum + segment.measureWidthsPx.reduce((segmentSum, value) => segmentSum + value, 0), 0);
+  const targetContentWidth = Math.max(rawContentWidth, Math.max(1, availableWidth - gap * Math.max(0, row.segments.length - 1)));
+  const scale = rawContentWidth > 0 ? targetContentWidth / rawContentWidth : 1;
   const segments = row.segments.map(segment => {
-    const pixels = segment.measureWidthsPx.slice();
+    const pixels = segment.measureWidthsPx.map(value => value * scale);
     const pixelTotal = pixels.reduce((sum, value) => sum + value, 0) || 1;
     return {
       ...segment,
       measureIds: segment.measures.map(measure => measure.id),
       measureWidths: pixels.map(value => value / pixelTotal * 100),
+      measureWidthsPx: pixels,
       widthWeight: pixelTotal,
       widthPx: pixelTotal
     };
@@ -311,7 +311,7 @@ export function buildCompactScoreLayout(documentModel, {
   const rows = [];
   let row = null;
   const flush = () => {
-    const finalized = finalizeCompactRow(row, gap);
+    const finalized = finalizeCompactRow(row, gap, width);
     if (finalized) rows.push(finalized);
     row = null;
   };

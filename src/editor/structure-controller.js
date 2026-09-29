@@ -15,7 +15,6 @@ let selected = null;
 let contextTarget = null;
 let dragState = null;
 let activeDrop = null;
-let dragGeometry = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -401,93 +400,60 @@ function handleRendered(event) {
   }
 }
 
-function captureDragGeometry(type) {
-  const rows = type === 'row'
-    ? [...document.querySelectorAll('.row-insert-zone')].map(zone => {
-        const rect = zone.getBoundingClientRect();
-        return { index: Number(zone.dataset.insertIndex), zone, centerY: rect.top + rect.height / 2 };
-      })
-    : [];
-  const grids = type === 'measure'
-    ? [...document.querySelectorAll('.v3-grid[data-row]')].map(grid => {
-        const rect = grid.getBoundingClientRect();
-        const rowIndex = Number(grid.dataset.row);
-        const start = Math.max(0, Number(grid.dataset.measureStart) || 0);
-        const count = Math.max(1, Number(grid.dataset.measureCount) || 1);
-        const widths = measureWidths(grid);
-        let cumulative = 0;
-        const boundaries = [{ boundary: start, x: rect.left, node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start}"]`) }];
-        for (let localBoundary = 1; localBoundary <= count; localBoundary++) {
-          cumulative += widths[localBoundary - 1] || 0;
-          boundaries.push({
-            boundary: start + localBoundary,
-            x: rect.left + rect.width * cumulative / 100,
-            node: grid.querySelector(`.measure-insert-boundary[data-boundary="${start + localBoundary}"]`)
-          });
-        }
-        return { rowIndex, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, boundaries };
-      })
-    : [];
-  return { rows, grids };
-}
-
 function beginDrag() {
-  dragGeometry = captureDragGeometry(dragState?.type);
   clearDropUi();
 }
 
-function rowBoundaryFromPoint(y) {
-  let best = null;
-  for (const target of dragGeometry?.rows || []) {
-    const distance = Math.abs(y - target.centerY);
-    if (!best || distance < best.distance) best = { ...target, distance };
+function eventElement(event) {
+  return event?.target instanceof Element ? event.target : null;
+}
+
+function rowDropTarget(event) {
+  const target = eventElement(event);
+  const zone = target?.closest('.row-insert-zone');
+  if (zone) {
+    const index = Number(zone.dataset.insertIndex);
+    return Number.isInteger(index) ? { type: 'row', index, node: zone } : null;
   }
-  return best && best.distance <= 42 ? best : null;
+  const row = target?.closest('.editor-row-module');
+  if (!row) return null;
+  const rowIndex = Number(row.dataset.sourceRow ?? row.dataset.row);
+  if (!Number.isInteger(rowIndex)) return null;
+  const rect = row.getBoundingClientRect();
+  const index = rowIndex + (Number(event.clientY) >= rect.top + rect.height / 2 ? 1 : 0);
+  return { type: 'row', index, node: row };
 }
 
-function measureBoundaryFromPoint(x, y) {
-  const grid = (dragGeometry?.grids || []).find(item => y >= item.top && y <= item.bottom && x >= item.left && x <= item.right);
-  if (!grid) return null;
-  let best = null;
-  for (const boundary of grid.boundaries) {
-    const distance = Math.abs(x - boundary.x);
-    if (!best || distance < best.distance) best = { ...boundary, distance };
+function measureDropTarget(event) {
+  const target = eventElement(event);
+  const boundaryNode = target?.closest('.measure-insert-boundary');
+  if (boundaryNode) {
+    const grid = boundaryNode.closest('.v3-grid');
+    const rowIndex = Number(grid?.dataset.row);
+    const boundary = Number(boundaryNode.dataset.boundary);
+    if (Number.isInteger(rowIndex) && Number.isInteger(boundary)) {
+      return { type: 'measure', rowIndex, boundary, node: boundaryNode };
+    }
   }
-  return best ? { rowIndex: grid.rowIndex, boundary: best.boundary, node: best.node } : null;
+  const hitbox = target?.closest('.measure-module-hitbox');
+  if (!hitbox) return null;
+  const rowIndex = Number(hitbox.dataset.row);
+  const measureIndex = Number(hitbox.dataset.measure);
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(measureIndex)) return null;
+  const rect = hitbox.getBoundingClientRect();
+  const boundary = measureIndex + (Number(event.clientX) >= rect.left + rect.width / 2 ? 1 : 0);
+  const grid = hitbox.closest('.v3-grid');
+  const node = grid?.querySelector(`.measure-insert-boundary[data-boundary="${boundary}"]`) || hitbox;
+  return { type: 'measure', rowIndex, boundary, node };
 }
 
-function clearDropUi() {
-  if (activeDrop?.node) activeDrop.node.classList.remove(activeDrop.type === 'row' ? 'is-drag-target' : 'is-active');
-  activeDrop = null;
-}
-
-function setActiveDrop(next) {
-  const same = activeDrop && next
-    && activeDrop.type === next.type
-    && (next.type === 'row'
-      ? activeDrop.index === next.index
-      : activeDrop.rowIndex === next.rowIndex && activeDrop.boundary === next.boundary);
-  if (same) return;
-  clearDropUi();
-  if (!next) return;
-  next.node?.classList.add(next.type === 'row' ? 'is-drag-target' : 'is-active');
-  activeDrop = next;
-}
-
-function updateDropUi(clientX, clientY) {
+function updateDropUi(event) {
   if (!dragState) { clearDropUi(); return; }
-  if (dragState.type === 'row') {
-    const target = rowBoundaryFromPoint(clientY);
-    setActiveDrop(target ? { type: 'row', index: target.index, node: target.zone } : null);
-    return;
-  }
-  const target = measureBoundaryFromPoint(clientX, clientY);
-  setActiveDrop(target ? { type: 'measure', rowIndex: target.rowIndex, boundary: target.boundary, node: target.node } : null);
+  setActiveDrop(dragState.type === 'row' ? rowDropTarget(event) : measureDropTarget(event));
 }
 
 function resetDrag() {
   dragState = null;
-  dragGeometry = null;
   clearDropUi();
 }
 
@@ -506,13 +472,13 @@ function installDragHandlers() {
   document.addEventListener('dragover', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
-    updateDropUi(event.clientX, event.clientY);
+    updateDropUi(event);
   }, true);
   document.addEventListener('drop', event => {
     if (!dragState || isEditingBlocked()) return;
     event.preventDefault();
     event.stopPropagation();
-    updateDropUi(event.clientX, event.clientY);
+    updateDropUi(event);
     commitDrop();
     resetDrag();
   }, true);
