@@ -15,6 +15,7 @@ responsive.write_text(text)
 structure = Path('src/editor/structure-controller.js')
 text = structure.read_text()
 text = text.replace('let activeDrop = null;\n', '')
+text = text.replace("grid.querySelectorAll('.measure-module-hitbox,.measure-insert-boundary')", "grid.querySelectorAll('.measure-module-hitbox')")
 text, count = re.subn(
     r"\n  for \(let localBoundary = 0; localBoundary <= count; localBoundary\+\+\) \{\n    const line = document\.createElement\('div'\);\n    line\.className = 'measure-insert-boundary';\n    line\.dataset\.boundary = String\(start \+ localBoundary\);\n    line\.style\.left = `\$\{boundaryPercent\(grid, localBoundary\)\}%`;\n    grid\.appendChild\(line\);\n  \}\n",
     '\n', text, count=1
@@ -97,8 +98,8 @@ function resetDrag() {
   dragPointer?.visualNode?.classList.remove('is-dragging');
   document.documentElement.classList.remove(
     'structure-drag-active',
-    'structure-row-drag-active',
-    'structure-measure-drag-active'
+    'structure-drag-row-active',
+    'structure-drag-measure-active'
   );
   dragPointer = null;
   dragState = null;
@@ -111,7 +112,7 @@ function handlePointerMove(event) {
     if (distance < 5) return;
     dragPointer.active = true;
     dragPointer.visualNode?.classList.add('is-dragging');
-    document.documentElement.classList.add('structure-drag-active', `structure-${dragState.type}-drag-active`);
+    document.documentElement.classList.add('structure-drag-active', `structure-drag-${dragState.type}-active`);
   }
   event.preventDefault();
 }
@@ -139,7 +140,7 @@ function installDragHandlers() {
 
 '''
 text = text[:start] + drag_block + text[end:]
-forbidden = ['activeDrop', 'clearDropUi', 'setActiveDrop', 'updateDropUi', 'elementsFromPoint', 'setPointerCapture', 'releasePointerCapture', 'measure-insert-boundary']
+forbidden = ['activeDrop', 'clearDropUi', 'setActiveDrop', 'updateDropUi', 'elementsFromPoint', 'setPointerCapture', 'releasePointerCapture', 'measure-insert-boundary', 'row-drag-active', 'measure-drag-active']
 leftovers = [token for token in forbidden if token in text]
 if leftovers:
     raise SystemExit(f'legacy drag leftovers: {leftovers}')
@@ -156,7 +157,7 @@ lines = [line for line in lines if not any(token in line for token in dead)]
 insert_after = next((i for i, line in enumerate(lines) if line.startswith('.measure-module-hitbox:hover')), None)
 if insert_after is None:
     raise SystemExit('measure hover css anchor missing')
-lines.insert(insert_after + 1, '.structure-measure-drag-active .v3-column-target,.structure-measure-drag-active .v3-note,.structure-measure-drag-active .v3-note-editor,.structure-measure-drag-active .technique-marker{pointer-events:none!important}')
+lines.insert(insert_after + 1, '.structure-drag-measure-active .v3-column-target,.structure-drag-measure-active .v3-note,.structure-drag-measure-active .v3-note-editor,.structure-drag-measure-active .technique-marker{pointer-events:none!important}')
 modules.write_text('\n'.join(lines) + '\n')
 
 Path('styles/editor-insert-zones.css').write_text(
@@ -174,8 +175,8 @@ row = '\n'.join(line for line in row.splitlines() if not any(token in line for t
     '.row-drag-active', '.row-insert-zone.is-drag-target'
 ))) + '\n'
 row = row.replace('@media(max-width:900px){.row-insert-zone::before,.row-insert-zone.is-drag-target::after{left:50px}}\n', '')
-row += ".structure-row-drag-active .row-insert-zone:hover::after{content:'';position:absolute;left:50px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}\n"
-row += '@media(max-width:900px){.row-insert-zone::before,.structure-row-drag-active .row-insert-zone:hover::after{left:50px}}\n'
+row += ".structure-drag-row-active .row-insert-zone:hover::after{content:'';position:absolute;left:50px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}\n"
+row += '@media(max-width:900px){.row-insert-zone::before,.structure-drag-row-active .row-insert-zone:hover::after{left:50px}}\n'
 row_css.write_text(row)
 
 structure_test = Path('tests/editor-structure-cleanup.test.mjs')
@@ -198,10 +199,10 @@ const dropResolution=structureSource.slice(structureSource.indexOf('function dro
 assert.match(dropResolution,/document\\.elementFromPoint\\(x, y\\)/,'drop must resolve the element under the final pointer exactly once');
 assert.equal((structureSource.match(/document\\.elementFromPoint\\(/g)||[]).length,1,'row and measure drag should share one final point lookup');
 assert.match(structureSource,/function finishPointerDrag\\(event[\\s\\S]*commitDropAt\\(event\\.clientX, event\\.clientY\\)/s,'document mutation should happen only on pointer release');
-assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|updateDropUi|elementsFromPoint|setPointerCapture|releasePointerCapture|measure-insert-boundary|addEventListener\\('dragover'/,'legacy hover-target and native DnD paths must be deleted');
+assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|updateDropUi|elementsFromPoint|setPointerCapture|releasePointerCapture|measure-insert-boundary|row-drag-active|measure-drag-active|addEventListener\\('dragover'/,'legacy hover-target and native DnD paths must be deleted');
 assert.doesNotMatch(insertZoneCss,/drop-before|drop-after|measure-insert-boundary|measure-drag-grip|is-drag-target|measure-insert-shift/,'legacy insertion drag CSS must be removed');
-assert.doesNotMatch(rowControlsCss,/row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
-assert.match(rowControlsCss,/structure-row-drag-active \\.row-insert-zone:hover::after/,'row drag feedback should use native CSS hover only');
+assert.doesNotMatch(rowControlsCss,/\\.row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
+assert.match(rowControlsCss,/structure-drag-row-active \\.row-insert-zone:hover::after/,'row drag feedback should use native CSS hover only');
 """
 if old not in test:
     raise SystemExit('structure drag test block missing')
