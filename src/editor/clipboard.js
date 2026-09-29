@@ -1,4 +1,4 @@
-import { createChangeSet } from './commands.js';
+import { createChangeSet, LAYOUT_INVALIDATION } from './commands.js';
 import {
   cloneValue,
   createId,
@@ -177,7 +177,9 @@ export class EditorClipboard {
       changeSet: createChangeSet({
         measures: [target.id],
         playback: [target.id],
-        relations: [...cleaned.removedRelationIds, ...addedRelations.map(relation => relation.id)]
+        relations: [...cleaned.removedRelationIds, ...addedRelations.map(relation => relation.id)],
+        layoutFrom: target.id,
+        layoutKind: LAYOUT_INVALIDATION.GRID
       })
     };
   }
@@ -193,33 +195,40 @@ export class EditorClipboard {
     const end = Math.max(...indexes);
     if (end - start + 1 !== targetIds.length) return null;
 
-    const removedMeasures = source.measures.slice(start, end + 1);
-    const removedNoteIds = noteIdsInMeasures(removedMeasures);
+    const targetMeasures = source.measures.slice(start, end + 1);
+    const targetIdSet = new Set(targetIds);
+    if (targetMeasures.some(measure => !targetIdSet.has(String(measure.id)))) return null;
+    if (this.payload.measures.length !== targetMeasures.length) return null;
+
+    const removedNoteIds = noteIdsInMeasures(targetMeasures);
     const cleaned = relationsWithoutNotes(source, removedNoteIds);
     const noteIdMap = new Map();
     const measureIdMap = new Map();
-    const clonedMeasures = this.payload.measures.map(sourceMeasure => {
-      const cloned = cloneMeasureWithFreshIds(sourceMeasure, idFactory);
+    const clonedMeasures = this.payload.measures.map((sourceMeasure, index) => {
+      const targetMeasureId = String(targetMeasures[index].id);
+      const cloned = cloneMeasureWithFreshIds(sourceMeasure, idFactory, { measureId: targetMeasureId });
       cloned.noteIdMap.forEach((value, key) => noteIdMap.set(key, value));
-      measureIdMap.set(String(sourceMeasure.id), String(cloned.measure.id));
+      measureIdMap.set(String(sourceMeasure.id), targetMeasureId);
       return cloned.measure;
     });
     const addedRelations = cloneRelationsWithMap(this.payload.relations, noteIdMap, measureIdMap, idFactory);
 
     const measures = source.measures.slice();
-    measures.splice(start, targetIds.length, ...clonedMeasures);
+    measures.splice(start, targetMeasures.length, ...clonedMeasures);
     const next = {
       ...source,
       measures,
       relations: [...cleaned.relations, ...addedRelations]
     };
+    const changedMeasureIds = targetMeasures.map(measure => String(measure.id));
     return {
       document: next,
       changeSet: createChangeSet({
-        measures: [...targetIds, ...clonedMeasures.map(measure => measure.id)],
-        playback: clonedMeasures.map(measure => measure.id),
+        measures: changedMeasureIds,
+        playback: changedMeasureIds,
         relations: [...cleaned.removedRelationIds, ...addedRelations.map(relation => relation.id)],
-        layoutFrom: clonedMeasures[0]?.id || measures[start]?.id
+        layoutFrom: changedMeasureIds[0],
+        layoutKind: LAYOUT_INVALIDATION.GRID
       })
     };
   }
