@@ -1,0 +1,31 @@
+name: Apply final-row drag canonical cleanup
+on: [push]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/final-row-drag-canonical-cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply canonical cleanup
+        run: python scripts/apply-final-row-drag-canonical-cleanup.py
+      - name: Test
+        run: npm test
+      - name: Benchmark
+        run: npm run benchmark:editor-layout
+      - name: Check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-final-row-drag-canonical-cleanup.yml scripts/apply-final-row-drag-canonical-cleanup.py
+          git add src/editor styles tests
+          git commit -m "fix: preserve final row width and canonicalize editor invalidation"
+          git push origin HEAD:fix/final-row-drag-canonical-cleanup
