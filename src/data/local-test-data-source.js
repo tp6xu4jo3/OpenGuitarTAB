@@ -22,14 +22,29 @@ function safeFileId(value) {
 }
 
 function catalogMetaFromSong(song) {
+  const fileId = String(song?._driveFileId || '');
+  const owner = String(song?._opentab?.owner || song?.owner || TEST_USER.username);
+  const publicState = song?._opentab?.public === true || song?.public === true;
   return {
-    ...song,
-    owner: String(song?._opentab?.owner || song?.owner || TEST_USER.username),
-    uploadedBy: String(song?._opentab?.uploadedBy || song?.uploadedBy || TEST_USER.username),
-    public: song?._opentab?.public === true,
-    _driveFileId: String(song?._driveFileId || ''),
+    id: String(song?.songId || song?.id || fileId),
+    workId: String(song?.workId || ''),
+    arrangementId: String(song?.arrangementId || ''),
+    name: String(song?.name || ''),
+    artist: String(song?.artist || ''),
+    album: String(song?.album || ''),
+    cover: String(song?.cover || ''),
+    source: String(song?.source || ''),
+    playStyle: song?.playStyle === 'chord' ? 'chord' : song?.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+    difficulty: Number.isFinite(Number(song?.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(song.difficulty)))) : null,
+    owner,
+    uploadedBy: String(song?._opentab?.uploadedBy || song?.uploadedBy || owner),
+    public: publicState,
+    tempo: Number(song?.tempo) || 120,
+    capo: Number.isFinite(Number(song?.capo)) ? Number(song.capo) : 0,
+    beatsPerMeasure: Number(song?.beatsPerMeasure) === 3 ? 3 : 4,
+    _driveFileId: fileId,
     _driveFileName: String(song?._driveFileName || ''),
-    _driveModifiedTime: String(song?._driveModifiedTime || '')
+    _driveModifiedTime: String(song?._driveModifiedTime || song?.updatedAt || '')
   };
 }
 
@@ -61,7 +76,11 @@ export class LocalTestDataSource {
 
   fixtureCatalog() {
     if (!this.fixtureCatalogPromise) {
-      this.fixtureCatalogPromise = this.readJson('./test-data/pages/catalog.json');
+      const pending = this.readJson('./test-data/pages/catalog.json');
+      this.fixtureCatalogPromise = pending;
+      pending.catch(() => {
+        if (this.fixtureCatalogPromise === pending) this.fixtureCatalogPromise = null;
+      });
     }
     return this.fixtureCatalogPromise;
   }
@@ -121,6 +140,9 @@ export class LocalTestDataSource {
         }
       }, { fileId }));
       this.fixtureSongPromises.set(fileId, pending);
+      pending.catch(() => {
+        if (this.fixtureSongPromises.get(fileId) === pending) this.fixtureSongPromises.delete(fileId);
+      });
     }
     return cloneValue(await this.fixtureSongPromises.get(fileId));
   }
@@ -151,14 +173,28 @@ export class LocalTestDataSource {
 
   async loadSong(identifier) {
     const id = String(identifier || '');
-    const songs = await this.allSongs();
-    const song = songs.find(item =>
-      String(item._driveFileId || '') === id
-      || String(item.arrangementId || '') === id
-      || String(item.id || '') === id
+    const state = this.readState();
+    const deleted = new Set(state.deleted.map(String));
+    const local = Object.entries(state.records).find(([fileId, song]) =>
+      !deleted.has(String(fileId)) && (
+        String(fileId) === id
+        || String(song?._driveFileId || '') === id
+        || String(song?.arrangementId || '') === id
+        || String(song?.id || '') === id
+      )
     );
-    if (!song) throw new Error('TEST_SONG_NOT_FOUND');
-    return { song: cloneValue(song), localTest: true };
+    if (local) return { song: cloneValue(local[1]), localTest: true };
+
+    const metadata = await this.fixtureMetadata();
+    const meta = metadata.find(item =>
+      String(item?._driveFileId || '') === id
+      || String(item?.arrangementId || '') === id
+      || String(item?.songId || '') === id
+      || String(item?.id || '') === id
+    );
+    const fileId = String(meta?._driveFileId || '');
+    if (!meta || deleted.has(fileId)) throw new Error('TEST_SONG_NOT_FOUND');
+    return { song: await this.fixtureSong(meta), localTest: true };
   }
 
   async saveSong(rawSong) {
@@ -205,8 +241,25 @@ export class LocalTestDataSource {
   }
 
   async catalog() {
-    const songs = (await this.allSongs()).filter(song => song?._opentab?.public === true);
-    const metadata = songs.map(catalogMetaFromSong);
+    const fixtureMetadata = await this.fixtureMetadata();
+    const state = this.readState();
+    const deleted = new Set(state.deleted.map(String));
+    const metadataByFileId = new Map();
+
+    for (const meta of fixtureMetadata) {
+      const projected = catalogMetaFromSong(meta);
+      const fileId = String(projected._driveFileId || '');
+      if (fileId && !deleted.has(fileId) && projected.public) metadataByFileId.set(fileId, projected);
+    }
+    for (const [fileId, song] of Object.entries(state.records)) {
+      const id = String(fileId);
+      if (deleted.has(id)) continue;
+      const projected = catalogMetaFromSong(song);
+      if (projected.public) metadataByFileId.set(id, projected);
+      else metadataByFileId.delete(id);
+    }
+
+    const metadata = [...metadataByFileId.values()];
     return { works: aggregateCatalogWorks(metadata), songs: metadata, localTest: true };
   }
 

@@ -12,6 +12,7 @@ import {
   createCatalogId,
   ensureArrangementIdentity
 } from '../src/catalog/work-model.js';
+import { isDocumentV3, normalizeDocumentV3 } from '../src/editor/model.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -35,11 +36,11 @@ const SONG_FIELD_ORDER = [
   'artist',
   'album',
   'cover',
-  'document',
-  'rowMeasureCounts',
-  'rhythmRows',
-  'rows'
+  'document'
 ];
+const LEGACY_SONG_FIELD_ORDER = ['rowMeasureCounts', 'rhythmRows', 'rows'];
+const DRIVE_READ_CONCURRENCY = 8;
+const PUBLIC_CATALOG_CACHE_TTL_MS = 30_000;
 const STANDARD_TUNING = 'standard';
 const LEGACY_PUBLIC_FILE_IDS = new Set([
   '1AptDYqj0eRlNfJMoCNC1S8w0aeRtg_YQ',
@@ -61,6 +62,38 @@ const LEGACY_PUBLIC_FILE_IDS = new Set([
 ]);
 
 let driveTokenCache = null;
+let publicCatalogCache = null;
+let publicCatalogPending = null;
+let publicCatalogGeneration = 0;
+
+function invalidatePublicCatalogCache() {
+  publicCatalogGeneration += 1;
+  publicCatalogCache = null;
+  publicCatalogPending = null;
+}
+
+export async function settledMapWithConcurrency(items, limit, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  if (!source.length) return [];
+  const concurrency = Math.max(1, Math.trunc(Number(limit) || 1));
+  const results = new Array(source.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= source.length) return;
+      try {
+        results[index] = { status: 'fulfilled', value: await mapper(source[index], index) };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, source.length) }, () => worker()));
+  return results;
+}
 
 function json(res, status, payload) {
   res.statusCode = status;
@@ -349,6 +382,7 @@ function catalogMeta(song, file) {
 export function cleanSongForWrite(song, meta) {
   const input = ensureArrangementIdentity(song);
   const beatsPerMeasure = Number(input.beatsPerMeasure) === 3 ? 3 : 4;
+  const hasDocumentV3 = isDocumentV3(input.document);
   const defaults = {
     id: String(input.id || `song-${Date.now().toString(36)}`),
     workId: input.workId,
@@ -367,13 +401,22 @@ export function cleanSongForWrite(song, meta) {
     artist: String(input.artist || ''),
     album: String(input.album || ''),
     cover: String(input.cover || ''),
-    document: input.document && typeof input.document === 'object' && !Array.isArray(input.document) ? structuredClone(input.document) : undefined,
-    rowMeasureCounts: Array.isArray(input.rowMeasureCounts) ? structuredClone(input.rowMeasureCounts) : undefined,
-    rhythmRows: Array.isArray(input.rhythmRows) ? input.rhythmRows : [],
-    rows: Array.isArray(input.rows) ? input.rows : []
+    document: hasDocumentV3 ? normalizeDocumentV3(input.document) : undefined
   };
   const persisted = {};
-  for (const key of SONG_FIELD_ORDER) persisted[key] = structuredClone(defaults[key]);
+  for (const key of SONG_FIELD_ORDER) {
+    if (defaults[key] !== undefined) persisted[key] = structuredClone(defaults[key]);
+  }
+  if (!hasDocumentV3) {
+    const legacy = {
+      rowMeasureCounts: Array.isArray(input.rowMeasureCounts) ? structuredClone(input.rowMeasureCounts) : undefined,
+      rhythmRows: Array.isArray(input.rhythmRows) ? structuredClone(input.rhythmRows) : [],
+      rows: Array.isArray(input.rows) ? structuredClone(input.rows) : []
+    };
+    for (const key of LEGACY_SONG_FIELD_ORDER) {
+      if (legacy[key] !== undefined) persisted[key] = structuredClone(legacy[key]);
+    }
+  }
   persisted._opentab = { ...meta };
   delete persisted._opentab.hidden;
   delete persisted._opentab.publicFileId;
@@ -404,6 +447,7 @@ async function createJsonFile(folderId, song, meta) {
     body
   });
   const file = await response.json();
+  invalidatePublicCatalogCache();
   return attachFileMeta(persisted, file);
 }
 
@@ -416,11 +460,13 @@ async function updateJsonFile(fileId, song, meta) {
     body: JSON.stringify(persisted, null, 2)
   });
   const file = await response.json();
+  invalidatePublicCatalogCache();
   return attachFileMeta(persisted, file);
 }
 
 async function deleteDriveFile(fileId) {
   await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+  invalidatePublicCatalogCache();
 }
 
 async function readManagedEntry(fileId) {
@@ -433,10 +479,10 @@ async function readManagedEntry(fileId) {
 
 async function entriesFromFolder(folderId) {
   const files = await listJsonFiles(folderId);
-  const results = await Promise.allSettled(files.map(async file => {
+  const results = await settledMapWithConcurrency(files, DRIVE_READ_CONCURRENCY, async file => {
     const song = authoritativeSong(await readDriveJson(file.id), file, folderId);
     return isManagedSong(song, file, folderId) ? { file, folderId, song } : null;
-  }));
+  });
   return results
     .filter(result => result.status === 'fulfilled' && result.value)
     .map(result => result.value);
@@ -456,11 +502,28 @@ async function managedPublicEntries({ full = false } = {}) {
 }
 
 async function managedPublicCatalog() {
-  const songs = await managedPublicEntries();
-  return {
-    works: aggregateCatalogWorks(songs),
-    songs
-  };
+  const now = Date.now();
+  if (publicCatalogCache?.expiresAt > now) return structuredClone(publicCatalogCache.value);
+  if (publicCatalogPending) return structuredClone(await publicCatalogPending);
+
+  const generation = publicCatalogGeneration;
+  const pending = (async () => {
+    const songs = await managedPublicEntries();
+    const value = { works: aggregateCatalogWorks(songs), songs };
+    if (generation === publicCatalogGeneration) {
+      publicCatalogCache = {
+        expiresAt: Date.now() + PUBLIC_CATALOG_CACHE_TTL_MS,
+        value: structuredClone(value)
+      };
+    }
+    return value;
+  })();
+  publicCatalogPending = pending;
+  try {
+    return structuredClone(await pending);
+  } finally {
+    if (publicCatalogPending === pending) publicCatalogPending = null;
+  }
 }
 
 async function userLibrary(session) {
