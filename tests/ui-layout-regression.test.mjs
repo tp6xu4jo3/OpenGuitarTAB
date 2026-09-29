@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { artistProfileFor } from '../src/catalog/artist-profiles.js';
+import { mediaForArtist, normalizeArtistMedia } from '../src/catalog/media.js';
 
 const browser=await readFile(new URL('../src/catalog/song-browser.js',import.meta.url),'utf8');
 const appCatalog=await readFile(new URL('../src/app-catalog.js',import.meta.url),'utf8');
@@ -19,8 +19,9 @@ const renderer=await readFile(new URL('../src/editor/renderer.js',import.meta.ur
 const notation=await readFile(new URL('../src/editor/notation-renderer.js',import.meta.url),'utf8');
 const buildScript=await readFile(new URL('../scripts/build-static.mjs',import.meta.url),'utf8');
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
+const artistMedia=normalizeArtistMedia(JSON.parse(await readFile(new URL('../test-data/pages/artists.json',import.meta.url),'utf8')));
 
-assert.equal(artistProfileFor('周杰倫')?.image,'https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg');
+assert.equal(mediaForArtist(artistMedia,'周杰倫')?.image,'https://r2.theaudiodb.com/images/media/artist/thumb/1xuf2r1779253287.jpg');
 assert.doesNotMatch(browser,/installHorizontalWheel|addEventListener\(['"]wheel['"]/,'rails must not hijack vertical wheel scrolling');
 assert.match(browser,/work-card-inner/);
 assert.match(browser,/work-card-front/);
