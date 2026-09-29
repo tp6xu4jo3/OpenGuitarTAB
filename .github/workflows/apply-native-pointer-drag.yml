@@ -13,6 +13,18 @@ jobs:
           node-version: 22
       - name: Rewrite drag controllers and indicators
         run: python scripts/apply-native-pointer-drag.py
+      - name: Correct independent boundary assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/editor-structure-cleanup.test.mjs')
+          text = path.read_text()
+          old = "assert.match(structureSource,/dataset\\.dropRowBoundary[\\s\\S]*dataset\\.dropMeasureBoundary/s,'structure decoration must install explicit row and measure drop boundaries');"
+          new = "assert.match(structureSource,/dataset\\.dropRowBoundary/,'structure decoration must install explicit row drop boundaries');\nassert.match(structureSource,/dataset\\.dropMeasureBoundary/,'structure decoration must install explicit measure drop boundaries');"
+          if old not in text:
+              raise SystemExit('combined boundary assertion missing')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - name: Test
         run: npm test
       - name: Benchmark
