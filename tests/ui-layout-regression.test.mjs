@@ -85,8 +85,8 @@ assert.match(toolsCss,/\.notation-relation\{[^}]*fill:none!important/s,'arcs mus
 assert.match(toolsCss,/\.editor-ribbon-tab\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-continuous-button\{[^}]*background:#1ed760/s);
 assert.match(toolsCss,/\.editor-ribbon-panel\{[^}]*width:max-content[^}]*max-width:100%/s,'tool panel border must shrink-wrap its contents');
-assert.match(playbackCss,/@media\(max-width:760px\)[\s\S]*\.editor-view \.play-panel\{display:contents\}[\s\S]*\.editor-view \.tempo-box\{grid-column:3;grid-row:1/s,'mobile playback controls should share the header grid and move BPM beside the title');
-assert.match(responsiveCss,/@media \(max-width:760px\)[\s\S]*\.topbar\{grid-template-columns:minmax\(0,max-content\) minmax\(0,1fr\) max-content;grid-template-rows:auto auto auto[\s\S]*\.editor-title-wrap\{grid-column:2;grid-row:1/s,'mobile header should reserve a third column for the BPM control while the title remains flexible');
+assert.match(playbackCss,/@media\(max-width:760px\)[\s\S]*\.editor-view \.header-meta-controls\{[^}]*min-width:max-content[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content minmax\(30px,1fr\) minmax\(72px,1\.15fr\) 48px/s,'mobile header should keep BPM/capo visible while playback occupies one second row');
+assert.match(responsiveCss,/@media \(max-width:760px\)[\s\S]*\.topbar\{grid-template-columns:max-content minmax\(0,1fr\) max-content;grid-template-rows:auto auto[\s\S]*\.header-meta-controls\{grid-column:3;grid-row:1[\s\S]*\.play-panel\{grid-column:1\/-1;grid-row:2/s,'mobile header should use exactly two rows with metadata beside the title');
 assert.match(playbackCss,/\.mode-toggle-label\{[^}]*word-break:keep-all[^}]*overflow-wrap:normal/s,'score mode labels must not break between Chinese characters');
 assert.match(responsiveCss,/\.editor-ribbon\{[^}]*width:max-content[^}]*max-width:100%/s,'mobile ribbon must shrink-wrap instead of spanning the score width');
 assert.match(responsiveCss,/\.editor-ribbon-section\{[^}]*width:max-content[^}]*overflow-x:auto[^}]*touch-action:pan-x/s,'mobile ribbon must support native horizontal swiping');

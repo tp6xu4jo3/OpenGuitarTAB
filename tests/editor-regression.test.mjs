@@ -73,10 +73,10 @@ const reloaded=new ScoreStore(reloadedSong).getDocument();
 }
 
 {
-  const inserted=insertMeasureAt(reloaded,1,1,{idFactory});
-  assert.deepEqual(buildSystems(inserted.document).map(system=>system.length),[1,2]);
-  const restored=deleteMeasureAt(inserted.document,1,1).document;
-  assert.deepEqual(buildSystems(restored).map(system=>system.length),[1,1]);
+  const inserted=insertMeasureAt(reloaded,0,1,{idFactory});
+  assert.deepEqual(buildSystems(inserted.document).map(system=>system.length),[3],'insertion should keep the partial document on one packed row');
+  const restored=deleteMeasureAt(inserted.document,0,1).document;
+  assert.deepEqual(buildSystems(restored).map(system=>system.length),[2],'deletion should repack the remaining measures on one row');
   assert.deepEqual(restored.relations.map(relation=>relation.type).sort(),['arc','slide']);
 }
 

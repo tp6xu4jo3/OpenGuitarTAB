@@ -9,47 +9,49 @@
 .editor-view #rhythmToggleButton .mode-toggle-label,.editor-view #scoreDensityControl .mode-toggle-label{display:block;min-width:max-content;flex:0 0 auto;white-space:nowrap;word-break:keep-all;overflow-wrap:normal}
 
 @media(min-width:761px) and (max-width:1500px){
-  .editor-view .play-panel{display:grid;grid-template-columns:max-content max-content auto auto minmax(140px,1fr) auto;align-items:center;gap:7px 8px;width:100%;overflow:visible}
-  .editor-view #rhythmToggleButton{grid-column:1;grid-row:1}
-  .editor-view #scoreDensityControl{grid-column:2;grid-row:1}
-  .editor-view .capo-box{grid-column:3;grid-row:1}
-  .editor-view .tempo-box{grid-column:4;grid-row:1}
-  .editor-view .progress-box{grid-column:5;grid-row:1;min-width:0;width:100%;max-width:none;overflow:hidden}
+  .editor-view .play-panel{display:grid;grid-template-columns:max-content max-content minmax(160px,1fr) auto auto;align-items:center;gap:7px 8px;width:100%;overflow:visible}
+  .editor-view #rhythmToggleButton{grid-column:1}
+  .editor-view #scoreDensityControl{grid-column:2}
+  .editor-view .progress-box{grid-column:3;min-width:0;width:100%;max-width:none;overflow:hidden}
   .editor-view #playProgress{min-width:72px;width:100%}
-  .editor-view .play-button{grid-column:6;grid-row:1}
-  .editor-view .playback-sound-controls{grid-column:1/7;grid-row:2;justify-self:end}
+  .editor-view .playback-sound-controls{grid-column:4}
+  .editor-view .play-button{grid-column:5}
 }
 
 @media(max-width:760px){
-  .editor-view .play-panel{display:contents}
-  .editor-view #rhythmToggleButton{grid-column:1;grid-row:2;min-width:0;width:100%;max-width:100%}
-  .editor-view #scoreDensityControl{grid-column:2;grid-row:2;min-width:0;width:100%;max-width:100%}
-  .editor-view .capo-box{grid-column:3;grid-row:2}
-  .editor-view .tempo-box{grid-column:3;grid-row:1;align-self:center}
-  .editor-view .mode-toggle-button{min-height:31px;padding:3px 4px;font-size:11px;justify-content:center;gap:5px}
-  .editor-view .mode-switch{width:34px;height:21px;flex-basis:34px}
-  .editor-view .mode-switch-thumb{top:3px;left:3px;width:15px;height:15px}
-  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(13px)}
-  .editor-view .capo-box,.editor-view .tempo-box{box-sizing:border-box;min-width:0;width:100%;justify-content:center;overflow:hidden}
-  .editor-view .progress-box{grid-column:1;grid-row:3;box-sizing:border-box;min-width:0;width:100%;max-width:100%;overflow:hidden}
-  .editor-view .playback-sound-controls{grid-column:2;grid-row:3;width:100%;min-width:0;box-sizing:border-box;justify-content:center;overflow:hidden}
-  .editor-view .playback-sound-toggle{min-width:0;flex:1 1 0;padding:0 2px;height:30px;font-size:10px;gap:3px}
-  .editor-view .playback-sound-indicator{width:7px;height:7px;flex-basis:7px}
-  .editor-view .play-button{grid-column:3;grid-row:3;width:100%;min-width:0;height:32px;font-size:13px}
-  .editor-view .tempo-box,.editor-view .capo-box,.editor-view .progress-box{gap:3px;padding:4px 5px}
-  .editor-view .tempo-box label,.editor-view .capo-box label,.editor-view .progress-label{font-size:10px}
-  .editor-view #tempoInput,.editor-view #capoInput{font-size:14px}
-  .editor-view #tempoInput{width:32px;min-width:0}
-  .editor-view #capoInput{width:20px;min-width:0}
-  .editor-view #playProgress{width:auto;min-width:38px;flex:1 1 42px}
-  .editor-view #progressLabel{min-width:0;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .editor-view .header-meta-controls{gap:4px;min-width:max-content}
+  .editor-view .tempo-box,.editor-view .capo-box{box-sizing:border-box;min-width:0;justify-content:center;overflow:visible;gap:3px;padding:4px 5px}
+  .editor-view .tempo-box{width:62px}
+  .editor-view .capo-box{width:76px}
+  .editor-view .tempo-box label,.editor-view .capo-box label{font-size:9px}
+  .editor-view #tempoInput{width:27px;min-width:27px;font-size:14px}
+  .editor-view #capoInput{width:18px;min-width:18px;font-size:14px}
+  .editor-view .capo-box .progress-label{font-size:9px}
+  .editor-view .play-panel{display:grid;grid-template-columns:max-content max-content minmax(30px,1fr) minmax(72px,1.15fr) 48px;align-items:center;gap:4px;width:100%;max-width:100%;overflow:visible}
+  .editor-view #rhythmToggleButton{grid-column:1}
+  .editor-view #scoreDensityControl{grid-column:2}
+  .editor-view .mode-toggle-button{min-height:30px;padding:2px;font-size:10px;justify-content:center;gap:3px}
+  .editor-view .mode-switch{width:30px;height:20px;flex-basis:30px}
+  .editor-view .mode-switch-thumb{top:3px;left:3px;width:14px;height:14px}
+  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(10px)}
+  .editor-view .progress-box{grid-column:3;box-sizing:border-box;min-width:0;width:100%;max-width:100%;overflow:hidden;gap:2px;padding:4px}
+  .editor-view #playProgress{width:100%;min-width:28px;flex:1 1 auto}
+  .editor-view #progressLabel{display:none}
+  .editor-view .playback-sound-controls{grid-column:4;width:100%;min-width:0;box-sizing:border-box;justify-content:center;overflow:hidden;padding:2px;gap:1px}
+  .editor-view .playback-sound-toggle{min-width:0;flex:1 1 0;padding:0 1px;height:28px;font-size:9px;gap:2px}
+  .editor-view .playback-sound-indicator{width:6px;height:6px;flex-basis:6px}
+  .editor-view .play-button{grid-column:5;width:100%;min-width:0;height:32px;font-size:12px}
 }
 
 @media(max-width:340px){
-  .editor-view .mode-toggle-button{font-size:10px;gap:3px;padding-left:2px;padding-right:2px}
-  .editor-view .mode-switch{width:30px;flex-basis:30px}
-  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(9px)}
-  .editor-view .tempo-box label,.editor-view .capo-box label{font-size:9px}
-  .editor-view #progressLabel{display:none}
-  .editor-view .playback-sound-toggle{font-size:9px}
+  .editor-view .tempo-box{width:56px;padding-left:3px;padding-right:3px}
+  .editor-view .capo-box{width:68px;padding-left:3px;padding-right:3px}
+  .editor-view .tempo-box label,.editor-view .capo-box label,.editor-view .capo-box .progress-label{font-size:8px}
+  .editor-view #tempoInput{width:25px;min-width:25px;font-size:13px}
+  .editor-view #capoInput{width:16px;min-width:16px;font-size:13px}
+  .editor-view .play-panel{grid-template-columns:max-content max-content minmax(24px,1fr) 66px 44px;gap:3px}
+  .editor-view .mode-toggle-button{font-size:9px;gap:2px;padding-left:1px;padding-right:1px}
+  .editor-view .mode-switch{width:27px;flex-basis:27px}
+  .editor-view .mode-toggle-button.is-active .mode-switch-thumb{transform:translateX(7px)}
+  .editor-view .playback-sound-toggle{font-size:8px}
 }

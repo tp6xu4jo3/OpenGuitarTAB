@@ -41,8 +41,8 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 {
   const inserted=insertMeasureAt(twoRows(),1,2,{idFactory:ids(),overflowDirection:'backward'}).document;
   const rows=buildSystems(inserted).map(row=>row.map(m=>m.id));
-  assert.ok(rows.some(row=>row.at(-1)==='m5'),'left insertion must spill target row head to the preceding row tail');
-  assert.equal(rows[0][0],'m1','when the preceding row is also full its own head cascades into a new previous row');
+  assert.deepEqual(rows.map(row=>row.length),[4,4,1],'backward insertion must still repack every non-final row to four measures');
+  assert.deepEqual(rows.flat().filter(id=>/^m\d+$/.test(id)),['m1','m2','m3','m4','m5','m6','m7','m8'],'packing must preserve the original measure order around the inserted blank');
   assert.equal(rows.flat().length,9);
 }
 {
@@ -57,7 +57,7 @@ function ids(){let n=0;return prefix=>`${prefix}-structure-${++n}`;}
 }
 {
   const deleted=deleteMeasures(twoRows(),['m3','m4']).document;
-  assert.deepEqual(buildSystems(deleted).map(row=>row.map(m=>m.id)),[['m1','m2'],['m5','m6','m7','m8']], 'wrapped visual-row deletion must remove only the visible measure segment');
+  assert.deepEqual(buildSystems(deleted).map(row=>row.map(m=>m.id)),[['m1','m2','m5','m6'],['m7','m8']], 'wrapped visual-row deletion must remove the requested measures and pack later measures forward');
 }
 {
   const single=createDocumentV3({measures:[plainMeasure('m1'),plainMeasure('m2')]});
