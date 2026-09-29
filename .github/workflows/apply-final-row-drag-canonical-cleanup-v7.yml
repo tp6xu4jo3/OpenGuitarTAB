@@ -72,6 +72,15 @@ jobs:
             if old not in s: raise SystemExit(f'stale UI regression assertion missing: {old[:100]}')
             s=s.replace(old,new,1)
           ui.write_text(s)
+
+          playback = Path('tests/playback-layout-regression.test.mjs')
+          s = playback.read_text()
+          old1 = "assert.match(playbackSource,/function playbackVisualRows\\(\\)[\\s\\S]*score-density-line[\\s\\S]*:scope > \\.tab-system/s,'playback following must reason in visual rows for both compact and normal score modes');"
+          new1 = "assert.doesNotMatch(playbackSource,/function playbackVisualRows\\(/,'playback following must not rebuild an array of every visual row on each beat');\nassert.match(playbackSource,/node\\.closest\\?\\.\\('\.score-density-line'\\) \\|\\| node\\.closest\\?\\.\\('\.tab-system'\\)/,'playback following must still resolve compact and normal visual rows');\nassert.match(playbackSource,/const rowIndex = Number\\(visualRow\\?\\.dataset\\?\\.visualRow \\?\\? visualRow\\?\\.dataset\\?\\.scoreLine\\)/,'playback following must use renderer row metadata before scroll work');"
+          old2 = "assert.match(playbackSource,/if \\(rowIndex === 0 \\|\\| rowIndex === rows\\.length - 1\\) return;[\\s\\S]*sheet\\.scrollTo/s,'first and final rows stay at their natural edges while every middle row centers immediately');"
+          new2 = "assert.match(playbackSource,/if \\(rowIndex === 0 \\|\\| !hasLaterVisualRow\\(visualRow\\)\\) return;[\\s\\S]*sheet\\.scrollTo/s,'first and final rows stay at their natural edges while every middle row centers immediately');"
+          if old1 not in s or old2 not in s: raise SystemExit('stale playback-follow assertions missing')
+          playback.write_text(s.replace(old1,new1,1).replace(old2,new2,1))
           PY
       - name: Test
         run: npm test
