@@ -14,6 +14,7 @@ let selected = null;
 let contextTarget = null;
 let dragState = null;
 let dragPointer = null;
+let dragIndicator = null;
 
 function toast(message) { window.showToast?.(message); }
 function currentStore() { return window.editorV3?.getStore?.() || null; }
@@ -436,7 +437,39 @@ function commitDropFromElement(element) {
   return false;
 }
 
+function dragZoneFromElement(element) {
+  if (!dragState || !element) return null;
+  if (dragState.type === 'row') return element.closest?.('[data-drop-row-boundary]') || null;
+  if (dragState.type === 'measure') return element.closest?.('.measure-drop-zone[data-row][data-drop-measure-boundary]') || null;
+  return null;
+}
+
+function ensureDragIndicator() {
+  if (dragIndicator) return dragIndicator;
+  dragIndicator = document.createElement('div');
+  dragIndicator.className = 'structure-drop-indicator';
+  dragIndicator.setAttribute('aria-hidden', 'true');
+  return dragIndicator;
+}
+
+function showDragIndicatorForElement(element) {
+  if (!dragPointer?.active) return;
+  const zone = dragZoneFromElement(element);
+  if (!zone) {
+    dragIndicator?.remove();
+    return;
+  }
+  const indicator = ensureDragIndicator();
+  if (indicator.parentElement !== zone) zone.appendChild(indicator);
+}
+
+function handlePointerOver(event) {
+  if (!dragPointer?.active || isEditingBlocked()) return;
+  showDragIndicatorForElement(event.target);
+}
+
 function resetDrag() {
+  dragIndicator?.remove();
   dragPointer?.visualNode?.classList.remove('is-dragging');
   document.documentElement.classList.remove(
     'structure-drag-active',
@@ -455,6 +488,7 @@ function handlePointerMove(event) {
     dragPointer.active = true;
     dragPointer.visualNode?.classList.add('is-dragging');
     document.documentElement.classList.add('structure-drag-active', `structure-drag-${dragState.type}-active`);
+    showDragIndicatorForElement(event.target);
   }
   event.preventDefault();
 }
@@ -476,6 +510,7 @@ function finishPointerDrag(event, cancelled = false) {
 
 function installDragHandlers() {
   document.addEventListener('pointermove', handlePointerMove, { capture: true, passive: false });
+  document.addEventListener('pointerover', handlePointerOver, true);
   document.addEventListener('pointerup', event => finishPointerDrag(event), true);
   document.addEventListener('pointercancel', event => finishPointerDrag(event, true), true);
   window.addEventListener('blur', resetDrag);

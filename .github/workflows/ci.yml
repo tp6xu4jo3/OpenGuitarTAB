@@ -5,37 +5,7 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-
 jobs:
-  apply:
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/slide-timing-single-drag-indicator'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: fix/slide-timing-single-drag-indicator
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: python scripts/apply-slide-drag.py
-      - run: npm test
-      - run: npm run benchmark:editor-layout
-      - run: npm run check
-      - run: npm run build
-      - name: Commit validated rewrite
-        shell: bash
-        run: |
-          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
-          rm -f .github/workflows/apply-slide-drag.yml scripts/apply-slide-drag.py
-          git config user.name "tp6xu4jo3"
-          git config user.email "163460843+tp6xu4jo3@users.noreply.github.com"
-          git add src/editor/audio-engine.js src/editor/structure-controller.js styles/editor-modules.css styles/editor-row-controls.css tests/technique-audio.test.mjs tests/editor-structure-cleanup.test.mjs .github/workflows/ci.yml .github/workflows/apply-slide-drag.yml scripts/apply-slide-drag.py
-          git commit -m "fix: make slides late and drag feedback singular"
-          git push origin HEAD:fix/slide-timing-single-drag-indicator
-
   test:
     runs-on: ubuntu-latest
     steps:

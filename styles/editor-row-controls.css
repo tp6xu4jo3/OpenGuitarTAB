@@ -10,9 +10,8 @@
 .row-drop-zone-before{top:0}
 .row-drop-zone-after{bottom:0}
 .structure-drag-row-active .row-drop-zone{pointer-events:auto}
-.row-drop-zone::after{content:'';position:absolute;left:50px;right:8px;height:3px;border-radius:2px;background:#1ed760;opacity:0;pointer-events:none}
-.row-drop-zone-before::after{top:0;transform:translateY(-50%)}
-.row-drop-zone-after::after{bottom:0;transform:translateY(50%)}
-.structure-drag-row-active .row-drop-zone:hover::after{opacity:1}
-.structure-drag-row-active .row-insert-zone:hover::after{content:'';position:absolute;left:50px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}
-@media(max-width:900px){.row-insert-zone::before,.row-drop-zone::after,.structure-drag-row-active .row-insert-zone:hover::after{left:50px}}
+.row-drop-zone .structure-drop-indicator{left:50px;right:8px;height:3px}
+.row-drop-zone-before .structure-drop-indicator{top:0;transform:translateY(-50%)}
+.row-drop-zone-after .structure-drop-indicator{bottom:0;transform:translateY(50%)}
+.row-insert-zone>.structure-drop-indicator{left:50px;right:8px;top:50%;height:3px;transform:translateY(-50%)}
+@media(max-width:900px){.row-insert-zone::before,.row-drop-zone .structure-drop-indicator,.row-insert-zone>.structure-drop-indicator{left:50px}}

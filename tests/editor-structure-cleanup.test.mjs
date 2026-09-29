@@ -30,7 +30,14 @@ assert.doesNotMatch(structureSource,/activeDrop|clearDropUi|setActiveDrop|update
 assert.equal((structureSource.match(/document\.elementFromPoint\(/g)||[]).length,1,'structure drag may hit-test only once at final pointerup');
 assert.doesNotMatch(insertZoneCss,/drop-before|drop-after|measure-insert-boundary|measure-drag-grip|is-drag-target|measure-insert-shift/,'legacy insertion drag CSS must be removed');
 assert.doesNotMatch(rowControlsCss,/\.row-drag-active|is-drag-target|drop-before|drop-after/,'legacy row drop-target CSS must be removed');
-assert.match(rowControlsCss,/structure-drag-row-active \.row-drop-zone:hover::after/,'row drag feedback must follow native hover over full-row drop zones');
+assert.match(structureSource,/dragIndicator = document\.createElement\('div'\)[\s\S]*className = 'structure-drop-indicator'/s,'structure dragging must own one reusable DOM insertion indicator');
+assert.match(structureSource,/function handlePointerOver\(event\)[\s\S]*showDragIndicatorForElement\(event\.target\)/s,'native pointer target changes should move the single insertion indicator');
+assert.match(structureSource,/document\.addEventListener\('pointerover', handlePointerOver, true\)/,'drag indicator updates should be delegated once instead of installed per drop zone');
+assert.match(rowControlsCss,/\.row-drop-zone \.structure-drop-indicator/,'row drag feedback must position the shared insertion indicator on row boundaries');
+assert.match(rowControlsCss,/\.row-insert-zone>\.structure-drop-indicator/,'row insertion gaps must reuse the same shared indicator');
+assert.doesNotMatch(rowControlsCss,/row-drop-zone::after|row-insert-zone:hover::after/,'row drag must not keep distributed pseudo-element insertion bars');
+assert.match(editorModulesCss,/\.measure-drop-zone \.structure-drop-indicator/,'measure drag feedback must position the shared insertion indicator on measure boundaries');
+assert.doesNotMatch(editorModulesCss,/measure-drop-zone::after|measure-drop-zone:hover::after/,'measure drag must not keep distributed pseudo-element insertion bars');
 assert.match(editorModulesCss,/structure-drag-row-active \.content\.edit-view \.editor-row-module:hover[^}]*border-color:transparent/s,'row drag must suppress the ordinary green row outline so only one insertion bar remains');
 assert.match(editorModulesCss,/structure-drag-measure-active \.measure-module-hitbox:hover[^}]*border-color:transparent/s,'measure drag must suppress the ordinary green measure outline so only one insertion bar remains');
 assert.match(structureSource,/dataset\.dropRowBoundary/,'structure decoration must install explicit row drop boundaries');
