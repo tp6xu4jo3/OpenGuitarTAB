@@ -19,13 +19,13 @@ assert.match(
 );
 assert.match(
   css,
-  /@media\(min-width:761px\) and \(max-width:1024px\)[\s\S]*#rhythmToggleButton\{grid-column:1;grid-row:1\}[\s\S]*#scoreDensityControl\{grid-column:2;grid-row:1\}[\s\S]*\.capo-box\{grid-column:3;grid-row:1\}[\s\S]*\.tempo-box\{grid-column:4;grid-row:1\}[\s\S]*\.progress-box\{grid-column:5;grid-row:1/s,
-  'tablet and narrow desktop playback layout must keep mode switches on the first row'
+  /@media\(min-width:761px\) and \(max-width:1500px\)[\s\S]*#rhythmToggleButton\{grid-column:1;grid-row:1\}[\s\S]*#scoreDensityControl\{grid-column:2;grid-row:1\}[\s\S]*\.capo-box\{grid-column:3;grid-row:1\}[\s\S]*\.tempo-box\{grid-column:4;grid-row:1\}[\s\S]*\.progress-box\{grid-column:5;grid-row:1/s,
+  'tablet and narrow desktop playback layout must wrap as a full-width toolbar before squeezing the title'
 );
 assert.match(
   css,
-  /@media\(max-width:760px\)[\s\S]*#rhythmToggleButton\{grid-column:1\/3;grid-row:1[\s\S]*#scoreDensityControl\{grid-column:3\/5;grid-row:1[\s\S]*\.capo-box\{grid-column:5;grid-row:1[\s\S]*\.tempo-box\{grid-column:6;grid-row:1[\s\S]*\.progress-box\{grid-column:1\/4;grid-row:2[\s\S]*\.playback-sound-controls\{grid-column:4\/6;grid-row:2[\s\S]*\.play-button\{grid-column:6;grid-row:2/s,
-  'mobile playback layout should consume the available width in two rows before its narrow fallback'
+  /@media\(max-width:760px\)[\s\S]*\.editor-view \.play-panel\{display:contents\}[\s\S]*#rhythmToggleButton\{grid-column:1;grid-row:2[\s\S]*#scoreDensityControl\{grid-column:2;grid-row:2[\s\S]*\.capo-box\{grid-column:3;grid-row:2[\s\S]*\.tempo-box\{grid-column:3;grid-row:1[\s\S]*\.progress-box\{grid-column:1;grid-row:3[\s\S]*\.playback-sound-controls\{grid-column:2;grid-row:3[\s\S]*\.play-button\{grid-column:3;grid-row:3/s,
+  'mobile playback controls should share the header grid so BPM can sit beside the title without covering capo'
 );
 assert.match(
   viewState,

@@ -46,7 +46,7 @@ for (let row = 0; row < 64; row += 1) {
   assert.ok(scanlines[row * 257] <= 4, `brand PNG row ${row} should start with a valid PNG filter byte`);
 }
 
-assert.match(playbackCss, /@media\(min-width:761px\) and \(max-width:1024px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content auto auto minmax\(160px,1fr\) auto/s, 'tablet playback controls should keep both mode switches together before capo and tempo');
+assert.match(playbackCss, /@media\(min-width:761px\) and \(max-width:1500px\)[\s\S]*\.editor-view \.play-panel\{display:grid;grid-template-columns:max-content max-content auto auto minmax\(140px,1fr\) auto/s, 'narrow desktop playback controls should wrap as a full-width row before the title is squeezed');
 assert.match(playbackCss, /\.editor-view #rhythmToggleButton,\.editor-view #scoreDensityControl\{[^}]*width:max-content[^}]*flex:0 0 auto/s, 'score mode controls must retain their own intrinsic width instead of wrapping');
 
 assert.match(renderer, /function halfFraction\(value\)[\s\S]*denominator \* 2/s, 'editable anchors should be centered within their rhythmic slot');
