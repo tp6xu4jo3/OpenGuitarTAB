@@ -1,3 +1,4 @@
+import { enrichSongMedia } from '../catalog/media.js';
 import { aggregateCatalogWorks, createCatalogId, ensureArrangementIdentity } from '../catalog/work-model.js';
 
 export const LOCAL_TEST_STORAGE_KEY = 'openguitartab:github-test:v1';
@@ -6,6 +7,13 @@ const TEST_USER = Object.freeze({ username: 'admin', role: 'admin', localTest: t
 function cloneValue(value) {
   if (typeof structuredClone === 'function') return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
+}
+
+function withoutCatalogMedia(song) {
+  const clean = cloneValue(song || {});
+  delete clean.cover;
+  delete clean.artistImage;
+  return clean;
 }
 
 function defaultFetch(...args) {
@@ -32,7 +40,6 @@ function catalogMetaFromSong(song) {
     name: String(song?.name || ''),
     artist: String(song?.artist || ''),
     album: String(song?.album || ''),
-    cover: String(song?.cover || ''),
     source: String(song?.source || ''),
     playStyle: song?.playStyle === 'chord' ? 'chord' : song?.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
     difficulty: Number.isFinite(Number(song?.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(song.difficulty)))) : null,
@@ -63,6 +70,7 @@ export class LocalTestDataSource {
     this.isLocalTest = true;
     this.capabilities = Object.freeze({ publish: false, visibility: false, reset: true });
     this.fixtureCatalogPromise = null;
+    this.fixtureMediaPromise = null;
     this.fixtureSongPromises = new Map();
   }
 
@@ -85,12 +93,23 @@ export class LocalTestDataSource {
     return this.fixtureCatalogPromise;
   }
 
+  fixtureMedia() {
+    if (!this.fixtureMediaPromise) {
+      const pending = this.readJson('./test-data/pages/artists.json');
+      this.fixtureMediaPromise = pending;
+      pending.catch(() => {
+        if (this.fixtureMediaPromise === pending) this.fixtureMediaPromise = null;
+      });
+    }
+    return this.fixtureMediaPromise;
+  }
+
   async fixtureMetadata() {
     const catalog = await this.fixtureCatalog();
     const metadata = [];
     for (const work of Array.isArray(catalog?.works) ? catalog.works : []) {
       for (const arrangement of Array.isArray(work?.arrangements) ? work.arrangements : []) {
-        metadata.push({ ...arrangement, name: work.name, artist: work.artist, album: work.album, cover: work.cover });
+        metadata.push({ ...arrangement, name: work.name, artist: work.artist, album: work.album });
       }
     }
     if (metadata.length) return metadata;
@@ -117,13 +136,12 @@ export class LocalTestDataSource {
     if (!fileId) throw new Error('TEST_FIXTURE_INVALID_ID');
     if (!this.fixtureSongPromises.has(fileId)) {
       const pending = this.readJson(`./test-data/pages/songs/${fileId}.json`).then(raw => ensureArrangementIdentity({
-        ...raw,
+        ...withoutCatalogMedia(raw),
         workId: meta.workId || raw.workId,
         arrangementId: meta.arrangementId || raw.arrangementId,
         name: raw.name || meta.name,
         artist: raw.artist || meta.artist,
         album: raw.album || meta.album,
-        cover: raw.cover || meta.cover,
         playStyle: raw.playStyle || meta.playStyle,
         difficulty: raw.difficulty ?? meta.difficulty,
         source: raw.source || meta.source,
@@ -160,10 +178,13 @@ export class LocalTestDataSource {
     for (const [fileId, song] of Object.entries(state.records)) {
       if (!deleted.has(fileId)) records.set(fileId, cloneValue(song));
     }
-    return [...records.values()].sort((a, b) =>
-      String(b._driveModifiedTime || b.updatedAt || '').localeCompare(String(a._driveModifiedTime || a.updatedAt || ''))
-      || String(a.id || '').localeCompare(String(b.id || ''))
-    );
+    const media = await this.fixtureMedia();
+    return [...records.values()]
+      .sort((a, b) =>
+        String(b._driveModifiedTime || b.updatedAt || '').localeCompare(String(a._driveModifiedTime || a.updatedAt || ''))
+        || String(a.id || '').localeCompare(String(b.id || ''))
+      )
+      .map(song => enrichSongMedia(song, media));
   }
 
   session() { return Promise.resolve({ user: cloneValue(TEST_USER), preview: true, localTest: true }); }
@@ -183,7 +204,8 @@ export class LocalTestDataSource {
         || String(song?.id || '') === id
       )
     );
-    if (local) return { song: cloneValue(local[1]), localTest: true };
+    const media = await this.fixtureMedia();
+    if (local) return { song: enrichSongMedia(cloneValue(local[1]), media), localTest: true };
 
     const metadata = await this.fixtureMetadata();
     const meta = metadata.find(item =>
@@ -194,17 +216,24 @@ export class LocalTestDataSource {
     );
     const fileId = String(meta?._driveFileId || '');
     if (!meta || deleted.has(fileId)) throw new Error('TEST_SONG_NOT_FOUND');
-    return { song: await this.fixtureSong(meta), localTest: true };
+    return { song: enrichSongMedia(await this.fixtureSong(meta), media), localTest: true };
   }
 
   async saveSong(rawSong) {
     const state = this.readState();
-    const incoming = cloneValue(rawSong || {});
-    const existing = (await this.allSongs()).find(item =>
-      (incoming._driveFileId && String(item._driveFileId || '') === String(incoming._driveFileId))
-      || (incoming.arrangementId && String(item.arrangementId || '') === String(incoming.arrangementId))
-      || (incoming.id && String(item.id || '') === String(incoming.id))
+    const incoming = withoutCatalogMedia(rawSong || {});
+    const localExisting = Object.values(state.records).find(item =>
+      (incoming._driveFileId && String(item?._driveFileId || '') === String(incoming._driveFileId))
+      || (incoming.arrangementId && String(item?.arrangementId || '') === String(incoming.arrangementId))
+      || (incoming.id && String(item?.id || '') === String(incoming.id))
     );
+    const metadata = localExisting ? [] : await this.fixtureMetadata();
+    const fixtureMeta = localExisting ? null : metadata.find(item =>
+      (incoming._driveFileId && String(item?._driveFileId || '') === String(incoming._driveFileId))
+      || (incoming.arrangementId && String(item?.arrangementId || '') === String(incoming.arrangementId))
+      || (incoming.id && String(item?.songId || item?.id || '') === String(incoming.id))
+    );
+    const existing = localExisting || (fixtureMeta ? await this.fixtureSong(fixtureMeta) : null);
     const fileId = safeFileId(incoming._driveFileId)
       || safeFileId(existing?._driveFileId)
       || `local-${safeFileId(incoming.id) || createCatalogId('song')}`;
@@ -227,7 +256,8 @@ export class LocalTestDataSource {
     state.records[fileId] = cloneValue(song);
     state.deleted = state.deleted.filter(value => String(value) !== fileId);
     this.writeState(state);
-    return { song: cloneValue(song), localTest: true };
+    const media = await this.fixtureMedia();
+    return { song: enrichSongMedia(cloneValue(song), media), localTest: true };
   }
 
   async deleteSong(fileId) {
@@ -241,7 +271,7 @@ export class LocalTestDataSource {
   }
 
   async catalog() {
-    const fixtureMetadata = await this.fixtureMetadata();
+    const [fixtureMetadata, media] = await Promise.all([this.fixtureMetadata(), this.fixtureMedia()]);
     const state = this.readState();
     const deleted = new Set(state.deleted.map(String));
     const metadataByFileId = new Map();
@@ -259,7 +289,7 @@ export class LocalTestDataSource {
       else metadataByFileId.delete(id);
     }
 
-    const metadata = [...metadataByFileId.values()];
+    const metadata = [...metadataByFileId.values()].map(song => enrichSongMedia(song, media));
     return { works: aggregateCatalogWorks(metadata), songs: metadata, localTest: true };
   }
 
