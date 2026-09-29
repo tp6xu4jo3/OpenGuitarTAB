@@ -1,0 +1,64 @@
+from pathlib import Path
+
+
+def replace(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    if old not in text:
+        raise SystemExit(f'pattern not found in {path}: {old[:120]!r}')
+    p.write_text(text.replace(old, new, 1))
+
+
+audio = 'src/editor/audio-engine.js'
+replace(audio,
+    "const MANUAL_RELEASE_SECONDS = 0.018;\nlet installedEngine = null;",
+    "const MANUAL_RELEASE_SECONDS = 0.018;\nconst SLIDE_TRANSITION_LEVEL = 0.62;\nlet installedEngine = null;")
+replace(audio,
+    "  const duration = clamp(Number(slideSeconds) || 0.25, 0.06, 4);\n  const stepDuration = duration / count;\n  return Array.from({ length: count }, (_, index) => {\n    const fret = start + direction * (index + 1);\n    return {\n      fret,\n      playbackRate: Math.pow(2, (fret - start) / 12),\n      atSeconds: stepDuration * (index + 1),\n      transitionSeconds: Math.min(0.026, Math.max(0.006, stepDuration * 0.35))\n    };\n  });",
+    "  const duration = clamp(Number(slideSeconds) || 0.25, 0.06, 4);\n  const motionDuration = Math.min(duration, clamp(0.04 + count * 0.018, 0.07, 0.18));\n  const holdDuration = Math.max(0, duration - motionDuration);\n  const stepDuration = motionDuration / count;\n  return Array.from({ length: count }, (_, index) => {\n    const fret = start + direction * (index + 1);\n    return {\n      fret,\n      playbackRate: Math.pow(2, (fret - start) / 12),\n      atSeconds: holdDuration + stepDuration * (index + 1),\n      transitionSeconds: Math.min(0.026, Math.max(0.006, stepDuration * 0.35))\n    };\n  });")
+replace(audio,
+    "    const level = harmonic ? 0.86 : 1;\n    gain.gain.setValueAtTime(level, now);\n    const { source, basePlaybackRate } = this.connectSample(plan, now, filter, slideSteps);",
+    "    const level = harmonic ? 0.86 : 1;\n    gain.gain.setValueAtTime(level, now);\n    if (slideSteps.length) {\n      const firstStep = slideSteps[0];\n      const lastStep = slideSteps.at(-1);\n      const slideStart = Math.max(0, firstStep.atSeconds - firstStep.transitionSeconds);\n      const slideEnd = Math.max(slideStart, lastStep.atSeconds);\n      const slideSpan = Math.max(0.001, slideEnd - slideStart);\n      const dipEnd = Math.min(slideEnd, slideStart + Math.min(0.012, slideSpan * 0.18));\n      const restoreStart = Math.max(dipEnd, slideEnd - Math.min(0.015, slideSpan * 0.2));\n      gain.gain.setValueAtTime(level, now + slideStart);\n      gain.gain.linearRampToValueAtTime(level * SLIDE_TRANSITION_LEVEL, now + dipEnd);\n      gain.gain.setValueAtTime(level * SLIDE_TRANSITION_LEVEL, now + restoreStart);\n      gain.gain.linearRampToValueAtTime(level, now + slideEnd);\n    }\n    const { source, basePlaybackRate } = this.connectSample(plan, now, filter, slideSteps);")
+replace(audio,
+    "    if (!pitch.sliding && Number.isFinite(nextDelay) && nextDelay > SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS) {",
+    "    if (Number.isFinite(nextDelay) && nextDelay > SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS) {")
+
+structure = 'src/editor/structure-controller.js'
+replace(structure,
+    "let dragState = null;\nlet dragPointer = null;",
+    "let dragState = null;\nlet dragPointer = null;\nlet dragIndicator = null;")
+replace(structure,
+    "function resetDrag() {\n  dragPointer?.visualNode?.classList.remove('is-dragging');",
+    "function dragZoneFromElement(element) {\n  if (!dragState || !element) return null;\n  if (dragState.type === 'row') return element.closest?.('[data-drop-row-boundary]') || null;\n  if (dragState.type === 'measure') return element.closest?.('.measure-drop-zone[data-row][data-drop-measure-boundary]') || null;\n  return null;\n}\n\nfunction ensureDragIndicator() {\n  if (dragIndicator) return dragIndicator;\n  dragIndicator = document.createElement('div');\n  dragIndicator.className = 'structure-drop-indicator';\n  dragIndicator.setAttribute('aria-hidden', 'true');\n  return dragIndicator;\n}\n\nfunction showDragIndicatorForElement(element) {\n  if (!dragPointer?.active) return;\n  const zone = dragZoneFromElement(element);\n  if (!zone) {\n    dragIndicator?.remove();\n    return;\n  }\n  const indicator = ensureDragIndicator();\n  if (indicator.parentElement !== zone) zone.appendChild(indicator);\n}\n\nfunction handlePointerOver(event) {\n  if (!dragPointer?.active || isEditingBlocked()) return;\n  showDragIndicatorForElement(event.target);\n}\n\nfunction resetDrag() {\n  dragIndicator?.remove();\n  dragPointer?.visualNode?.classList.remove('is-dragging');")
+replace(structure,
+    "    document.documentElement.classList.add('structure-drag-active', `structure-drag-${dragState.type}-active`);\n  }\n  event.preventDefault();",
+    "    document.documentElement.classList.add('structure-drag-active', `structure-drag-${dragState.type}-active`);\n    showDragIndicatorForElement(event.target);\n  }\n  event.preventDefault();")
+replace(structure,
+    "function installDragHandlers() {\n  document.addEventListener('pointermove', handlePointerMove, { capture: true, passive: false });",
+    "function installDragHandlers() {\n  document.addEventListener('pointermove', handlePointerMove, { capture: true, passive: false });\n  document.addEventListener('pointerover', handlePointerOver, true);")
+
+modules = 'styles/editor-modules.css'
+replace(modules,
+    ".measure-drop-zone::after{content:'';position:absolute;top:0;bottom:0;width:3px;border-radius:2px;background:#1ed760;opacity:0;pointer-events:none}.measure-drop-zone-before::after{left:0;transform:translateX(-50%)}.measure-drop-zone-after::after{right:0;transform:translateX(50%)}.structure-drag-measure-active .measure-drop-zone:hover::after{opacity:1}",
+    ".structure-drop-indicator{position:absolute;z-index:2;border-radius:2px;background:#1ed760;pointer-events:none}.measure-drop-zone .structure-drop-indicator{top:0;bottom:0;width:3px}.measure-drop-zone-before .structure-drop-indicator{left:0;transform:translateX(-50%)}.measure-drop-zone-after .structure-drop-indicator{right:0;transform:translateX(50%)}")
+
+rows = 'styles/editor-row-controls.css'
+replace(rows,
+    ".row-drop-zone::after{content:'';position:absolute;left:50px;right:8px;height:3px;border-radius:2px;background:#1ed760;opacity:0;pointer-events:none}.row-drop-zone-before::after{top:0;transform:translateY(-50%)}.row-drop-zone-after::after{bottom:0;transform:translateY(50%)}.structure-drag-row-active .row-drop-zone:hover::after{opacity:1}.structure-drag-row-active .row-insert-zone:hover::after{content:'';position:absolute;left:50px;right:8px;top:50%;height:3px;border-radius:2px;background:#1ed760;transform:translateY(-50%);pointer-events:none}",
+    ".row-drop-zone .structure-drop-indicator{left:50px;right:8px;height:3px}.row-drop-zone-before .structure-drop-indicator{top:0;transform:translateY(-50%)}.row-drop-zone-after .structure-drop-indicator{bottom:0;transform:translateY(50%)}.row-insert-zone>.structure-drop-indicator{left:50px;right:8px;top:50%;height:3px;transform:translateY(-50%)}")
+replace(rows,
+    "@media(max-width:900px){.row-insert-zone::before,.row-drop-zone::after,.structure-drag-row-active .row-insert-zone:hover::after{left:50px}}",
+    "@media(max-width:900px){.row-insert-zone::before,.row-drop-zone .structure-drop-indicator,.row-insert-zone>.structure-drop-indicator{left:50px}}")
+
+technique_test = 'tests/technique-audio.test.mjs'
+replace(technique_test,
+    "assert.ok(Math.abs(slideSteps.at(-1).playbackRate - Math.pow(2, 4 / 12)) < 1e-9);",
+    "assert.ok(Math.abs(slideSteps.at(-1).playbackRate - Math.pow(2, 4 / 12)) < 1e-9);\nassert.ok(slideSteps[0].atSeconds > 0.3, 'a rhythmic slide should hold the source note before the quick motion');\nassert.ok(Math.abs(slideSteps.at(-1).atSeconds - 0.4) < 1e-9, 'the slide must arrive exactly at the target-note onset');\nassert.ok(slideSteps.at(-1).atSeconds - slideSteps[0].atSeconds < 0.12, 'the fret transition should occupy only a short part of the relation duration');")
+replace(technique_test,
+    "assert.match(audioSource, /basePlaybackRate \\* step\\.playbackRate/, 'slides must move relative to the selected recorded anchor');",
+    "assert.match(audioSource, /basePlaybackRate \\* step\\.playbackRate/, 'slides must move relative to the selected recorded anchor');\nassert.match(audioSource, /SLIDE_TRANSITION_LEVEL = 0\\.62/, 'the physical slide transition should be quieter than the endpoint notes');\nassert.match(audioSource, /linearRampToValueAtTime\\(level \\* SLIDE_TRANSITION_LEVEL[\\s\\S]*linearRampToValueAtTime\\(level, now \\+ slideEnd\\)/s, 'slide gain must dip only during motion and recover at the target arrival');\nassert.doesNotMatch(audioSource, /if \\(!pitch\\.sliding && Number\\.isFinite\\(nextDelay\\)/, 'a sustained slide target must still damp before the next real same-string attack');")
+
+structure_test = 'tests/editor-structure-cleanup.test.mjs'
+replace(structure_test,
+    "assert.match(rowControlsCss,/structure-drag-row-active \\.row-drop-zone:hover::after/,'row drag feedback must follow native hover over full-row drop zones');",
+    "assert.match(structureSource,/dragIndicator = document\\.createElement\\('div'\\)[\\s\\S]*className = 'structure-drop-indicator'/s,'structure dragging must own one reusable DOM insertion indicator');\nassert.match(structureSource,/function handlePointerOver\\(event\\)[\\s\\S]*showDragIndicatorForElement\\(event\\.target\\)/s,'native pointer target changes should move the single insertion indicator');\nassert.match(structureSource,/document\\.addEventListener\\('pointerover', handlePointerOver, true\\)/,'drag indicator updates should be delegated once instead of installed per drop zone');\nassert.match(rowControlsCss,/\\.row-drop-zone \\.structure-drop-indicator/,'row drag feedback must position the shared insertion indicator on row boundaries');\nassert.match(rowControlsCss,/\\.row-insert-zone>\\.structure-drop-indicator/,'row insertion gaps must reuse the same shared indicator');\nassert.doesNotMatch(rowControlsCss,/row-drop-zone::after|row-insert-zone:hover::after/,'row drag must not keep distributed pseudo-element insertion bars');\nassert.match(editorModulesCss,/\\.measure-drop-zone \\.structure-drop-indicator/,'measure drag feedback must position the shared insertion indicator on measure boundaries');\nassert.doesNotMatch(editorModulesCss,/measure-drop-zone::after|measure-drop-zone:hover::after/,'measure drag must not keep distributed pseudo-element insertion bars');")
