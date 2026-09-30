@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 process.env.GOOGLE_CLIENT_ID = 'test-client';
 process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
 process.env.GOOGLE_REFRESH_TOKEN = 'test-refresh';
+process.env.PUBLIC_CATALOG_INDEX_FILE_ID = 'public-index';
+process.env.TEST_CATALOG_INDEX_FILE_ID = 'test-index';
+process.env.PERMISSIONS_DRIVE_FILE_ID = 'permissions-file';
 
 const { default: handler } = await import('../api/index.js');
 
@@ -74,6 +77,8 @@ function permissions(secondPublic = true) {
 }
 
 function installDriveMock({ failSecondSong = false, invalidSecondSong = false, secondPublic = true } = {}) {
+  let publicIndex = null;
+
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const method = String(init.method || 'GET').toUpperCase();
@@ -88,25 +93,9 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
 
     const q = url.searchParams.get('q') || '';
     const isPublicQuery = q.includes(`'${PUBLIC_FOLDER_ID}' in parents`);
-    const isTestQuery = q.includes(`'${TEST_FOLDER_ID}' in parents`);
 
     if (url.pathname === '/drive/v3/files' && method === 'GET') {
-      if (isPublicQuery && q.includes("name = 'index.json'")) {
-        return mockResponse({ files: [] });
-      }
-      if (isPublicQuery && q.includes("name = 'artists.json'")) {
-        return mockResponse({ files: [] });
-      }
-      if (isPublicQuery && q.includes("name = 'permissions.json'")) {
-        return mockResponse({
-          files: [{ id: 'permissions-file', name: 'permissions.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
-        });
-      }
-      if (isTestQuery && q.includes("name = 'index.json'")) {
-        return mockResponse({
-          files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
-        });
-      }
+      if (isPublicQuery && q.includes("name = 'artists.json'")) return mockResponse({ files: [] });
       if (isPublicQuery) {
         return mockResponse({
           files: [
@@ -117,8 +106,16 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
       }
     }
 
+    if (/\/drive\/v3\/files\/(public-index|test-index|permissions-file)\/comments$/.test(url.pathname) && method === 'GET') {
+      return mockResponse({ comments: [] });
+    }
+
     if (url.pathname === '/drive/v3/files/permissions-file' && url.searchParams.get('alt') === 'media') {
       return mockResponse(permissions(secondPublic));
+    }
+
+    if (url.pathname === '/drive/v3/files/public-index' && url.searchParams.get('alt') === 'media') {
+      return publicIndex ? mockResponse(publicIndex) : mockResponse('missing public index', 404);
     }
 
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
@@ -146,8 +143,9 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
       });
     }
 
-    if (url.pathname === '/upload/drive/v3/files' && method === 'POST') {
-      return mockResponse({ id: 'new-public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
+    if (url.pathname === '/upload/drive/v3/files/public-index' && method === 'PATCH') {
+      publicIndex = JSON.parse(String(init.body || '{}'));
+      return mockResponse({ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
     }
 
     throw new Error(`Unexpected Drive request: ${method} ${url}`);
