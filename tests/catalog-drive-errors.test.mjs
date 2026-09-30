@@ -11,8 +11,8 @@ const TEST_FOLDER_ID = '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
 const PERMISSION_RECORDS_FOLDER_ID = '1RQMJwYqcqNi58VRZF_HlA8-Az6yIwfK6';
 
 const publicFiles = [
-  { id: 'song-good', name: 'song-good.json', modifiedTime: '2026-09-30T00:00:01.000Z' },
-  { id: 'song-second', name: 'song-second.json', modifiedTime: '2026-09-30T00:00:02.000Z' }
+  { id: 'song-good', name: '好歌__arr-good.json', modifiedTime: '2026-09-30T00:00:01.000Z' },
+  { id: 'song-second', name: '第二首__arr-second.json', modifiedTime: '2026-09-30T00:00:02.000Z' }
 ];
 
 function mockResponse(body, status = 200) {
@@ -37,28 +37,18 @@ function createHttpResponse() {
 
 async function invoke(url) {
   const res = createHttpResponse();
-  await handler({
-    url,
-    method: 'GET',
-    headers: { host: 'localhost' }
-  }, res);
-  return {
-    status: res.statusCode,
-    body: res.body ? JSON.parse(res.body) : {}
-  };
+  await handler({ url, method: 'GET', headers: { host: 'localhost' } }, res);
+  return { status: res.statusCode, body: res.body ? JSON.parse(res.body) : {} };
 }
 
-async function invokeCatalog() {
-  return invoke('/api?action=catalog');
-}
-
-async function invokeCatalogSong(fileId) {
-  return invoke(`/api?action=catalog-song&fileId=${encodeURIComponent(fileId)}`);
-}
+async function invokeCatalog() { return invoke('/api?action=catalog'); }
+async function invokeCatalogSong(fileId) { return invoke(`/api?action=catalog-song&fileId=${encodeURIComponent(fileId)}`); }
 
 function song(id, name) {
   return {
     id,
+    workId: `work-${id}`,
+    arrangementId: `arr-${id}`,
     name,
     tempo: 80,
     capo: 0,
@@ -71,35 +61,29 @@ function song(id, name) {
 
 function catalogSong(file, id, name) {
   return {
-    id,
+    songId: id,
+    workId: `work-${id}`,
+    arrangementId: `arr-${id}`,
     name,
     tempo: 80,
     capo: 0,
     beatsPerMeasure: 4,
     artist: 'Test Artist',
     album: 'Test Album',
-    _driveFileId: file.id,
-    _driveFileName: file.name,
-    _driveModifiedTime: file.modifiedTime
+    source: '',
+    playStyle: 'fingerstyle',
+    difficulty: 2,
+    driveFileId: file.id,
+    driveFileName: file.name,
+    driveModifiedTime: file.modifiedTime
   };
 }
 
-function permissions(secondPublic = true) {
-  return {
-    version: 1,
-    songs: {
-      'song-good': { owner: 'admin', public: true, uploadedBy: 'admin' },
-      'song-second': { owner: 'admin', public: secondPublic, uploadedBy: 'admin' }
-    }
-  };
+function permissionValue(fileId, isPublic) {
+  return { version: 1, songFileId: fileId, owner: 'admin', public: isPublic, uploadedBy: 'admin' };
 }
 
-function installDriveMock({
-  failSecondSong = false,
-  invalidSecondSong = false,
-  secondPublic = true,
-  publicIndex = null
-} = {}) {
+function installDriveMock({ failSecondSong = false, invalidSecondSong = false, secondPublic = true, publicIndex = null } = {}) {
   let permissionRecordMediaReads = 0;
   let songGoodMediaReads = 0;
   let songSecondMediaReads = 0;
@@ -109,13 +93,8 @@ function installDriveMock({
     const url = new URL(String(input));
     const method = String(init.method || 'GET').toUpperCase();
 
-    if (url.hostname === 'oauth2.googleapis.com') {
-      return mockResponse({ access_token: 'drive-token', expires_in: 3600 });
-    }
-
-    if (url.hostname !== 'www.googleapis.com') {
-      throw new Error(`Unexpected host: ${url.hostname}`);
-    }
+    if (url.hostname === 'oauth2.googleapis.com') return mockResponse({ access_token: 'drive-token', expires_in: 3600 });
+    if (url.hostname !== 'www.googleapis.com') throw new Error(`Unexpected host: ${url.hostname}`);
 
     const q = url.searchParams.get('q') || '';
     const isPublicQuery = q.includes(`'${PUBLIC_FOLDER_ID}' in parents`);
@@ -124,81 +103,61 @@ function installDriveMock({
 
     if (url.pathname === '/drive/v3/files' && method === 'GET') {
       if (isPublicQuery && q.includes("name = 'index.json'")) {
-        return mockResponse({
-          files: publicIndex
-            ? [{ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
-            : []
-        });
+        return mockResponse({ files: publicIndex ? [{ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }] : [] });
       }
-      if (isPublicQuery && q.includes("name = 'artists.json'")) {
-        return mockResponse({ files: [] });
-      }
-      if (isPublicQuery && q.includes("name = 'permissions.json'")) {
-        return mockResponse({
-          files: [{ id: 'permissions-file', name: 'permissions.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
-        });
-      }
+      if (isPublicQuery && q.includes("name = 'artists.json'")) return mockResponse({ files: [] });
+      if (isPublicQuery && q.includes("name = 'permissions.json'")) return mockResponse({ files: [] });
       if (isTestQuery && q.includes("name = 'index.json'")) {
-        return mockResponse({
-          files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
-        });
+        return mockResponse({ files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }] });
       }
       if (isPermissionRecordsQuery) {
-        return mockResponse({ files: [] });
+        return mockResponse({ files: [
+          { id: 'permission-good', name: 'permission-song-good.json', modifiedTime: '2026-09-30T00:00:03.000Z' },
+          { id: 'permission-second', name: 'permission-song-second.json', modifiedTime: '2026-09-30T00:00:04.000Z' }
+        ] });
       }
-      if (isTestQuery) {
-        return mockResponse({ files: [] });
-      }
-      if (isPublicQuery) {
-        return mockResponse({ files: publicFiles });
-      }
+      if (isTestQuery) return mockResponse({ files: [] });
+      if (isPublicQuery) return mockResponse({ files: publicFiles });
     }
 
-    if (url.pathname === '/drive/v3/files/permissions-file' && url.searchParams.get('alt') === 'media') {
-      return mockResponse(permissions(secondPublic));
+    if (url.pathname === '/drive/v3/files/permission-good' && url.searchParams.get('alt') === 'media') {
+      permissionRecordMediaReads += 1;
+      return mockResponse(permissionValue('song-good', true));
     }
-
+    if (url.pathname === '/drive/v3/files/permission-second' && url.searchParams.get('alt') === 'media') {
+      permissionRecordMediaReads += 1;
+      return mockResponse(permissionValue('song-second', secondPublic));
+    }
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
-      return mockResponse({ version: 1, files: [], omittedFileIds: [], songs: [] });
+      return mockResponse({ version: 2, manifest: [], omittedDriveFileIds: [], songs: [] });
     }
-
-    if (url.pathname === '/drive/v3/files/public-index' && url.searchParams.get('alt') === 'media') {
-      return mockResponse(publicIndex);
-    }
+    if (url.pathname === '/drive/v3/files/public-index' && url.searchParams.get('alt') === 'media') return mockResponse(publicIndex);
 
     if (url.pathname === '/drive/v3/files/song-good' && url.searchParams.get('alt') === 'media') {
       songGoodMediaReads += 1;
       return mockResponse(song('song-good', 'Good Song'));
     }
-
     if (url.pathname === '/drive/v3/files/song-second' && url.searchParams.get('alt') === 'media') {
       songSecondMediaReads += 1;
       if (failSecondSong) return mockResponse('temporary Drive failure', 503);
       if (invalidSecondSong) return mockResponse('{not-json');
       return mockResponse(song('song-second', 'Recovered Song'));
     }
-
     if (url.pathname === '/drive/v3/files/song-second' && !url.searchParams.has('alt')) {
       return mockResponse({
         id: 'song-second',
-        name: 'song-second.json',
+        name: publicFiles[1].name,
         mimeType: 'application/json',
         trashed: false,
         parents: [PUBLIC_FOLDER_ID],
-        modifiedTime: '2026-09-30T00:00:02.000Z'
+        modifiedTime: publicFiles[1].modifiedTime
       });
-    }
-
-    if (url.pathname.includes('/drive/v3/files/permission-record') && url.searchParams.get('alt') === 'media') {
-      permissionRecordMediaReads += 1;
-      return mockResponse({});
     }
 
     if (url.pathname === '/upload/drive/v3/files' && method === 'POST') {
       publicIndexWrites += 1;
       return mockResponse({ id: 'new-public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
     }
-
     if (url.pathname === '/upload/drive/v3/files/public-index' && method === 'PATCH') {
       publicIndexWrites += 1;
       return mockResponse({ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
@@ -224,16 +183,8 @@ function installDriveMock({
   const metrics = installDriveMock();
   const retried = await invokeCatalog();
   assert.equal(retried.status, 200, 'a later request must retry instead of serving a partial cached catalog');
-  assert.deepEqual(
-    retried.body.songs.map(item => item.id).sort(),
-    ['song-good', 'song-second'],
-    'successful retry must restore every readable song'
-  );
-  assert.equal(
-    metrics.permissionRecordMediaReads(),
-    0,
-    'permission overlay reads must use Drive appProperties metadata, not download every record JSON'
-  );
+  assert.deepEqual(retried.body.songs.map(item => item.id).sort(), ['song-good', 'song-second']);
+  assert.equal(metrics.permissionRecordMediaReads(), 2, 'each canonical permission file is read as its single JSON authority');
 }
 
 {
@@ -245,10 +196,7 @@ function installDriveMock({
     const result = await invokeCatalog();
     assert.equal(result.status, 200, 'invalid song JSON is a data error, not a transient Drive outage');
     assert.deepEqual(result.body.songs.map(item => item.id), ['song-good']);
-    assert.ok(
-      warnings.some(message => message.includes('song-second') && message.includes('invalid Drive song JSON')),
-      'invalid song JSON must be explicitly reported rather than silently disappearing'
-    );
+    assert.ok(warnings.some(message => message.includes('song-second') && message.includes('invalid Drive song JSON')));
   } finally {
     console.warn = originalWarn;
   }
@@ -258,11 +206,7 @@ function installDriveMock({
   installDriveMock({ secondPublic: false });
   const catalog = await invokeCatalog();
   assert.equal(catalog.status, 200);
-  assert.deepEqual(
-    catalog.body.songs.map(item => item.id),
-    ['song-good'],
-    'catalog visibility must come from centralized permissions, not forged song/index permission fields'
-  );
+  assert.deepEqual(catalog.body.songs.map(item => item.id), ['song-good'], 'catalog visibility must come from per-song permission files');
 
   const forgedSong = await invokeCatalogSong('song-second');
   assert.equal(forgedSong.status, 404, 'forged _opentab data inside song JSON must not make a private song public');
@@ -270,15 +214,15 @@ function installDriveMock({
 }
 
 {
-  const staleSecondFile = {
-    ...publicFiles[1],
-    modifiedTime: '2026-09-30T00:00:01.500Z'
-  };
+  const staleSecondFile = { ...publicFiles[1], modifiedTime: '2026-09-30T00:00:01.500Z' };
   const metrics = installDriveMock({
     publicIndex: {
-      version: 1,
-      files: [publicFiles[0], staleSecondFile],
-      omittedFileIds: [],
+      version: 2,
+      manifest: [
+        { driveFileId: publicFiles[0].id, fileName: publicFiles[0].name, modifiedTime: publicFiles[0].modifiedTime },
+        { driveFileId: staleSecondFile.id, fileName: staleSecondFile.name, modifiedTime: staleSecondFile.modifiedTime }
+      ],
+      omittedDriveFileIds: [],
       songs: [
         catalogSong(publicFiles[0], 'song-good', 'Good Song'),
         catalogSong(staleSecondFile, 'song-second', 'Stale Song')
@@ -292,16 +236,8 @@ function installDriveMock({
     [['song-good', 'Good Song'], ['song-second', 'Recovered Song']],
     'stale catalog metadata must refresh the changed song while preserving unchanged metadata'
   );
-  assert.equal(
-    metrics.songGoodMediaReads(),
-    0,
-    'an unchanged song must not be downloaded when another score changes modifiedTime'
-  );
-  assert.equal(
-    metrics.songSecondMediaReads(),
-    1,
-    'the changed score must be downloaded exactly once to refresh its catalog metadata'
-  );
+  assert.equal(metrics.songGoodMediaReads(), 0, 'an unchanged song must not be downloaded when another score changes modifiedTime');
+  assert.equal(metrics.songSecondMediaReads(), 1, 'the changed score must be downloaded exactly once');
   assert.equal(metrics.publicIndexWrites(), 1, 'the repaired derived cache should be persisted once');
 }
 
