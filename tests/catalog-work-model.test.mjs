@@ -114,7 +114,7 @@ assert.equal(enrichSongMedia({ id: 'song-without-album', artist: 'Artist', album
 const root = fileURLToPath(new URL('..', import.meta.url));
 const apiSource = readFileSync(join(root, 'api/index.js'), 'utf8');
 assert.match(apiSource, /works:\s*aggregateCatalogWorks\(songs\)/);
-assert.match(apiSource, /readCatalogIndex\(PUBLIC_FOLDER_ID\)[\s\S]*readCatalogIndex\(TEST_FOLDER_ID\)[\s\S]*readArtistMedia\(\)/, 'catalog must use metadata indexes plus centralized media');
+assert.match(apiSource, /readCatalogIndex\(PUBLIC_FOLDER_ID[\s\S]*readCatalogIndex\(TEST_FOLDER_ID[\s\S]*readArtistMedia\(\)/, 'catalog must use metadata indexes plus centralized media');
 assert.doesNotMatch(apiSource, /PUBLIC_CATALOG_CACHE_TTL_MS|publicCatalogCache/,'catalog consistency must not depend on warm-instance memory caches');
 assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must preserve workId but create a new arrangementId');
 assert.match(apiSource, /'workId'[\s\S]*'arrangementId'/, 'Drive JSON persistence must include both catalog identities');
