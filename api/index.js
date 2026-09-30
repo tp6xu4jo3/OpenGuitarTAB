@@ -485,30 +485,38 @@ function catalogIndexSong(song, file) {
     tempo: Number(enriched.tempo) || 120,
     capo: Number.isFinite(Number(enriched.capo)) ? Number(enriched.capo) : 0,
     beatsPerMeasure: Number(enriched.beatsPerMeasure) === 3 ? 3 : 4,
-    driveFileId: String(file.id),
-    driveFileName: String(file.name || ''),
-    driveModifiedTime: String(file.modifiedTime || '')
+    driveFileId: String(file.id)
   };
 }
 
-function catalogApiMeta(record) {
+function catalogApiMeta(record, file) {
+  const normalized = ensureArrangementIdentity({
+    ...record,
+    id: record?.songId,
+    _driveFileId: record?.driveFileId
+  }, { fileId: record?.driveFileId || '' });
   return {
-    id: String(record?.songId || ''),
-    workId: String(record?.workId || ''),
-    arrangementId: String(record?.arrangementId || ''),
-    name: String(record?.name || ''),
-    artist: String(record?.artist || ''),
-    album: String(record?.album || ''),
-    source: String(record?.source || ''),
-    playStyle: record?.playStyle === 'chord' ? 'chord' : record?.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
-    difficulty: record?.difficulty ?? null,
-    tempo: Number(record?.tempo) || 120,
-    capo: Number.isFinite(Number(record?.capo)) ? Number(record.capo) : 0,
-    beatsPerMeasure: Number(record?.beatsPerMeasure) === 3 ? 3 : 4,
-    _driveFileId: String(record?.driveFileId || ''),
-    _driveFileName: String(record?.driveFileName || ''),
-    _driveModifiedTime: String(record?.driveModifiedTime || '')
+    id: String(normalized.id || ''),
+    workId: String(normalized.workId || ''),
+    arrangementId: String(normalized.arrangementId || ''),
+    name: String(normalized.name || ''),
+    artist: String(normalized.artist || ''),
+    album: String(normalized.album || ''),
+    source: String(normalized.source || ''),
+    playStyle: normalized.playStyle === 'chord' ? 'chord' : normalized.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+    difficulty: normalized.difficulty ?? null,
+    tempo: Number(normalized.tempo) || 120,
+    capo: Number.isFinite(Number(normalized.capo)) ? Number(normalized.capo) : 0,
+    beatsPerMeasure: Number(normalized.beatsPerMeasure) === 3 ? 3 : 4,
+    _driveFileId: String(normalized.driveFileId || normalized._driveFileId || ''),
+    _driveFileName: String(file?.fileName || ''),
+    _driveModifiedTime: String(file?.modifiedTime || '')
   };
+}
+
+function catalogApiSongs(index) {
+  const filesById = new Map((index?.manifest || []).map(file => [String(file?.driveFileId || ''), file]));
+  return (index?.songs || []).map(record => catalogApiMeta(record, filesById.get(String(record?.driveFileId || ''))));
 }
 
 function attachCatalogPermission(metadata, permission) {
@@ -636,9 +644,7 @@ export function normalizeCatalogIndex(raw) {
       tempo: Number(item.tempo) || 120,
       capo: Number.isFinite(Number(item.capo)) ? Number(item.capo) : 0,
       beatsPerMeasure: Number(item.beatsPerMeasure) === 3 ? 3 : 4,
-      driveFileId: String(item.driveFileId || ''),
-      driveFileName: String(item.driveFileName || ''),
-      driveModifiedTime: String(item.driveModifiedTime || '')
+      driveFileId: String(item.driveFileId || '')
     }));
   return { version: 2, manifest, omittedDriveFileIds, songs };
 }
@@ -650,14 +656,6 @@ function catalogManifestEntryMatches(left, right) {
     a.driveFileId === b.driveFileId &&
     a.fileName === b.fileName &&
     a.modifiedTime === b.modifiedTime
-  );
-}
-
-function catalogSongMatchesFile(song, file) {
-  return (
-    String(song?.driveFileId || '') === String(file?.id || '') &&
-    String(song?.driveFileName || '') === String(file?.name || '') &&
-    String(song?.driveModifiedTime || '') === String(file?.modifiedTime || '')
   );
 }
 
@@ -716,7 +714,7 @@ export function catalogIndexRefreshPlan(index, files) {
     }
 
     const cachedSong = cachedSongs.get(fileId);
-    if (cachedSong && catalogSongMatchesFile(cachedSong, file)) {
+    if (cachedSong) {
       reusableSongs.push(cachedSong);
       continue;
     }
@@ -738,12 +736,6 @@ export function catalogIndexMatchesFiles(index, files) {
   if (currentFiles.length !== indexedFiles.length) return false;
   for (let indexPosition = 0; indexPosition < currentFiles.length; indexPosition += 1) {
     if (!catalogManifestEntryMatches(currentFiles[indexPosition], indexedFiles[indexPosition])) return false;
-  }
-
-  const currentById = new Map((Array.isArray(files) ? files : []).map(file => [String(file?.id || ''), file]));
-  for (const song of normalized.songs) {
-    const file = currentById.get(String(song?.driveFileId || ''));
-    if (!file || !catalogSongMatchesFile(song, file)) return false;
   }
   return true;
 }
@@ -878,8 +870,7 @@ async function managedPublicCatalog() {
     readCatalogIndex(TEST_FOLDER_ID, permissions),
     readArtistMedia()
   ]);
-  const songs = [...publicIndex.songs, ...testIndex.songs]
-    .map(catalogApiMeta)
+  const songs = [...catalogApiSongs(publicIndex), ...catalogApiSongs(testIndex)]
     .map(item => attachCatalogPermission(item, permissionForFile(permissions, item?._driveFileId)))
     .filter(item => item?.public === true)
     .map(item => enrichSongMedia(item, media))

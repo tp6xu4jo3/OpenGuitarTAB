@@ -12,18 +12,19 @@ import {
 
 const summerA = { name: 'Summer', artist: '久石讓' };
 const summerB = { name: '  summer ', artist: '久石讓', difficulty: 5, playStyle: 'chord' };
-assert.equal(deriveLegacyWorkId(summerA), deriveLegacyWorkId(summerB), 'legacy work identity must depend on normalized work metadata, not arrangement metadata');
-assert.notEqual(deriveLegacyWorkId(summerA), deriveLegacyWorkId({ name: 'Summer', artist: '其他作者' }));
+assert.equal(deriveLegacyWorkId(summerA), deriveLegacyWorkId(summerB), 'work identity must normalize title whitespace and case');
+assert.equal(deriveLegacyWorkId(summerA), deriveLegacyWorkId({ name: 'Ｓｕｍｍｅｒ', artist: '其他作者' }), 'same normalized title must share one work regardless of arrangement metadata or artist');
+assert.notEqual(deriveLegacyWorkId(summerA), deriveLegacyWorkId({ name: 'Summer Night', artist: '久石讓' }));
 
-const legacyIdentity = ensureArrangementIdentity(summerA, { fileId: 'drive-file-a' });
+const legacyIdentity = ensureArrangementIdentity({ ...summerA, workId: 'work-stale' }, { fileId: 'drive-file-a' });
 assert.match(legacyIdentity.workId, /^work-/);
+assert.notEqual(legacyIdentity.workId, 'work-stale', 'workId must be canonicalized from the normalized title');
 assert.equal(legacyIdentity.arrangementId, 'arr-drive-drive-file-a');
 
-const workId = 'work-shared';
 const works = aggregateCatalogWorks([
   {
     id: 'song-a2',
-    workId,
+    workId: 'work-stale-a',
     arrangementId: 'arr-a2',
     name: '同一首歌',
     artist: '同一位作者',
@@ -38,9 +39,9 @@ const works = aggregateCatalogWorks([
   },
   {
     id: 'song-a1',
-    workId,
+    workId: 'work-stale-b',
     arrangementId: 'arr-a1',
-    name: '同一首歌',
+    name: ' 同一首歌 ',
     artist: '同一位作者',
     album: 'Album',
     artistImage: 'artist.jpg',
@@ -65,9 +66,9 @@ const works = aggregateCatalogWorks([
 ]);
 
 assert.equal(works.length, 2);
-const shared = works.find(work => work.workId === workId);
+const shared = works.find(work => work.workId === deriveLegacyWorkId({ name: '同一首歌' }));
 assert.ok(shared);
-assert.equal(shared.name, '同一首歌');
+assert.equal(shared.name.trim(), '同一首歌');
 assert.equal(shared.artist, '同一位作者');
 assert.equal(shared.album, 'Album');
 assert.equal(shared.cover, 'cover.jpg');
@@ -95,6 +96,8 @@ assert.equal(Object.hasOwn(persisted, 'artistImage'), false, 'artist images belo
 const persistedAgain = cleanSongForWrite(persisted, { owner: 'test', public: false });
 assert.equal(persistedAgain.workId, persisted.workId);
 assert.equal(persistedAgain.arrangementId, persisted.arrangementId);
+const renamedPersisted = cleanSongForWrite({ ...persisted, name: 'Renamed Work' }, { owner: 'test', public: false });
+assert.notEqual(renamedPersisted.workId, persisted.workId, 'renaming changes the canonical work identity so a matching title can merge automatically');
 
 const media = normalizeArtistMedia({
   version: 2,
@@ -116,7 +119,7 @@ const apiSource = readFileSync(join(root, 'api/index.js'), 'utf8');
 assert.match(apiSource, /works:\s*aggregateCatalogWorks\(songs\)/);
 assert.match(apiSource, /readCatalogIndex\(PUBLIC_FOLDER_ID[\s\S]*readCatalogIndex\(TEST_FOLDER_ID[\s\S]*readArtistMedia\(\)/, 'catalog must use metadata indexes plus centralized media');
 assert.doesNotMatch(apiSource, /PUBLIC_CATALOG_CACHE_TTL_MS|publicCatalogCache/,'catalog consistency must not depend on warm-instance memory caches');
-assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must preserve workId but create a new arrangementId');
+assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must keep the same title-derived work and create a new arrangementId');
 assert.match(apiSource, /'workId'[\s\S]*'arrangementId'/, 'Drive JSON persistence must include both catalog identities');
 
 console.log('catalog work model tests passed');
