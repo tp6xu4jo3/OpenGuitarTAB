@@ -194,7 +194,7 @@ function verifyCredentials(username, password) {
   if (!user) return null;
   const valid = user.passwordHash
     ? verifyPbkdf2(password, user.passwordHash)
-    : user.password != null && safeStringEqual(password, user.password);
+    : user.password != null && safeStringEqual(user.password, password);
   return valid ? { username: user.username, role: user.role } : null;
 }
 
@@ -464,9 +464,9 @@ function songFileName(song) {
   return `${id || 'song'}.json`;
 }
 
-async function entriesFromFolder(folderId) {
-  const files = await listJsonFiles(folderId);
-  const results = await settledMapWithConcurrency(files, DRIVE_READ_CONCURRENCY, async file => {
+async function entriesFromFiles(folderId, files) {
+  const sourceFiles = Array.isArray(files) ? files : [];
+  const results = await settledMapWithConcurrency(sourceFiles, DRIVE_READ_CONCURRENCY, async file => {
     const song = authoritativeSong(await readDriveJson(file.id), file, folderId);
     return isManagedSong(song, file, folderId) ? { file, folderId, song } : null;
   });
@@ -476,25 +476,68 @@ async function entriesFromFolder(folderId) {
   );
   if (fatal) throw fatal.reason;
   results.forEach((result, index) => {
-    if (result.status === 'rejected') console.warn('Skipping invalid Drive song JSON:', files[index]?.id, files[index]?.name);
+    if (result.status === 'rejected') console.warn('Skipping invalid Drive song JSON:', sourceFiles[index]?.id, sourceFiles[index]?.name);
   });
   return results
     .filter(result => result.status === 'fulfilled' && result.value)
     .map(result => result.value);
 }
 
-function normalizeCatalogIndex(raw) {
+async function entriesFromFolder(folderId) {
+  return entriesFromFiles(folderId, await listJsonFiles(folderId));
+}
+
+function catalogFileManifest(files) {
+  return (Array.isArray(files) ? files : [])
+    .filter(file => file && typeof file === 'object' && !Array.isArray(file) && file.id)
+    .map(file => ({
+      id: String(file.id),
+      name: String(file.name || ''),
+      modifiedTime: String(file.modifiedTime || '')
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function normalizeCatalogIndex(raw) {
   if (!raw || Number(raw.version) !== 1 || !Array.isArray(raw.songs)) return null;
+  const files = Array.isArray(raw.files) ? catalogFileManifest(raw.files) : null;
   return {
     version: 1,
+    files,
     songs: raw.songs.filter(item => item && typeof item === 'object' && !Array.isArray(item)).map(item => structuredClone(item))
   };
 }
 
-async function rebuildCatalogIndex(folderId) {
-  const entries = await entriesFromFolder(folderId);
+export function catalogIndexMatchesFiles(index, files) {
+  if (!index || !Array.isArray(index.files) || !Array.isArray(index.songs)) return false;
+  const currentFiles = catalogFileManifest(files);
+  const indexedFiles = catalogFileManifest(index.files);
+  if (currentFiles.length !== indexedFiles.length) return false;
+  for (let indexPosition = 0; indexPosition < currentFiles.length; indexPosition += 1) {
+    const current = currentFiles[indexPosition];
+    const indexed = indexedFiles[indexPosition];
+    if (current.id !== indexed.id || current.name !== indexed.name || current.modifiedTime !== indexed.modifiedTime) return false;
+  }
+
+  const currentById = new Map(currentFiles.map(file => [file.id, file]));
+  const seenSongFileIds = new Set();
+  for (const song of index.songs) {
+    const fileId = String(song?._driveFileId || '');
+    const file = currentById.get(fileId);
+    if (!file || seenSongFileIds.has(fileId)) return false;
+    seenSongFileIds.add(fileId);
+    if (String(song?._driveFileName || '') !== file.name) return false;
+    if (String(song?._driveModifiedTime || '') !== file.modifiedTime) return false;
+  }
+  return true;
+}
+
+async function rebuildCatalogIndex(folderId, files = null) {
+  const sourceFiles = Array.isArray(files) ? files : await listJsonFiles(folderId);
+  const entries = await entriesFromFiles(folderId, sourceFiles);
   const index = {
     version: 1,
+    files: catalogFileManifest(sourceFiles),
     songs: entries.map(entry => catalogMeta(entry.song, entry.file))
   };
   await writeNamedJsonFile(folderId, INDEX_FILE_NAME, index);
@@ -502,39 +545,42 @@ async function rebuildCatalogIndex(folderId) {
 }
 
 async function readCatalogIndex(folderId) {
-  const file = await findNamedJsonFile(folderId, INDEX_FILE_NAME);
-  if (!file) return rebuildCatalogIndex(folderId);
+  const [file, files] = await Promise.all([
+    findNamedJsonFile(folderId, INDEX_FILE_NAME),
+    listJsonFiles(folderId)
+  ]);
+  if (!file) return rebuildCatalogIndex(folderId, files);
   try {
     const normalized = normalizeCatalogIndex(await readDriveJson(file.id, 'INVALID_CATALOG_INDEX'));
-    if (normalized) return normalized;
+    if (normalized && catalogIndexMatchesFiles(normalized, files)) return normalized;
   } catch (error) {
     if (String(error?.message || error) !== 'INVALID_CATALOG_INDEX') throw error;
   }
-  return rebuildCatalogIndex(folderId);
+  return rebuildCatalogIndex(folderId, files);
 }
 
 async function writeCatalogIndex(folderId, index) {
   const normalized = normalizeCatalogIndex(index);
-  if (!normalized) throw new Error('INVALID_CATALOG_INDEX');
+  if (!normalized || !Array.isArray(normalized.files)) throw new Error('INVALID_CATALOG_INDEX');
   await writeNamedJsonFile(folderId, INDEX_FILE_NAME, normalized);
   return normalized;
 }
 
-async function upsertCatalogIndexEntry(folderId, metadata) {
-  const index = await readCatalogIndex(folderId);
+async function upsertCatalogIndexEntry(folderId, metadata, baseIndex = null) {
+  const index = baseIndex || await readCatalogIndex(folderId);
   const fileId = String(metadata?._driveFileId || '');
   if (!fileId) throw new Error('CATALOG_FILE_ID_REQUIRED');
   const songs = index.songs.filter(item => String(item?._driveFileId || '') !== fileId);
   songs.push(structuredClone(metadata));
-  await writeCatalogIndex(folderId, { version: 1, songs });
-}
-
-async function removeCatalogIndexEntry(folderId, fileId) {
-  const index = await readCatalogIndex(folderId);
-  const id = String(fileId || '');
-  const songs = index.songs.filter(item => String(item?._driveFileId || '') !== id);
-  if (songs.length === index.songs.length) return;
-  await writeCatalogIndex(folderId, { version: 1, songs });
+  const files = catalogFileManifest([
+    ...index.files.filter(item => String(item?.id || '') !== fileId),
+    {
+      id: fileId,
+      name: String(metadata?._driveFileName || ''),
+      modifiedTime: String(metadata?._driveModifiedTime || '')
+    }
+  ]);
+  await writeCatalogIndex(folderId, { version: 1, files, songs });
 }
 
 async function readArtistMedia() {
@@ -545,7 +591,7 @@ async function readArtistMedia() {
 
 async function createJsonFile(folderId, song, meta) {
   const persisted = cleanSongForWrite(song, meta);
-  await readCatalogIndex(folderId);
+  const index = await readCatalogIndex(folderId);
   const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
   const metadata = JSON.stringify({ name: songFileName(persisted), parents: [folderId] });
   const media = JSON.stringify(persisted, null, 2);
@@ -561,13 +607,13 @@ async function createJsonFile(folderId, song, meta) {
     body
   });
   const file = await response.json();
-  await upsertCatalogIndexEntry(folderId, catalogMeta(persisted, file));
+  await upsertCatalogIndexEntry(folderId, catalogMeta(persisted, file), index);
   return attachFileMeta(persisted, file);
 }
 
 async function updateJsonFile(fileId, song, meta, folderId) {
   const persisted = cleanSongForWrite(song, meta);
-  await readCatalogIndex(folderId);
+  const index = await readCatalogIndex(folderId);
   const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,modifiedTime`, {
     method: 'PATCH',
     upload: true,
@@ -575,7 +621,7 @@ async function updateJsonFile(fileId, song, meta, folderId) {
     body: JSON.stringify(persisted, null, 2)
   });
   const file = await response.json();
-  await upsertCatalogIndexEntry(folderId, catalogMeta(persisted, file));
+  await upsertCatalogIndexEntry(folderId, catalogMeta(persisted, file), index);
   return attachFileMeta(persisted, file);
 }
 
@@ -686,6 +732,7 @@ async function deleteUserSong(session, fileId) {
   const index = await readCatalogIndex(entry.folderId);
   const nextIndex = {
     version: 1,
+    files: index.files.filter(item => String(item?.id || '') !== String(fileId)),
     songs: index.songs.filter(item => String(item?._driveFileId || '') !== String(fileId))
   };
   await writeCatalogIndex(entry.folderId, nextIndex);
