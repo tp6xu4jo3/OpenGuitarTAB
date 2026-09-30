@@ -285,14 +285,20 @@ async function fileMetadata(fileId) {
   return (await driveFetch(`/files/${encodeURIComponent(fileId)}?${params}`)).json();
 }
 
-async function patchFileMetadata(fileId, patch) {
+async function patchFileMetadata(fileInput, patch) {
+  const source = typeof fileInput === 'string' ? { id: fileInput } : (fileInput || {});
+  const fileId = String(source.id || '').trim();
+  if (!fileId) throw new Error('FILE_ID_REQUIRED');
+  const preservedModifiedTime = String(source.modifiedTime || '').trim();
+  const body = { ...patch, ...(preservedModifiedTime ? { modifiedTime: preservedModifiedTime } : {}) };
   const params = new URLSearchParams({ fields: DRIVE_FILE_FIELDS });
   const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?${params}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-    body: JSON.stringify(patch)
+    body: JSON.stringify(body)
   });
-  return response.json();
+  const updated = await response.json();
+  return preservedModifiedTime ? { ...updated, modifiedTime: preservedModifiedTime } : updated;
 }
 
 function folderForFile(file) {
@@ -409,7 +415,7 @@ async function ensurePermissionMetadata(file, legacyPermissions = null) {
   const permission = permissionForLegacyFile(legacyPermissions, file.id);
   if (!permission) return { file, permission: null };
   try {
-    const patched = await patchFileMetadata(file.id, {
+    const patched = await patchFileMetadata(file, {
       appProperties: permissionAppProperties(permission, { includeNulls: false })
     });
     return { file: patched, permission };
@@ -472,6 +478,7 @@ function catalogDescription(song, file) {
   return JSON.stringify({
     schema: CATALOG_DESCRIPTION_SCHEMA,
     checksum: String(file?.md5Checksum || ''),
+    scoreModifiedTime: String(file?.modifiedTime || ''),
     metadata: catalogPayload(catalogMeta(song, file))
   });
 }
@@ -487,7 +494,7 @@ export function catalogSnapshotFromDriveFile(file) {
     ...structuredClone(parsed.metadata),
     _driveFileId: String(file.id || ''),
     _driveFileName: String(file.name || ''),
-    _driveModifiedTime: String(file.modifiedTime || '')
+    _driveModifiedTime: String(parsed.scoreModifiedTime || file.modifiedTime || '')
   };
 }
 
@@ -505,7 +512,7 @@ function attachCatalogPermission(metadata, permission) {
 async function updateCatalogDescription(file, song) {
   const description = catalogDescription(song, file);
   try {
-    return await patchFileMetadata(file.id, { description });
+    return await patchFileMetadata(file, { description });
   } catch (error) {
     console.warn('Catalog metadata write deferred:', file.id, String(error?.message || error));
     return file;
@@ -648,8 +655,8 @@ async function updateJsonFile(fileId, song, permission) {
   return attachFileMeta(authoritativeSong(persisted, refreshedFile, permission), refreshedFile);
 }
 
-async function updatePermissionMetadata(fileId, permission) {
-  return patchFileMetadata(fileId, { appProperties: permissionAppProperties(permission) });
+async function updatePermissionMetadata(file, permission) {
+  return patchFileMetadata(file, { appProperties: permissionAppProperties(permission) });
 }
 
 async function readManagedEntry(fileId) {
@@ -754,7 +761,7 @@ async function publishSong(session, song) {
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
   const saved = await updateJsonFile(fileId, { ...song, artist }, entry.song?._opentab);
-  const updatedFile = await updatePermissionMetadata(fileId, meta);
+  const updatedFile = await updatePermissionMetadata({ id: fileId, modifiedTime: saved._driveModifiedTime }, meta);
   return attachFileMeta(authoritativeSong(saved, updatedFile, meta), updatedFile);
 }
 
@@ -764,7 +771,7 @@ async function setPublicState(session, fileId, isPublic) {
   const patch = { public: Boolean(isPublic) };
   if (patch.public) patch.publishedAt = entry.song?._opentab?.publishedAt || Date.now();
   const meta = permissionMeta(entry.song, session, patch);
-  const updatedFile = await updatePermissionMetadata(fileId, meta);
+  const updatedFile = await updatePermissionMetadata(entry.file, meta);
   return attachFileMeta(authoritativeSong(entry.song, updatedFile, meta), updatedFile);
 }
 
