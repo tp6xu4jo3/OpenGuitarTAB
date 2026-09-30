@@ -722,9 +722,13 @@ function catalogFileManifest(files) {
 export function normalizeCatalogIndex(raw) {
   if (!raw || Number(raw.version) !== 1 || !Array.isArray(raw.songs)) return null;
   const files = Array.isArray(raw.files) ? catalogFileManifest(raw.files) : null;
+  const omittedFileIds = Array.isArray(raw.omittedFileIds)
+    ? raw.omittedFileIds.map(fileId => String(fileId || '').trim()).filter(Boolean).sort()
+    : null;
   return {
     version: 1,
     files,
+    omittedFileIds,
     songs: raw.songs
       .filter(item => item && typeof item === 'object' && !Array.isArray(item))
       .map(item => {
@@ -737,49 +741,158 @@ export function normalizeCatalogIndex(raw) {
   };
 }
 
+function catalogManifestEntryMatches(left, right) {
+  return (
+    String(left?.id || '') === String(right?.id || '') &&
+    String(left?.name || '') === String(right?.name || '') &&
+    String(left?.modifiedTime || '') === String(right?.modifiedTime || '')
+  );
+}
+
+function catalogSongMatchesFile(song, file) {
+  return (
+    String(song?._driveFileId || '') === String(file?.id || '') &&
+    String(song?._driveFileName || '') === String(file?.name || '') &&
+    String(song?._driveModifiedTime || '') === String(file?.modifiedTime || '')
+  );
+}
+
+function catalogIndexCoverageIsValid(index) {
+  if (!index || !Array.isArray(index.files) || !Array.isArray(index.songs) || !Array.isArray(index.omittedFileIds)) {
+    return false;
+  }
+
+  const fileIds = new Set();
+  for (const file of index.files) {
+    const fileId = String(file?.id || '');
+    if (!fileId || fileIds.has(fileId)) return false;
+    fileIds.add(fileId);
+  }
+
+  const coveredFileIds = new Set();
+  for (const song of index.songs) {
+    const fileId = String(song?._driveFileId || '');
+    if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
+    coveredFileIds.add(fileId);
+  }
+  for (const rawFileId of index.omittedFileIds) {
+    const fileId = String(rawFileId || '');
+    if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
+    coveredFileIds.add(fileId);
+  }
+  return coveredFileIds.size === fileIds.size;
+}
+
+export function catalogIndexRefreshPlan(index, files) {
+  const sourceFiles = Array.isArray(files) ? files : [];
+  const manifest = catalogFileManifest(sourceFiles);
+  const normalized = normalizeCatalogIndex(index);
+  if (!catalogIndexCoverageIsValid(normalized)) {
+    return {
+      manifest,
+      reusableSongs: [],
+      retainedOmittedFileIds: [],
+      filesToRead: sourceFiles
+    };
+  }
+
+  const indexedFiles = new Map(normalized.files.map(file => [file.id, file]));
+  const cachedSongs = new Map(normalized.songs.map(song => [String(song?._driveFileId || ''), song]));
+  const omittedFileIds = new Set(normalized.omittedFileIds);
+  const reusableSongs = [];
+  const retainedOmittedFileIds = [];
+  const filesToRead = [];
+
+  for (const file of sourceFiles) {
+    const fileId = String(file?.id || '');
+    const previousFile = indexedFiles.get(fileId);
+    if (!previousFile || !catalogManifestEntryMatches(previousFile, file)) {
+      filesToRead.push(file);
+      continue;
+    }
+
+    const cachedSong = cachedSongs.get(fileId);
+    if (cachedSong && catalogSongMatchesFile(cachedSong, file)) {
+      reusableSongs.push(cachedSong);
+      continue;
+    }
+    if (omittedFileIds.has(fileId)) {
+      retainedOmittedFileIds.push(fileId);
+      continue;
+    }
+    filesToRead.push(file);
+  }
+
+  return { manifest, reusableSongs, retainedOmittedFileIds, filesToRead };
+}
+
 export function catalogIndexMatchesFiles(index, files) {
-  if (!index || !Array.isArray(index.files) || !Array.isArray(index.songs)) return false;
+  const normalized = normalizeCatalogIndex(index);
+  if (!catalogIndexCoverageIsValid(normalized)) return false;
   const currentFiles = catalogFileManifest(files);
-  const indexedFiles = catalogFileManifest(index.files);
+  const indexedFiles = catalogFileManifest(normalized.files);
   if (currentFiles.length !== indexedFiles.length) return false;
   for (let indexPosition = 0; indexPosition < currentFiles.length; indexPosition += 1) {
-    const current = currentFiles[indexPosition];
-    const indexed = indexedFiles[indexPosition];
-    if (
-      current.id !== indexed.id ||
-      current.name !== indexed.name ||
-      current.modifiedTime !== indexed.modifiedTime
-    ) {
-      return false;
-    }
+    if (!catalogManifestEntryMatches(currentFiles[indexPosition], indexedFiles[indexPosition])) return false;
   }
 
   const currentById = new Map(currentFiles.map(file => [file.id, file]));
-  const seenSongFileIds = new Set();
-  for (const song of index.songs) {
-    const fileId = String(song?._driveFileId || '');
-    const file = currentById.get(fileId);
-    if (!file || seenSongFileIds.has(fileId)) return false;
-    seenSongFileIds.add(fileId);
-    if (String(song?._driveFileName || '') !== file.name) return false;
-    if (String(song?._driveModifiedTime || '') !== file.modifiedTime) return false;
+  for (const song of normalized.songs) {
+    const file = currentById.get(String(song?._driveFileId || ''));
+    if (!file || !catalogSongMatchesFile(song, file)) return false;
   }
   return true;
 }
 
-async function rebuildCatalogIndex(folderId, files = null, permissionsInput = null) {
+function catalogIndexFromEntries(sourceFiles, entries) {
+  const includedFileIds = new Set(entries.map(entry => String(entry.file.id)));
+  return {
+    version: 1,
+    files: catalogFileManifest(sourceFiles),
+    omittedFileIds: sourceFiles
+      .map(file => String(file?.id || ''))
+      .filter(fileId => fileId && !includedFileIds.has(fileId))
+      .sort(),
+    songs: entries
+      .map(entry => catalogMeta(entry.song, entry.file))
+      .sort((left, right) => String(left._driveFileId || '').localeCompare(String(right._driveFileId || '')))
+  };
+}
+
+async function rebuildCatalogIndex(folderId, files = null, permissionsInput = null, existingFile = null) {
   const [sourceFiles, permissions] = await Promise.all([
     Array.isArray(files) ? Promise.resolve(files) : listJsonFiles(folderId),
     permissionsInput ? Promise.resolve(permissionsInput) : readPermissions()
   ]);
   const entries = await entriesFromFiles(folderId, sourceFiles, permissions);
-  const index = {
-    version: 1,
-    files: catalogFileManifest(sourceFiles),
-    songs: entries.map(entry => catalogMeta(entry.song, entry.file))
-  };
-  await writeNamedJsonFile(folderId, INDEX_FILE_NAME, index);
+  const index = catalogIndexFromEntries(sourceFiles, entries);
+  await writeNamedJsonFile(folderId, INDEX_FILE_NAME, index, existingFile);
   return index;
+}
+
+async function refreshCatalogIndex(folderId, indexFile, index, files, permissionsInput = null) {
+  const sourceFiles = Array.isArray(files) ? files : [];
+  const plan = catalogIndexRefreshPlan(index, sourceFiles);
+  const permissions = permissionsInput || await readPermissions();
+  const refreshedEntries = await entriesFromFiles(folderId, plan.filesToRead, permissions);
+  const refreshedFileIds = new Set(refreshedEntries.map(entry => String(entry.file.id)));
+  const omittedFileIds = new Set(plan.retainedOmittedFileIds);
+  for (const file of plan.filesToRead) {
+    const fileId = String(file?.id || '');
+    if (fileId && !refreshedFileIds.has(fileId)) omittedFileIds.add(fileId);
+  }
+
+  const nextIndex = {
+    version: 1,
+    files: plan.manifest,
+    omittedFileIds: [...omittedFileIds].sort(),
+    songs: [
+      ...plan.reusableSongs,
+      ...refreshedEntries.map(entry => catalogMeta(entry.song, entry.file))
+    ].sort((left, right) => String(left._driveFileId || '').localeCompare(String(right._driveFileId || '')))
+  };
+  await writeNamedJsonFile(folderId, INDEX_FILE_NAME, nextIndex, indexFile);
+  return nextIndex;
 }
 
 async function readCatalogIndex(folderId, permissionsInput = null) {
@@ -791,10 +904,13 @@ async function readCatalogIndex(folderId, permissionsInput = null) {
   try {
     const normalized = normalizeCatalogIndex(await readDriveJson(file.id, 'INVALID_CATALOG_INDEX'));
     if (normalized && catalogIndexMatchesFiles(normalized, files)) return normalized;
+    if (catalogIndexCoverageIsValid(normalized)) {
+      return refreshCatalogIndex(folderId, file, normalized, files, permissionsInput);
+    }
   } catch (error) {
     if (String(error?.message || error) !== 'INVALID_CATALOG_INDEX') throw error;
   }
-  return rebuildCatalogIndex(folderId, files, permissionsInput);
+  return rebuildCatalogIndex(folderId, files, permissionsInput, file);
 }
 
 async function readArtistMedia() {
