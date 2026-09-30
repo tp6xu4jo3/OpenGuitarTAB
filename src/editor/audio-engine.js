@@ -10,6 +10,8 @@ const SAME_STRING_DAMP_LEAD_SECONDS = 0.025;
 const SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0.002;
 const MANUAL_RELEASE_SECONDS = 0.018;
 const SLIDE_TRANSITION_LEVEL = 0.62;
+export const MASTER_OUTPUT_DB = -6;
+export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -97,7 +99,7 @@ export class GuitarAudioEngine {
     const context = new AudioContextClass();
     const masterGain = context.createGain();
     const compressor = context.createDynamicsCompressor();
-    masterGain.gain.value = 0.95;
+    masterGain.gain.value = MASTER_OUTPUT_GAIN;
     compressor.threshold.value = -10;
     compressor.knee.value = 12;
     compressor.ratio.value = 5;
