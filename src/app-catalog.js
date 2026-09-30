@@ -9,6 +9,9 @@ let libraryLoadError = '';
 let catalogLoadGeneration = 0;
 let libraryLoadGeneration = 0;
 let previewLoadGeneration = 0;
+let libraryLoadedUsername = '';
+let libraryLoadRequest = null;
+let libraryLoadRequestUsername = '';
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -150,7 +153,7 @@ async function editCatalogArrangement(arrangement) {
   if (!catalogArrangementCanManage(arrangement)) return;
   let local = localSongForArrangement(arrangement);
   if (!local) {
-    await loadUserLibrary();
+    await ensureUserLibraryLoaded();
     local = localSongForArrangement(arrangement);
   }
   if (!local) {
@@ -192,7 +195,12 @@ async function addCatalogArrangement(arrangement, button = null) {
     openLoginModal('#/library');
     return;
   }
-  if (catalogArrangementCanManage(arrangement) || catalogArrangementIsAdded(arrangement)) {
+  if (catalogArrangementCanManage(arrangement)) {
+    markAddButtonAdded(button, { animate: true });
+    return;
+  }
+  await ensureUserLibraryLoaded();
+  if (catalogArrangementIsAdded(arrangement)) {
     markAddButtonAdded(button, { animate: true });
     return;
   }
@@ -344,6 +352,7 @@ async function loadUserLibrary() {
   const user = window.authState?.user;
   const username = String(user?.username || '');
   if (!user) {
+    libraryLoadedUsername = '';
     songs = [];
     currentSongId = null;
     libraryLoadError = '';
@@ -355,6 +364,7 @@ async function loadUserLibrary() {
     const result = await dataSource.library();
     if (generation !== libraryLoadGeneration || String(window.authState?.user?.username || '') !== username) return;
     songs = (Array.isArray(result.songs) ? result.songs : []).map(hydrateSong);
+    libraryLoadedUsername = username;
     libraryLoadError = '';
     if (!songs.some(song => song.id === currentSongId)) currentSongId = songs[0]?.id || null;
     const hint = document.getElementById('libraryStorageHint');
@@ -367,15 +377,32 @@ async function loadUserLibrary() {
     }
     renderSongList();
     renderLibraryGrid();
+    renderCatalog();
   } catch (error) {
     if (generation !== libraryLoadGeneration || String(window.authState?.user?.username || '') !== username) return;
     console.error(error);
+    libraryLoadedUsername = '';
     songs = [];
     currentSongId = null;
     libraryLoadError = dataSourceLoadErrorMessage(error, '個人曲譜');
     renderSongList();
     renderLibraryGrid();
   }
+}
+
+function ensureUserLibraryLoaded() {
+  const username = String(window.authState?.user?.username || '');
+  if (!username || libraryLoadedUsername === username) return Promise.resolve();
+  if (libraryLoadRequest && libraryLoadRequestUsername === username) return libraryLoadRequest;
+  const request = loadUserLibrary().finally(() => {
+    if (libraryLoadRequest === request) {
+      libraryLoadRequest = null;
+      libraryLoadRequestUsername = '';
+    }
+  });
+  libraryLoadRequest = request;
+  libraryLoadRequestUsername = username;
+  return request;
 }
 
 async function fetchCatalogArrangement(meta) {
@@ -457,6 +484,7 @@ function handleRoute() {
     previousNonEditorRoute = '#/library';
     renderLibraryGrid();
     showPage('library');
+    void ensureUserLibraryLoaded();
     return;
   }
   if (route === 'editor' && id) {
@@ -466,6 +494,13 @@ function handleRoute() {
       return;
     }
     if (songs.some(song => song.id === id)) { openLocalEditor(id); return; }
+    const requestedHash = location.hash;
+    void ensureUserLibraryLoaded().then(() => {
+      if (location.hash !== requestedHash) return;
+      if (songs.some(song => song.id === id)) openLocalEditor(id);
+      else setRoute('#/catalog');
+    });
+    return;
   }
   if (route === 'preview' && id) { openCatalogPreview(id); return; }
   setRoute('#/catalog');
@@ -473,7 +508,7 @@ function handleRoute() {
 
 async function initializeApp() {
   await initializeAuth();
-  await Promise.all([loadCatalog(), loadUserLibrary()]);
+  await loadCatalog();
   if (!location.hash) location.hash = '#/catalog';
   handleRoute();
 }
@@ -507,6 +542,7 @@ mobileQuery.addEventListener('change', event => { if (!event.matches) closeMobil
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
   const pendingRoute = event.detail?.pendingRoute;
+  libraryLoadedUsername = '';
   if (!event.detail?.user) {
     libraryLoadGeneration += 1;
     previewLoadGeneration += 1;
@@ -521,7 +557,6 @@ window.addEventListener('opentab:auth-changed', async event => {
     setRoute('#/catalog');
     return;
   }
-  await loadUserLibrary();
   renderCatalog();
   if (pendingRoute) setRoute(pendingRoute);
 });
@@ -529,6 +564,7 @@ window.addEventListener('opentab:test-data-reset', async () => {
   previewLoadGeneration += 1;
   previewSong = null;
   setPreviewActive(false);
+  libraryLoadedUsername = '';
   await Promise.all([loadCatalog(), loadUserLibrary()]);
   showToast('已重設為repo測試資料');
   handleRoute();
