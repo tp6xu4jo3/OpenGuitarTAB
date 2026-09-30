@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { permissionRecordFileName } from '../api/index.js';
 
 const source = await readFile(new URL('../api/index.js', import.meta.url), 'utf8');
 
@@ -10,20 +11,25 @@ const deleteStart = source.indexOf('async function deleteUserSong(');
 const cloneStart = source.indexOf('async function clonePublicToTest(');
 
 assert.ok(saveStart >= 0 && publishStart > saveStart && visibilityStart > publishStart && deleteStart > visibilityStart && cloneStart > deleteStart);
+assert.equal(permissionRecordFileName('drive-song-id'), 'permission-drive-song-id.json');
 
 const saveBlock = source.slice(saveStart, publishStart);
-assert.doesNotMatch(saveBlock, /appendPermissionEvent/, 'ordinary score saves must never mutate permission authority');
+assert.doesNotMatch(saveBlock, /writePermissionRecord/, 'ordinary score saves must not rewrite permission authority');
 
 const publishBlock = source.slice(publishStart, visibilityStart);
-assert.match(publishBlock, /appendPermissionEvent\(fileId, permission\)/, 'publish must explicitly update centralized permission authority');
+assert.match(publishBlock, /writePermissionRecord\(fileId, permission\)/, 'publish must update the canonical per-song permission file');
 
 const visibilityBlock = source.slice(visibilityStart, deleteStart);
-assert.match(visibilityBlock, /appendPermissionEvent\(fileId, permission\)/, 'visibility changes must explicitly update centralized permission authority');
+assert.match(visibilityBlock, /writePermissionRecord\(fileId, permission\)/, 'visibility changes must update the canonical per-song permission file');
 
 const deleteBlock = source.slice(deleteStart, cloneStart);
-assert.match(deleteBlock, /appendPermissionEvent\(fileId, null, \{ deleted: true \}\)/, 'delete must persist a permission tombstone without restoring a shared snapshot');
+assert.match(deleteBlock, /deletePermissionRecord\(fileId\)/, 'delete must remove the matching permission file');
+assert.doesNotMatch(deleteBlock, /tombstone|appendPermissionEvent/, 'delete must not create permission tombstones');
 
-assert.doesNotMatch(source, /async function writePermissions\(/, 'permissions.json must be an immutable baseline, not a runtime write target');
-assert.doesNotMatch(source, /upsertCatalogIndexEntry|removeCatalogIndexEntry/, 'catalog index must be a rebuildable cache rather than shared read-modify-write state');
+assert.match(source, /PERMISSION_FILE_PREFIX = 'permission-'/);
+assert.match(source, /songFileId/);
+assert.doesNotMatch(source, /permissionEventAppProperties|cleanupPermissionRecords|appendPermissionEvent/, 'runtime permission authority must have one implementation');
+assert.doesNotMatch(source, /async function writePermissions\(/, 'runtime must never rewrite a shared permissions snapshot');
+assert.doesNotMatch(source, /upsertCatalogIndexEntry|removeCatalogIndexEntry/, 'catalog index must remain a rebuildable cache');
 
-console.log('permission overlay source tests passed');
+console.log('per-song permission source tests passed');
