@@ -24,8 +24,8 @@
 .save-button { background:#111; color:#fff; box-shadow:0 10px 22px rgba(0,0,0,.14); }
 .download-button { border:1px solid #cfcfcf; background:#fff; color:#111; }
 .save-button:hover,.save-button:focus-visible { transform:translateY(-1px) scale(1.03); box-shadow:0 14px 28px rgba(0,0,0,.18); outline:none; }
-.save-button:disabled,.modal-button:disabled { cursor:wait; opacity:.72; }
-.save-button.is-busy,.modal-button.is-busy { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.save-button:disabled,.modal-button:disabled,.play-button:disabled { cursor:wait; opacity:.72; }
+.save-button.is-busy,.modal-button.is-busy,.play-button.is-busy { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
 .button-spinner { box-sizing:border-box; width:15px; height:15px; display:inline-block; flex:0 0 15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:button-spinner .72s linear infinite; }
 @keyframes button-spinner { to { transform:rotate(360deg); } }
 .download-button:hover,.download-button:focus-visible { border-color:#111; outline:none; }
