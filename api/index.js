@@ -22,11 +22,11 @@ const SESSION_COOKIE = 'opentab_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const INDEX_FILE_NAME = 'index.json';
 const ARTIST_MEDIA_FILE_NAME = 'artists.json';
-const PERMISSIONS_FILE_NAME = 'permissions.json';
-const RESERVED_JSON_NAMES = new Set([INDEX_FILE_NAME, ARTIST_MEDIA_FILE_NAME, PERMISSIONS_FILE_NAME]);
+const LEGACY_PERMISSIONS_FILE_NAME = 'permissions.json';
+const RESERVED_JSON_NAMES = new Set([INDEX_FILE_NAME, ARTIST_MEDIA_FILE_NAME, LEGACY_PERMISSIONS_FILE_NAME]);
 const DRIVE_READ_CONCURRENCY = 8;
 const STANDARD_TUNING = 'standard';
-const PERMISSION_RECORD_KIND = 'permission';
+const PERMISSION_FILE_PREFIX = 'permission-';
 const SONG_FIELD_ORDER = [
   'id',
   'workId',
@@ -262,7 +262,7 @@ async function listJsonFiles(folderId, { includeReserved = false } = {}) {
   do {
     const params = new URLSearchParams({
       q: `'${folderId}' in parents and trashed = false and mimeType = 'application/json'`,
-      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,parents,appProperties)',
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,parents)',
       orderBy: 'modifiedTime desc',
       pageSize: '1000'
     });
@@ -278,7 +278,7 @@ async function findNamedJsonFile(folderId, name) {
   const safeName = String(name).replace(/'/g, "\\'");
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false and mimeType = 'application/json' and name = '${safeName}'`,
-    fields: 'files(id,name,mimeType,modifiedTime,size,parents,appProperties)',
+    fields: 'files(id,name,mimeType,modifiedTime,size,parents)',
     orderBy: 'modifiedTime desc',
     pageSize: '2'
   });
@@ -351,26 +351,22 @@ async function writeNamedJsonFile(folderId, name, value, existingFile = null) {
   return response.json();
 }
 
-async function createJsonFileRaw(folderId, name, value, appProperties = {}) {
-  const body = JSON.stringify(value, null, 2);
+async function updateNamedJsonFile(fileId, name, value) {
   const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
-  const metadata = JSON.stringify({
-    name,
-    parents: [folderId],
-    ...(appProperties && Object.keys(appProperties).length ? { appProperties } : {})
-  });
-  const multipart = [
+  const metadata = JSON.stringify({ name });
+  const media = JSON.stringify(value, null, 2);
+  const body = [
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${body}\r\n`,
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${media}\r\n`,
     `--${boundary}--`
   ].join('');
   const response = await driveFetch(
-    '/files?uploadType=multipart&fields=id,name,modifiedTime,appProperties',
+    `/files/${encodeURIComponent(fileId)}?uploadType=multipart&fields=id,name,modifiedTime`,
     {
-      method: 'POST',
+      method: 'PATCH',
       upload: true,
       headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body: multipart
+      body
     }
   );
   return response.json();
@@ -391,7 +387,27 @@ function normalizePermissionRecord(raw) {
   return normalized;
 }
 
-export function normalizeSongPermissions(raw) {
+export function permissionRecordFileName(songFileId) {
+  const id = String(songFileId || '').trim();
+  if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
+  return `${PERMISSION_FILE_PREFIX}${id}.json`;
+}
+
+export function normalizePermissionFile(raw) {
+  if (!raw || Number(raw.version) !== 1) return null;
+  const songFileId = String(raw.songFileId || '').trim();
+  const permission = normalizePermissionRecord(raw);
+  if (!songFileId || !permission) return null;
+  return { version: 1, songFileId, ...permission };
+}
+
+function permissionFileValue(songFileId, permission) {
+  const normalized = normalizePermissionRecord(permission);
+  if (!normalized) throw new Error('INVALID_PERMISSION_RECORD');
+  return { version: 1, songFileId: String(songFileId), ...normalized };
+}
+
+function normalizeLegacyPermissions(raw) {
   if (!raw || Number(raw.version) !== 1 || !raw.songs || typeof raw.songs !== 'object' || Array.isArray(raw.songs)) {
     return null;
   }
@@ -404,7 +420,7 @@ export function normalizeSongPermissions(raw) {
   return { version: 1, songs };
 }
 
-function normalizePermissionEvent(raw) {
+function normalizeLegacyPermissionEvent(raw) {
   if (!raw || Number(raw.version) !== 1) return null;
   const fileId = String(raw.fileId || '').trim();
   if (!fileId) return null;
@@ -421,163 +437,92 @@ function normalizePermissionEvent(raw) {
   };
 }
 
-export function permissionEventAppProperties(rawEvent) {
-  const event = normalizePermissionEvent(rawEvent);
-  if (!event) return null;
-  const properties = {
-    kind: PERMISSION_RECORD_KIND,
-    version: '1',
-    fileId: event.fileId,
-    sequence: String(event.sequence),
-    deleted: event.deleted ? '1' : '0'
-  };
-  if (!event.deleted) {
-    const permission = event.permission;
-    properties.owner = permission.owner;
-    properties.public = permission.public ? '1' : '0';
-    for (const key of ['uploadedBy', 'updatedBy', 'sourcePublicFileId']) {
-      if (permission[key]) properties[key] = String(permission[key]);
-    }
-    if (permission.publishedAt !== undefined) {
-      properties.publishedAtJson = JSON.stringify(permission.publishedAt);
-    }
-  }
-  return properties;
-}
-
-export function permissionEventFromFile(file) {
-  const properties = file?.appProperties;
-  if (!properties || properties.kind !== PERMISSION_RECORD_KIND || properties.version !== '1') return null;
-  const fileId = String(properties.fileId || '').trim();
-  if (!fileId) return null;
-  const deleted = properties.deleted === '1';
-  let publishedAt;
-  if (properties.publishedAtJson !== undefined) {
-    try {
-      publishedAt = JSON.parse(properties.publishedAtJson);
-    } catch {
-      return null;
-    }
-  }
-  const permission = deleted
-    ? null
-    : normalizePermissionRecord({
-        owner: properties.owner,
-        public: properties.public === '1',
-        uploadedBy: properties.uploadedBy,
-        updatedBy: properties.updatedBy,
-        sourcePublicFileId: properties.sourcePublicFileId,
-        ...(publishedAt !== undefined ? { publishedAt } : {})
-      });
-  if (!deleted && !permission) return null;
-  return {
-    file,
-    event: {
-      version: 1,
-      fileId,
-      sequence: Number(properties.sequence) || 0,
-      deleted,
-      permission
-    }
-  };
-}
-
-async function readPermissionSeed() {
-  const file = await findNamedJsonFile(PUBLIC_FOLDER_ID, PERMISSIONS_FILE_NAME);
-  if (!file) throw new Error('PERMISSIONS_FILE_MISSING');
-  const normalized = normalizeSongPermissions(await readDriveJson(file.id, 'INVALID_PERMISSIONS'));
-  if (!normalized) throw new Error('INVALID_PERMISSIONS');
-  return normalized;
-}
-
-async function readPermissionEvents() {
-  const files = await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true });
-  return files.map(permissionEventFromFile).filter(Boolean);
-}
-
-function permissionRecordOrder(item) {
-  const modifiedTime = String(item?.file?.modifiedTime || item?.modifiedTime || '');
-  const event = normalizePermissionEvent(item?.event || item);
-  return {
-    modifiedTime,
-    sequence: Number(event?.sequence) || 0,
-    id: String(item?.file?.id || item?.id || '')
-  };
-}
-
-function comparePermissionRecords(left, right) {
-  const a = permissionRecordOrder(left);
-  const b = permissionRecordOrder(right);
-  const byTime = a.modifiedTime.localeCompare(b.modifiedTime);
-  if (byTime) return byTime;
-  if (a.sequence !== b.sequence) return a.sequence - b.sequence;
-  return a.id.localeCompare(b.id);
-}
-
-export function materializePermissions(seed, events) {
-  const normalizedSeed = normalizeSongPermissions(seed) || { version: 1, songs: {} };
+export function materializeLegacyPermissions(seed, events) {
+  const normalizedSeed = normalizeLegacyPermissions(seed) || { version: 1, songs: {} };
   const songs = structuredClone(normalizedSeed.songs);
-  const latest = new Map();
-
-  for (const rawItem of Array.isArray(events) ? events : []) {
-    const parsed = rawItem?.event
-      ? rawItem
-      : permissionEventFromFile(rawItem) || { event: normalizePermissionEvent(rawItem) };
-    const event = normalizePermissionEvent(parsed?.event);
+  const ordered = (Array.isArray(events) ? events : [])
+    .filter(item => normalizeLegacyPermissionEvent(item?.event || item))
+    .sort((left, right) => {
+      const byTime = String(left?.modifiedTime || '').localeCompare(String(right?.modifiedTime || ''));
+      if (byTime) return byTime;
+      const a = normalizeLegacyPermissionEvent(left?.event || left);
+      const b = normalizeLegacyPermissionEvent(right?.event || right);
+      return (Number(a?.sequence) || 0) - (Number(b?.sequence) || 0);
+    });
+  for (const item of ordered) {
+    const event = normalizeLegacyPermissionEvent(item?.event || item);
     if (!event) continue;
-    const current = latest.get(event.fileId);
-    if (!current || comparePermissionRecords(parsed, current) > 0) latest.set(event.fileId, parsed);
-  }
-
-  for (const [fileId, item] of latest) {
-    if (item.event.deleted) delete songs[fileId];
-    else songs[fileId] = item.event.permission;
+    if (event.deleted) delete songs[event.fileId];
+    else songs[event.fileId] = event.permission;
   }
   return { version: 1, songs };
 }
 
+async function writePermissionRecord(songFileId, permission) {
+  const id = String(songFileId || '').trim();
+  if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
+  const value = permissionFileValue(id, permission);
+  await writeNamedJsonFile(PERMISSION_RECORDS_FOLDER_ID, permissionRecordFileName(id), value);
+  return normalizePermissionRecord(value);
+}
+
+async function deletePermissionRecord(songFileId) {
+  const file = await findNamedJsonFile(PERMISSION_RECORDS_FOLDER_ID, permissionRecordFileName(songFileId));
+  if (!file) return;
+  await driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' });
+}
+
+async function migrateLegacyPermissions() {
+  const seedFile = await findNamedJsonFile(PUBLIC_FOLDER_ID, LEGACY_PERMISSIONS_FILE_NAME);
+  if (!seedFile) return;
+  const seed = normalizeLegacyPermissions(await readDriveJson(seedFile.id, 'INVALID_PERMISSIONS'));
+  if (!seed) throw new Error('INVALID_PERMISSIONS');
+
+  const permissionFiles = await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true });
+  const legacyFiles = permissionFiles.filter(file => !String(file.name || '').startsWith(PERMISSION_FILE_PREFIX));
+  const results = await settledMapWithConcurrency(legacyFiles, DRIVE_READ_CONCURRENCY, async file => ({
+    modifiedTime: String(file.modifiedTime || ''),
+    event: normalizeLegacyPermissionEvent(await readDriveJson(file.id, 'INVALID_PERMISSION_RECORD'))
+  }));
+  const failed = results.find(result => result.status === 'rejected' || !result.value?.event);
+  if (failed) throw failed.reason || new Error('INVALID_PERMISSION_RECORD');
+
+  const permissions = materializeLegacyPermissions(seed, results.map(result => result.value));
+  const writes = await settledMapWithConcurrency(
+    Object.entries(permissions.songs),
+    DRIVE_READ_CONCURRENCY,
+    ([fileId, permission]) => writePermissionRecord(fileId, permission)
+  );
+  const writeFailure = writes.find(result => result.status === 'rejected');
+  if (writeFailure) throw writeFailure.reason;
+
+  await Promise.all([
+    ...legacyFiles.map(file => driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' })),
+    driveFetch(`/files/${encodeURIComponent(seedFile.id)}`, { method: 'DELETE' })
+  ]);
+}
+
 async function readPermissions() {
-  const [seed, events] = await Promise.all([readPermissionSeed(), readPermissionEvents()]);
-  return materializePermissions(seed, events);
+  await migrateLegacyPermissions();
+  const files = (await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true }))
+    .filter(file => String(file.name || '').startsWith(PERMISSION_FILE_PREFIX));
+  const results = await settledMapWithConcurrency(files, DRIVE_READ_CONCURRENCY, async file => {
+    const value = normalizePermissionFile(await readDriveJson(file.id, 'INVALID_PERMISSION_RECORD'));
+    if (!value) throw new Error('INVALID_PERMISSION_RECORD');
+    return value;
+  });
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  const songs = {};
+  for (const result of results) {
+    const value = result.value;
+    songs[value.songFileId] = normalizePermissionRecord(value);
+  }
+  return { version: 1, songs };
 }
 
 function permissionForFile(permissions, fileId) {
   return normalizePermissionRecord(permissions?.songs?.[String(fileId || '')]);
-}
-
-async function cleanupPermissionRecords(fileId) {
-  const targetId = String(fileId || '').trim();
-  if (!targetId) return;
-  const records = (await readPermissionEvents()).filter(item => item.event.fileId === targetId);
-  if (records.length <= 1) return;
-  const winner = records.reduce((best, item) => (comparePermissionRecords(item, best) > 0 ? item : best));
-  await Promise.allSettled(
-    records
-      .filter(item => item.file.id !== winner.file.id)
-      .map(item => driveFetch(`/files/${encodeURIComponent(item.file.id)}`, { method: 'DELETE' }))
-  );
-}
-
-async function appendPermissionEvent(fileId, permission, { deleted = false } = {}) {
-  const id = String(fileId || '').trim();
-  if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
-  const normalized = deleted ? null : normalizePermissionRecord(permission);
-  if (!deleted && !normalized) throw new Error('INVALID_PERMISSION_RECORD');
-  const sequence = Date.now() * 1000 + crypto.randomInt(0, 1000);
-  const event = {
-    version: 1,
-    fileId: id,
-    sequence,
-    deleted: Boolean(deleted),
-    ...(deleted ? {} : { permission: normalized })
-  };
-  const appProperties = permissionEventAppProperties(event);
-  const name = `${id}-${sequence}-${crypto.randomBytes(4).toString('hex')}.json`;
-  await createJsonFileRaw(PERMISSION_RECORDS_FOLDER_ID, name, event, appProperties);
-  await cleanupPermissionRecords(id).catch(error => {
-    console.warn('Permission record cleanup failed:', id, String(error?.message || error));
-  });
-  return normalized;
 }
 
 function authoritativeSong(song, file, permission) {
@@ -605,10 +550,10 @@ function attachFileMeta(song, file) {
   };
 }
 
-function catalogMeta(song, file) {
+function catalogIndexSong(song, file) {
   const enriched = ensureArrangementIdentity(song, { fileId: file.id });
   return {
-    id: String(enriched.id || file.id),
+    songId: String(enriched.id || file.id),
     workId: enriched.workId,
     arrangementId: enriched.arrangementId,
     name: enriched.name || file.name.replace(/\.json$/i, ''),
@@ -622,9 +567,29 @@ function catalogMeta(song, file) {
     tempo: Number(enriched.tempo) || 120,
     capo: Number.isFinite(Number(enriched.capo)) ? Number(enriched.capo) : 0,
     beatsPerMeasure: Number(enriched.beatsPerMeasure) === 3 ? 3 : 4,
-    _driveFileId: file.id,
-    _driveFileName: file.name,
-    _driveModifiedTime: file.modifiedTime || ''
+    driveFileId: String(file.id),
+    driveFileName: String(file.name || ''),
+    driveModifiedTime: String(file.modifiedTime || '')
+  };
+}
+
+function catalogApiMeta(record) {
+  return {
+    id: String(record?.songId || ''),
+    workId: String(record?.workId || ''),
+    arrangementId: String(record?.arrangementId || ''),
+    name: String(record?.name || ''),
+    artist: String(record?.artist || ''),
+    album: String(record?.album || ''),
+    source: String(record?.source || ''),
+    playStyle: record?.playStyle === 'chord' ? 'chord' : record?.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+    difficulty: record?.difficulty ?? null,
+    tempo: Number(record?.tempo) || 120,
+    capo: Number.isFinite(Number(record?.capo)) ? Number(record.capo) : 0,
+    beatsPerMeasure: Number(record?.beatsPerMeasure) === 3 ? 3 : 4,
+    _driveFileId: String(record?.driveFileId || ''),
+    _driveFileName: String(record?.driveFileName || ''),
+    _driveModifiedTime: String(record?.driveModifiedTime || '')
   };
 }
 
@@ -671,11 +636,20 @@ export function cleanSongForWrite(song) {
   return persisted;
 }
 
-function songFileName(song) {
-  const id = String(song?.id || `song-${Date.now().toString(36)}`)
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
-    .slice(0, 80);
-  return `${id || 'song'}.json`;
+function driveFileNamePart(value, fallback, maxLength) {
+  const normalized = String(value || fallback)
+    .normalize('NFKC')
+    .trim()
+    .replace(/[\u0000-\u001f\u007f/\\]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '');
+  return [...(normalized || fallback)].slice(0, maxLength).join('');
+}
+
+export function songFileName(song) {
+  const title = driveFileNamePart(song?.name, '未命名曲譜', 60);
+  const arrangementId = driveFileNamePart(song?.arrangementId || song?.id, 'arrangement', 80).replace(/\s+/g, '-');
+  return `${title}__${arrangementId}.json`;
 }
 
 async function entriesFromFiles(folderId, files, permissions) {
@@ -708,74 +682,86 @@ async function entriesFromFolder(folderId, permissionsInput = null) {
   return entriesFromFiles(folderId, files, permissions);
 }
 
-function catalogFileManifest(files) {
-  return (Array.isArray(files) ? files : [])
-    .filter(file => file && typeof file === 'object' && !Array.isArray(file) && file.id)
-    .map(file => ({
-      id: String(file.id),
-      name: String(file.name || ''),
-      modifiedTime: String(file.modifiedTime || '')
-    }))
-    .sort((left, right) => left.id.localeCompare(right.id));
-}
-
-export function normalizeCatalogIndex(raw) {
-  if (!raw || Number(raw.version) !== 1 || !Array.isArray(raw.songs)) return null;
-  const files = Array.isArray(raw.files) ? catalogFileManifest(raw.files) : null;
-  const omittedFileIds = Array.isArray(raw.omittedFileIds)
-    ? raw.omittedFileIds.map(fileId => String(fileId || '').trim()).filter(Boolean).sort()
-    : null;
+function manifestEntry(file) {
   return {
-    version: 1,
-    files,
-    omittedFileIds,
-    songs: raw.songs
-      .filter(item => item && typeof item === 'object' && !Array.isArray(item))
-      .map(item => {
-        const normalized = structuredClone(item);
-        delete normalized.owner;
-        delete normalized.uploadedBy;
-        delete normalized.public;
-        return normalized;
-      })
+    driveFileId: String(file?.driveFileId || file?.id || ''),
+    fileName: String(file?.fileName || file?.name || ''),
+    modifiedTime: String(file?.modifiedTime || '')
   };
 }
 
+function catalogFileManifest(files) {
+  return (Array.isArray(files) ? files : [])
+    .filter(file => file && typeof file === 'object' && !Array.isArray(file) && (file.driveFileId || file.id))
+    .map(manifestEntry)
+    .sort((left, right) => left.driveFileId.localeCompare(right.driveFileId));
+}
+
+export function normalizeCatalogIndex(raw) {
+  if (!raw || Number(raw.version) !== 2 || !Array.isArray(raw.manifest) || !Array.isArray(raw.songs)) return null;
+  const manifest = catalogFileManifest(raw.manifest);
+  const omittedDriveFileIds = Array.isArray(raw.omittedDriveFileIds)
+    ? raw.omittedDriveFileIds.map(fileId => String(fileId || '').trim()).filter(Boolean).sort()
+    : null;
+  const songs = raw.songs
+    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+    .map(item => ({
+      songId: String(item.songId || ''),
+      workId: String(item.workId || ''),
+      arrangementId: String(item.arrangementId || ''),
+      name: String(item.name || ''),
+      artist: String(item.artist || ''),
+      album: String(item.album || ''),
+      source: String(item.source || ''),
+      playStyle: item.playStyle === 'chord' ? 'chord' : item.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+      difficulty: Number.isFinite(Number(item.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(item.difficulty)))) : null,
+      tempo: Number(item.tempo) || 120,
+      capo: Number.isFinite(Number(item.capo)) ? Number(item.capo) : 0,
+      beatsPerMeasure: Number(item.beatsPerMeasure) === 3 ? 3 : 4,
+      driveFileId: String(item.driveFileId || ''),
+      driveFileName: String(item.driveFileName || ''),
+      driveModifiedTime: String(item.driveModifiedTime || '')
+    }));
+  return { version: 2, manifest, omittedDriveFileIds, songs };
+}
+
 function catalogManifestEntryMatches(left, right) {
+  const a = manifestEntry(left);
+  const b = manifestEntry(right);
   return (
-    String(left?.id || '') === String(right?.id || '') &&
-    String(left?.name || '') === String(right?.name || '') &&
-    String(left?.modifiedTime || '') === String(right?.modifiedTime || '')
+    a.driveFileId === b.driveFileId &&
+    a.fileName === b.fileName &&
+    a.modifiedTime === b.modifiedTime
   );
 }
 
 function catalogSongMatchesFile(song, file) {
   return (
-    String(song?._driveFileId || '') === String(file?.id || '') &&
-    String(song?._driveFileName || '') === String(file?.name || '') &&
-    String(song?._driveModifiedTime || '') === String(file?.modifiedTime || '')
+    String(song?.driveFileId || '') === String(file?.id || '') &&
+    String(song?.driveFileName || '') === String(file?.name || '') &&
+    String(song?.driveModifiedTime || '') === String(file?.modifiedTime || '')
   );
 }
 
 function catalogIndexCoverageIsValid(index) {
-  if (!index || !Array.isArray(index.files) || !Array.isArray(index.songs) || !Array.isArray(index.omittedFileIds)) {
+  if (!index || !Array.isArray(index.manifest) || !Array.isArray(index.songs) || !Array.isArray(index.omittedDriveFileIds)) {
     return false;
   }
 
   const fileIds = new Set();
-  for (const file of index.files) {
-    const fileId = String(file?.id || '');
+  for (const file of index.manifest) {
+    const fileId = String(file?.driveFileId || '');
     if (!fileId || fileIds.has(fileId)) return false;
     fileIds.add(fileId);
   }
 
   const coveredFileIds = new Set();
   for (const song of index.songs) {
-    const fileId = String(song?._driveFileId || '');
+    const fileId = String(song?.driveFileId || '');
     if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
     coveredFileIds.add(fileId);
   }
-  for (const rawFileId of index.omittedFileIds) {
+  for (const rawFileId of index.omittedDriveFileIds) {
     const fileId = String(rawFileId || '');
     if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
     coveredFileIds.add(fileId);
@@ -791,16 +777,16 @@ export function catalogIndexRefreshPlan(index, files) {
     return {
       manifest,
       reusableSongs: [],
-      retainedOmittedFileIds: [],
+      retainedOmittedDriveFileIds: [],
       filesToRead: sourceFiles
     };
   }
 
-  const indexedFiles = new Map(normalized.files.map(file => [file.id, file]));
-  const cachedSongs = new Map(normalized.songs.map(song => [String(song?._driveFileId || ''), song]));
-  const omittedFileIds = new Set(normalized.omittedFileIds);
+  const indexedFiles = new Map(normalized.manifest.map(file => [file.driveFileId, file]));
+  const cachedSongs = new Map(normalized.songs.map(song => [String(song?.driveFileId || ''), song]));
+  const omittedFileIds = new Set(normalized.omittedDriveFileIds);
   const reusableSongs = [];
-  const retainedOmittedFileIds = [];
+  const retainedOmittedDriveFileIds = [];
   const filesToRead = [];
 
   for (const file of sourceFiles) {
@@ -817,28 +803,28 @@ export function catalogIndexRefreshPlan(index, files) {
       continue;
     }
     if (omittedFileIds.has(fileId)) {
-      retainedOmittedFileIds.push(fileId);
+      retainedOmittedDriveFileIds.push(fileId);
       continue;
     }
     filesToRead.push(file);
   }
 
-  return { manifest, reusableSongs, retainedOmittedFileIds, filesToRead };
+  return { manifest, reusableSongs, retainedOmittedDriveFileIds, filesToRead };
 }
 
 export function catalogIndexMatchesFiles(index, files) {
   const normalized = normalizeCatalogIndex(index);
   if (!catalogIndexCoverageIsValid(normalized)) return false;
   const currentFiles = catalogFileManifest(files);
-  const indexedFiles = catalogFileManifest(normalized.files);
+  const indexedFiles = catalogFileManifest(normalized.manifest);
   if (currentFiles.length !== indexedFiles.length) return false;
   for (let indexPosition = 0; indexPosition < currentFiles.length; indexPosition += 1) {
     if (!catalogManifestEntryMatches(currentFiles[indexPosition], indexedFiles[indexPosition])) return false;
   }
 
-  const currentById = new Map(currentFiles.map(file => [file.id, file]));
+  const currentById = new Map((Array.isArray(files) ? files : []).map(file => [String(file?.id || ''), file]));
   for (const song of normalized.songs) {
-    const file = currentById.get(String(song?._driveFileId || ''));
+    const file = currentById.get(String(song?.driveFileId || ''));
     if (!file || !catalogSongMatchesFile(song, file)) return false;
   }
   return true;
@@ -847,15 +833,15 @@ export function catalogIndexMatchesFiles(index, files) {
 function catalogIndexFromEntries(sourceFiles, entries) {
   const includedFileIds = new Set(entries.map(entry => String(entry.file.id)));
   return {
-    version: 1,
-    files: catalogFileManifest(sourceFiles),
-    omittedFileIds: sourceFiles
+    version: 2,
+    manifest: catalogFileManifest(sourceFiles),
+    omittedDriveFileIds: sourceFiles
       .map(file => String(file?.id || ''))
       .filter(fileId => fileId && !includedFileIds.has(fileId))
       .sort(),
     songs: entries
-      .map(entry => catalogMeta(entry.song, entry.file))
-      .sort((left, right) => String(left._driveFileId || '').localeCompare(String(right._driveFileId || '')))
+      .map(entry => catalogIndexSong(entry.song, entry.file))
+      .sort((left, right) => String(left.driveFileId || '').localeCompare(String(right.driveFileId || '')))
   };
 }
 
@@ -876,20 +862,20 @@ async function refreshCatalogIndex(folderId, indexFile, index, files, permission
   const permissions = permissionsInput || await readPermissions();
   const refreshedEntries = await entriesFromFiles(folderId, plan.filesToRead, permissions);
   const refreshedFileIds = new Set(refreshedEntries.map(entry => String(entry.file.id)));
-  const omittedFileIds = new Set(plan.retainedOmittedFileIds);
+  const omittedDriveFileIds = new Set(plan.retainedOmittedDriveFileIds);
   for (const file of plan.filesToRead) {
     const fileId = String(file?.id || '');
-    if (fileId && !refreshedFileIds.has(fileId)) omittedFileIds.add(fileId);
+    if (fileId && !refreshedFileIds.has(fileId)) omittedDriveFileIds.add(fileId);
   }
 
   const nextIndex = {
-    version: 1,
-    files: plan.manifest,
-    omittedFileIds: [...omittedFileIds].sort(),
+    version: 2,
+    manifest: plan.manifest,
+    omittedDriveFileIds: [...omittedDriveFileIds].sort(),
     songs: [
       ...plan.reusableSongs,
-      ...refreshedEntries.map(entry => catalogMeta(entry.song, entry.file))
-    ].sort((left, right) => String(left._driveFileId || '').localeCompare(String(right._driveFileId || '')))
+      ...refreshedEntries.map(entry => catalogIndexSong(entry.song, entry.file))
+    ].sort((left, right) => String(left.driveFileId || '').localeCompare(String(right.driveFileId || '')))
   };
   await writeNamedJsonFile(folderId, INDEX_FILE_NAME, nextIndex, indexFile);
   return nextIndex;
@@ -940,7 +926,7 @@ async function createSongFile(folderId, song, permission) {
   });
   const file = await response.json();
   try {
-    await appendPermissionEvent(file.id, normalizedPermission);
+    await writePermissionRecord(file.id, normalizedPermission);
   } catch (error) {
     await driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' }).catch(() => null);
     throw error;
@@ -950,16 +936,7 @@ async function createSongFile(folderId, song, permission) {
 
 async function updateSongFile(fileId, song, permission) {
   const persisted = cleanSongForWrite(song);
-  const response = await driveFetch(
-    `/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,modifiedTime`,
-    {
-      method: 'PATCH',
-      upload: true,
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-      body: JSON.stringify(persisted, null, 2)
-    }
-  );
-  const file = await response.json();
+  const file = await updateNamedJsonFile(fileId, songFileName(persisted), persisted);
   return attachFileMeta(authoritativeSong(persisted, file, permission), file);
 }
 
@@ -984,6 +961,7 @@ async function managedPublicCatalog() {
     readArtistMedia()
   ]);
   const songs = [...publicIndex.songs, ...testIndex.songs]
+    .map(catalogApiMeta)
     .map(item => attachCatalogPermission(item, permissionForFile(permissions, item?._driveFileId)))
     .filter(item => item?.public === true)
     .map(item => enrichSongMedia(item, media))
@@ -1054,7 +1032,7 @@ async function publishSong(session, song) {
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
   const saved = await updateSongFile(fileId, { ...song, artist }, permission);
-  await appendPermissionEvent(fileId, permission);
+  await writePermissionRecord(fileId, permission);
   return saved;
 }
 
@@ -1064,7 +1042,7 @@ async function setPublicState(session, fileId, isPublic) {
   const patch = { public: Boolean(isPublic) };
   if (patch.public) patch.publishedAt = entry.song?._opentab?.publishedAt || Date.now();
   const permission = writeMeta(entry.song, session, patch);
-  await appendPermissionEvent(fileId, permission);
+  await writePermissionRecord(fileId, permission);
   return attachFileMeta(authoritativeSong(entry.song, entry.file, permission), entry.file);
 }
 
@@ -1072,8 +1050,8 @@ async function deleteUserSong(session, fileId) {
   const entry = await readManagedEntry(fileId);
   if (!canDeleteSong(session, entry.song)) throw new Error('DELETE_FORBIDDEN');
   await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
-  await appendPermissionEvent(fileId, null, { deleted: true }).catch(error => {
-    console.error('Failed to persist permission tombstone after score delete', error);
+  await deletePermissionRecord(fileId).catch(error => {
+    console.error('Failed to delete permission record after score delete', error);
   });
 }
 
