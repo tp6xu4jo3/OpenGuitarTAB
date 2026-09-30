@@ -7,7 +7,8 @@ const baseSong = {
   name: 'Persistence Test',
   beatsPerMeasure: 4,
   rows: [structuredClone(row), structuredClone(row)],
-  rhythmRows: []
+  rhythmRows: [],
+  _opentab: { owner: 'test', public: true, uploadedBy: 'test' }
 };
 const meta = { owner: 'admin', public: true };
 
@@ -17,9 +18,11 @@ const meta = { owner: 'admin', public: true };
     rowMeasureCounts: [2, 4]
   }, meta);
   assert.deepEqual(persisted.rowMeasureCounts, [2, 4]);
+  assert.equal(Object.hasOwn(persisted, '_opentab'), false, 'song persistence must never store permission metadata');
 
   const serialized = JSON.parse(JSON.stringify(persisted));
   assert.deepEqual(serialized.rowMeasureCounts, [2, 4]);
+  assert.equal(Object.hasOwn(serialized, '_opentab'), false);
 }
 
 {
@@ -46,10 +49,12 @@ const meta = { owner: 'admin', public: true };
   assert.equal(Object.hasOwn(persisted, 'rows'), false, 'V3 persistence must not write legacy rows');
   assert.equal(Object.hasOwn(persisted, 'rhythmRows'), false, 'V3 persistence must not write legacy rhythmRows');
   assert.equal(Object.hasOwn(persisted, 'rowMeasureCounts'), false, 'V3 persistence must not write legacy rowMeasureCounts');
+  assert.equal(Object.hasOwn(persisted, '_opentab'), false, 'V3 persistence must not write permission metadata');
   const serialized = JSON.parse(JSON.stringify(persisted));
   assert.equal(Object.hasOwn(serialized, 'rows'), false);
   assert.equal(Object.hasOwn(serialized, 'rhythmRows'), false);
   assert.equal(Object.hasOwn(serialized, 'rowMeasureCounts'), false);
+  assert.equal(Object.hasOwn(serialized, '_opentab'), false);
   assert.deepEqual(serialized.document.layout, {});
 }
 
@@ -59,6 +64,7 @@ const meta = { owner: 'admin', public: true };
   assert.equal(serialized.difficulty, undefined);
   assert.equal(Object.hasOwn(serialized, 'difficulty'), false);
   assert.equal(Object.hasOwn(serialized, 'document'), false);
+  assert.equal(Object.hasOwn(serialized, '_opentab'), false);
 }
 
 {

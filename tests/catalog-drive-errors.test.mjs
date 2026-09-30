@@ -29,10 +29,10 @@ function createHttpResponse() {
   };
 }
 
-async function invokeCatalog() {
+async function invoke(url) {
   const res = createHttpResponse();
   await handler({
-    url: '/api?action=catalog',
+    url,
     method: 'GET',
     headers: { host: 'localhost' }
   }, res);
@@ -40,6 +40,14 @@ async function invokeCatalog() {
     status: res.statusCode,
     body: res.body ? JSON.parse(res.body) : {}
   };
+}
+
+async function invokeCatalog() {
+  return invoke('/api?action=catalog');
+}
+
+async function invokeCatalogSong(fileId) {
+  return invoke(`/api?action=catalog-song&fileId=${encodeURIComponent(fileId)}`);
 }
 
 function song(id, name) {
@@ -51,11 +59,21 @@ function song(id, name) {
     beatsPerMeasure: 4,
     artist: 'Test Artist',
     album: 'Test Album',
-    _opentab: { owner: 'admin', public: true, uploadedBy: 'admin' }
+    _opentab: { owner: 'attacker', public: true, uploadedBy: 'attacker' }
   };
 }
 
-function installDriveMock({ failSecondSong = false, invalidSecondSong = false } = {}) {
+function permissions(secondPublic = true) {
+  return {
+    version: 1,
+    songs: {
+      'song-good': { owner: 'admin', public: true, uploadedBy: 'admin' },
+      'song-second': { owner: 'admin', public: secondPublic, uploadedBy: 'admin' }
+    }
+  };
+}
+
+function installDriveMock({ failSecondSong = false, invalidSecondSong = false, secondPublic = true } = {}) {
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const method = String(init.method || 'GET').toUpperCase();
@@ -79,6 +97,11 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false } 
       if (isPublicQuery && q.includes("name = 'artists.json'")) {
         return mockResponse({ files: [] });
       }
+      if (isPublicQuery && q.includes("name = 'permissions.json'")) {
+        return mockResponse({
+          files: [{ id: 'permissions-file', name: 'permissions.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
+        });
+      }
       if (isTestQuery && q.includes("name = 'index.json'")) {
         return mockResponse({
           files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
@@ -94,6 +117,10 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false } 
       }
     }
 
+    if (url.pathname === '/drive/v3/files/permissions-file' && url.searchParams.get('alt') === 'media') {
+      return mockResponse(permissions(secondPublic));
+    }
+
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
       return mockResponse({ version: 1, songs: [] });
     }
@@ -106,6 +133,17 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false } 
       if (failSecondSong) return mockResponse('temporary Drive failure', 503);
       if (invalidSecondSong) return mockResponse('{not-json');
       return mockResponse(song('song-second', 'Recovered Song'));
+    }
+
+    if (url.pathname === '/drive/v3/files/song-second' && !url.searchParams.has('alt')) {
+      return mockResponse({
+        id: 'song-second',
+        name: 'song-second.json',
+        mimeType: 'application/json',
+        trashed: false,
+        parents: [PUBLIC_FOLDER_ID],
+        modifiedTime: '2026-09-30T00:00:02.000Z'
+      });
     }
 
     if (url.pathname === '/upload/drive/v3/files' && method === 'POST') {
@@ -148,6 +186,21 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false } 
   } finally {
     console.warn = originalWarn;
   }
+}
+
+{
+  installDriveMock({ secondPublic: false });
+  const catalog = await invokeCatalog();
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(
+    catalog.body.songs.map(item => item.id),
+    ['song-good'],
+    'catalog visibility must come from centralized permissions, not forged song/index permission fields'
+  );
+
+  const forgedSong = await invokeCatalogSong('song-second');
+  assert.equal(forgedSong.status, 404, 'forged _opentab data inside song JSON must not make a private song public');
+  assert.equal(forgedSong.body.error, 'PUBLIC_SONG_NOT_AVAILABLE');
 }
 
 console.log('catalog Drive error handling tests passed');
