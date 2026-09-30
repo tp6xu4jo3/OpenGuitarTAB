@@ -5,7 +5,8 @@ import {
   permissionEventAppProperties,
   permissionEventFromFile,
   normalizeCatalogIndex,
-  catalogIndexMatchesFiles
+  catalogIndexMatchesFiles,
+  catalogIndexRefreshPlan
 } from '../api/index.js';
 
 const seed = {
@@ -97,6 +98,7 @@ const driveFiles = [
 const index = normalizeCatalogIndex({
   version: 1,
   files: driveFiles,
+  omittedFileIds: [],
   songs: driveFiles.map((file, indexPosition) => ({
     id: `song-${indexPosition}`,
     _driveFileId: file.id,
@@ -113,23 +115,57 @@ assert.equal(
   'index cache must not persist authorization'
 );
 assert.equal(catalogIndexMatchesFiles(index, driveFiles), true);
-assert.equal(
-  catalogIndexMatchesFiles(
-    index,
-    driveFiles.map(file => file.id === 'file-a' ? { ...file, modifiedTime: 'changed' } : file)
-  ),
-  false
+
+const changedFiles = driveFiles.map(file => file.id === 'file-a'
+  ? { ...file, modifiedTime: '2026-09-30T03:00:00.000Z' }
+  : file
 );
+assert.equal(catalogIndexMatchesFiles(index, changedFiles), false);
+const refreshPlan = catalogIndexRefreshPlan(index, changedFiles);
+assert.deepEqual(
+  refreshPlan.filesToRead.map(file => file.id),
+  ['file-a'],
+  'a score save must refresh only the changed full song JSON'
+);
+assert.deepEqual(
+  refreshPlan.reusableSongs.map(song => song._driveFileId),
+  ['file-b'],
+  'unchanged catalog metadata must be reused from the index cache'
+);
+
 assert.equal(
   catalogIndexMatchesFiles(index, [...driveFiles, { id: 'file-c', name: 'song-c.json', modifiedTime: 'later' }]),
   false
 );
-assert.equal(catalogIndexMatchesFiles(index, driveFiles.slice(0, 1)), false);
-assert.equal(
-  catalogIndexMatchesFiles(normalizeCatalogIndex({ version: 1, songs: index.songs }), driveFiles),
-  false,
-  'legacy index without manifest must rebuild once'
+const addedPlan = catalogIndexRefreshPlan(
+  index,
+  [...driveFiles, { id: 'file-c', name: 'song-c.json', modifiedTime: 'later' }]
 );
+assert.deepEqual(addedPlan.filesToRead.map(file => file.id), ['file-c']);
+assert.equal(catalogIndexMatchesFiles(index, driveFiles.slice(0, 1)), false);
+assert.deepEqual(
+  catalogIndexRefreshPlan(index, driveFiles.slice(0, 1)).filesToRead,
+  [],
+  'deleting a score must not force any surviving full song JSON to be reread'
+);
+assert.equal(
+  catalogIndexMatchesFiles(normalizeCatalogIndex({ version: 1, files: driveFiles, songs: index.songs }), driveFiles),
+  false,
+  'legacy index without explicit omitted-file coverage must rebuild once'
+);
+
+{
+  const omittedIndex = normalizeCatalogIndex({
+    version: 1,
+    files: driveFiles,
+    omittedFileIds: ['file-b'],
+    songs: [index.songs.find(song => song._driveFileId === 'file-a')]
+  });
+  assert.equal(catalogIndexMatchesFiles(omittedIndex, driveFiles), true);
+  const plan = catalogIndexRefreshPlan(omittedIndex, driveFiles);
+  assert.deepEqual(plan.filesToRead, []);
+  assert.deepEqual(plan.retainedOmittedFileIds, ['file-b']);
+}
 
 {
   const source = await readFile(new URL('../api/index.js', import.meta.url), 'utf8');
@@ -143,6 +179,18 @@ assert.equal(
     source,
     /writePermissions\(/,
     'runtime must never perform whole-file permissions.json read-modify-write mutations'
+  );
+
+  const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
+  assert.match(
+    deleteBlock,
+    /method:\s*'DELETE'[\s\S]*appendPermissionEvent\(fileId, null, \{ deleted: true \}\)\.catch/,
+    'score deletion stays authoritative even if best-effort permission tombstone persistence fails'
+  );
+  assert.doesNotMatch(
+    deleteBlock,
+    /createSongFile|updateSongFile/,
+    'tombstone failure must not recreate or overwrite a successfully deleted score'
   );
 }
 
