@@ -71,7 +71,10 @@ assert.equal(index.version, 2);
 assert.equal(Object.hasOwn(index, 'files'), false, 'v2 index must use manifest rather than an ambiguous files array');
 assert.equal(Object.hasOwn(index.songs[0], 'id'), false, 'v2 song cache must use songId rather than a generic id');
 assert.equal(Object.hasOwn(index.songs[0], '_driveFileId'), false, 'persisted cache fields must use explicit names rather than private-style aliases');
+assert.equal(Object.hasOwn(index.songs[0], 'driveFileName'), false, 'fileName belongs only to manifest and must not be duplicated in songs');
+assert.equal(Object.hasOwn(index.songs[0], 'driveModifiedTime'), false, 'modifiedTime belongs only to manifest and must not be duplicated in songs');
 assert.equal(Object.hasOwn(index.songs[0], 'owner'), false, 'index cache must not persist authorization');
+assert.equal(index.songs[0].driveFileId, 'file-a');
 assert.equal(catalogIndexMatchesFiles(index, driveFiles), true);
 
 const changedFiles = driveFiles.map(file => file.id === 'file-a'
@@ -115,6 +118,10 @@ assert.equal(normalizeCatalogIndex({ version: 1, files: driveFiles, songs: [] })
   assert.doesNotMatch(saveBlock, /writePermissionRecord/, 'ordinary score saves must not rewrite permission authority');
   assert.doesNotMatch(source, /writePermissions\(/, 'runtime must never perform shared permissions read-modify-write');
   assert.doesNotMatch(source, /migrateLegacyPermissions|materializeLegacyPermissions|normalizeLegacyPermission/, 'production runtime must not carry a legacy permission migration path');
+
+  const catalogIndexSongBlock = source.slice(source.indexOf('function catalogIndexSong('), source.indexOf('function catalogApiMeta('));
+  assert.doesNotMatch(catalogIndexSongBlock, /driveFileName|driveModifiedTime/, 'song cache must not duplicate manifest file metadata');
+  assert.match(source, /function catalogApiSongs\([\s\S]*index\?\.manifest[\s\S]*catalogApiMeta/, 'catalog API metadata must join file metadata from manifest by driveFileId');
 
   const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
   assert.match(deleteBlock, /method:\s*'DELETE'[\s\S]*deletePermissionRecord\(fileId\)\.catch/s);
