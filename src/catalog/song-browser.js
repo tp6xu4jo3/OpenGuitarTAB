@@ -43,7 +43,7 @@ function playStyleLabel(value) {
 
 function difficultyLabel(value) {
   const number = Number(value);
-  return Number.isFinite(number) && number >= 1 && number <= 5 ? `難度 ${Math.round(number)}` : '難度 -';
+  return Number.isFinite(number) && number >= 1 && number <= 5 ? `☆${Math.round(number)}` : '☆-';
 }
 
 function createElement(tag, className, text = '') {
