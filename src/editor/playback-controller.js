@@ -9,6 +9,7 @@ const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
 let installed = false;
 const state = {
   playing: false,
+  preparing: false,
   timer: null,
   eventTimers: [],
   nextStringDelayMs: new Map(),
@@ -242,12 +243,24 @@ function jumpToTarget(target, highlight = true) {
   state.startOffsetBeats = exact ? 0 : clamp(targetBeat - entry.atBeats, 0, Math.max(0, entry.durationBeats - 0.001));
 }
 
-function updatePlayButton(playing) {
+function updatePlayButton() {
   const button = document.getElementById('playButton');
   if (!button) return;
-  button.textContent = playing ? '停止' : '播放';
-  button.classList.toggle('is-playing', playing);
-  button.setAttribute('aria-label', playing ? '停止播放 TAB 譜' : '播放 TAB 譜');
+  button.classList.toggle('is-playing', state.playing);
+  button.classList.toggle('is-busy', state.preparing);
+  button.disabled = state.preparing;
+  if (state.preparing) {
+    const spinner = document.createElement('span');
+    spinner.className = 'button-spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = '準備中';
+    button.replaceChildren(spinner, text);
+    button.setAttribute('aria-label', '正在準備播放 TAB 譜');
+    return;
+  }
+  button.textContent = state.playing ? '停止' : '播放';
+  button.setAttribute('aria-label', state.playing ? '停止播放 TAB 譜' : '播放 TAB 譜');
 }
 
 function soundControlButton(kind, label, enabled) {
@@ -399,49 +412,66 @@ function playBeat(entry, beatMs, fromOffset = 0) {
 }
 
 async function startPlayback() {
-  const audio = getAudioEngine();
-  const needsAudio = state.musicEnabled || state.metronomeEnabled;
-  if (needsAudio && (!audio || !await audio.ensureReady())) return;
+  if (state.playing || state.preparing) return;
   stopPlayback(false, true, false);
-  const playback = ensureIndex();
-  if (!playback.entries.length) {
-    window.showToast?.('目前沒有可播放的拍子');
-    updateProgressRange();
-    return;
-  }
-  const slider = document.getElementById('playProgress');
-  const sliderIndex = Number(slider?.value);
-  if (Number.isFinite(sliderIndex)) state.currentIndex = clamp(sliderIndex, 0, playback.entries.length - 1);
-  state.playing = true;
-  state.lastCenteredKey = null;
-  updatePlayButton(true);
-  if (state.currentIndex === 0 && state.startOffsetBeats === 0) {
-    const sheet = document.getElementById('editorView')?.querySelector('.sheet');
-    if (sheet) sheet.scrollTop = 0;
-  }
-  const tempo = typeof window.getTempo === 'function' ? window.getTempo() : 120;
-  const beatMs = 60000 / tempo;
-  state.nextStringDelayMs = buildNextStringDelayMap(playback, beatMs);
-  const firstIndex = state.currentIndex;
-  const firstOffset = state.startOffsetBeats;
-  state.startOffsetBeats = 0;
+  state.preparing = true;
+  updatePlayButton();
+  try {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const audio = getAudioEngine();
+    const needsAudio = state.musicEnabled || state.metronomeEnabled;
+    if (needsAudio && (!audio || !await audio.ensureReady())) return;
+    if (!state.preparing) return;
 
-  const tick = index => {
-    if (!state.playing) return;
-    const entry = playback.entries[index];
-    if (!entry) {
-      stopPlayback();
+    const playback = ensureIndex();
+    if (!playback.entries.length) {
+      window.showToast?.('目前沒有可播放的拍子');
+      updateProgressRange();
       return;
     }
-    const fromOffset = index === firstIndex ? firstOffset : 0;
-    playBeat(entry, beatMs, fromOffset);
-    const remaining = Math.max(0.001, (Number(entry.durationBeats) || 0.25) - fromOffset);
-    state.timer = window.setTimeout(() => {
-      if (index + 1 >= playback.entries.length) stopPlayback(true, false);
-      else tick(index + 1);
-    }, remaining * beatMs);
-  };
-  tick(firstIndex);
+    const slider = document.getElementById('playProgress');
+    const sliderIndex = Number(slider?.value);
+    if (Number.isFinite(sliderIndex)) state.currentIndex = clamp(sliderIndex, 0, playback.entries.length - 1);
+    state.preparing = false;
+    state.playing = true;
+    state.lastCenteredKey = null;
+    updatePlayButton();
+    if (state.currentIndex === 0 && state.startOffsetBeats === 0) {
+      const sheet = document.getElementById('editorView')?.querySelector('.sheet');
+      if (sheet) sheet.scrollTop = 0;
+    }
+    const tempo = typeof window.getTempo === 'function' ? window.getTempo() : 120;
+    const beatMs = 60000 / tempo;
+    state.nextStringDelayMs = buildNextStringDelayMap(playback, beatMs);
+    const firstIndex = state.currentIndex;
+    const firstOffset = state.startOffsetBeats;
+    state.startOffsetBeats = 0;
+
+    const tick = index => {
+      if (!state.playing) return;
+      const entry = playback.entries[index];
+      if (!entry) {
+        stopPlayback();
+        return;
+      }
+      const fromOffset = index === firstIndex ? firstOffset : 0;
+      playBeat(entry, beatMs, fromOffset);
+      const remaining = Math.max(0.001, (Number(entry.durationBeats) || 0.25) - fromOffset);
+      state.timer = window.setTimeout(() => {
+        if (index + 1 >= playback.entries.length) stopPlayback(true, false);
+        else tick(index + 1);
+      }, remaining * beatMs);
+    };
+    tick(firstIndex);
+  } catch (error) {
+    console.error('Playback preparation failed.', error);
+    window.showToast?.('播放準備失敗，請再試一次');
+  } finally {
+    if (!state.playing) {
+      state.preparing = false;
+      updatePlayButton();
+    }
+  }
 }
 
 function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true) {
@@ -450,12 +480,13 @@ function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true)
     state.timer = null;
   }
   clearEventTimers();
+  state.preparing = false;
   state.playing = false;
   state.lastCenteredKey = null;
   clearPlayhead();
   if (clearOffset) state.startOffsetBeats = 0;
   if (stopVoices) getAudioEngine()?.stopAll();
-  if (resetButton) updatePlayButton(false);
+  if (resetButton) updatePlayButton();
 }
 
 function invalidatePlaybackIndex({ timeline = false } = {}) {
@@ -491,6 +522,7 @@ export function installPlaybackController() {
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
     getPlaybackIndex: () => ensureIndex(),
     get isPlaying() { return state.playing; },
+    get isPreparing() { return state.preparing; },
     get musicEnabled() { return state.musicEnabled; },
     get metronomeEnabled() { return state.metronomeEnabled; }
   };
@@ -500,8 +532,9 @@ export function installPlaybackController() {
   document.getElementById('playButton')?.addEventListener('click', event => {
     event.preventDefault();
     if (state.playing) stopPlayback();
-    else void startPlayback();
+    else if (!state.preparing) void startPlayback();
   });
   updateProgressRange();
+  updatePlayButton();
   return api;
 }
