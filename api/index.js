@@ -407,57 +407,6 @@ function permissionFileValue(songFileId, permission) {
   return { version: 1, songFileId: String(songFileId), ...normalized };
 }
 
-function normalizeLegacyPermissions(raw) {
-  if (!raw || Number(raw.version) !== 1 || !raw.songs || typeof raw.songs !== 'object' || Array.isArray(raw.songs)) {
-    return null;
-  }
-  const songs = {};
-  for (const [fileId, rawPermission] of Object.entries(raw.songs)) {
-    const id = String(fileId || '').trim();
-    const permission = normalizePermissionRecord(rawPermission);
-    if (id && permission) songs[id] = permission;
-  }
-  return { version: 1, songs };
-}
-
-function normalizeLegacyPermissionEvent(raw) {
-  if (!raw || Number(raw.version) !== 1) return null;
-  const fileId = String(raw.fileId || '').trim();
-  if (!fileId) return null;
-  const sequence = Number(raw.sequence);
-  const deleted = raw.deleted === true;
-  const permission = deleted ? null : normalizePermissionRecord(raw.permission);
-  if (!deleted && !permission) return null;
-  return {
-    version: 1,
-    fileId,
-    sequence: Number.isFinite(sequence) ? sequence : 0,
-    deleted,
-    permission
-  };
-}
-
-export function materializeLegacyPermissions(seed, events) {
-  const normalizedSeed = normalizeLegacyPermissions(seed) || { version: 1, songs: {} };
-  const songs = structuredClone(normalizedSeed.songs);
-  const ordered = (Array.isArray(events) ? events : [])
-    .filter(item => normalizeLegacyPermissionEvent(item?.event || item))
-    .sort((left, right) => {
-      const byTime = String(left?.modifiedTime || '').localeCompare(String(right?.modifiedTime || ''));
-      if (byTime) return byTime;
-      const a = normalizeLegacyPermissionEvent(left?.event || left);
-      const b = normalizeLegacyPermissionEvent(right?.event || right);
-      return (Number(a?.sequence) || 0) - (Number(b?.sequence) || 0);
-    });
-  for (const item of ordered) {
-    const event = normalizeLegacyPermissionEvent(item?.event || item);
-    if (!event) continue;
-    if (event.deleted) delete songs[event.fileId];
-    else songs[event.fileId] = event.permission;
-  }
-  return { version: 1, songs };
-}
-
 async function writePermissionRecord(songFileId, permission) {
   const id = String(songFileId || '').trim();
   if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
@@ -472,38 +421,7 @@ async function deletePermissionRecord(songFileId) {
   await driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' });
 }
 
-async function migrateLegacyPermissions() {
-  const seedFile = await findNamedJsonFile(PUBLIC_FOLDER_ID, LEGACY_PERMISSIONS_FILE_NAME);
-  if (!seedFile) return;
-  const seed = normalizeLegacyPermissions(await readDriveJson(seedFile.id, 'INVALID_PERMISSIONS'));
-  if (!seed) throw new Error('INVALID_PERMISSIONS');
-
-  const permissionFiles = await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true });
-  const legacyFiles = permissionFiles.filter(file => !String(file.name || '').startsWith(PERMISSION_FILE_PREFIX));
-  const results = await settledMapWithConcurrency(legacyFiles, DRIVE_READ_CONCURRENCY, async file => ({
-    modifiedTime: String(file.modifiedTime || ''),
-    event: normalizeLegacyPermissionEvent(await readDriveJson(file.id, 'INVALID_PERMISSION_RECORD'))
-  }));
-  const failed = results.find(result => result.status === 'rejected' || !result.value?.event);
-  if (failed) throw failed.reason || new Error('INVALID_PERMISSION_RECORD');
-
-  const permissions = materializeLegacyPermissions(seed, results.map(result => result.value));
-  const writes = await settledMapWithConcurrency(
-    Object.entries(permissions.songs),
-    DRIVE_READ_CONCURRENCY,
-    ([fileId, permission]) => writePermissionRecord(fileId, permission)
-  );
-  const writeFailure = writes.find(result => result.status === 'rejected');
-  if (writeFailure) throw writeFailure.reason;
-
-  await Promise.all([
-    ...legacyFiles.map(file => driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' })),
-    driveFetch(`/files/${encodeURIComponent(seedFile.id)}`, { method: 'DELETE' })
-  ]);
-}
-
 async function readPermissions() {
-  await migrateLegacyPermissions();
   const files = (await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true }))
     .filter(file => String(file.name || '').startsWith(PERMISSION_FILE_PREFIX));
   const results = await settledMapWithConcurrency(files, DRIVE_READ_CONCURRENCY, async file => {
