@@ -246,12 +246,12 @@ export class SongBrowser {
     const row = createElement('div', 'work-card-arrangement');
     row.dataset.arrangementId = arrangement.arrangementId || '';
     const info = createElement('div', 'work-card-arrangement-info');
+    const primary = createElement('div', 'work-card-arrangement-primary');
     const title = createElement('strong', 'work-card-arrangement-title', playStyleLabel(arrangement.playStyle));
-    const meta = createElement('div', 'work-card-arrangement-meta');
-    const values = [difficultyLabel(arrangement.difficulty)];
-    if (arrangement.source) values.push(`來源 ${arrangement.source}`);
-    meta.textContent = values.join(' · ');
-    info.append(title, meta);
+    const difficulty = createElement('span', 'work-card-arrangement-difficulty', difficultyLabel(arrangement.difficulty));
+    primary.append(title, difficulty);
+    const source = createElement('div', 'work-card-arrangement-meta', `來源 ${arrangement.source || '-'}`);
+    info.append(primary, source);
     const actions = createElement('div', 'work-card-arrangement-actions');
     this.renderArrangementActions?.({ work, arrangement, container: actions });
     row.append(info, actions);
