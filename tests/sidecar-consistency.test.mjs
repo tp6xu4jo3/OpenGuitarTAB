@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  materializeLegacyPermissions,
   normalizePermissionFile,
   normalizeCatalogIndex,
   catalogIndexMatchesFiles,
@@ -30,31 +29,6 @@ import {
     sourcePublicFileId: 'source-a',
     publishedAt: 123456789
   });
-}
-
-{
-  const seed = {
-    version: 1,
-    songs: {
-      base: { owner: 'admin', public: true, uploadedBy: 'admin' }
-    }
-  };
-  const migrated = materializeLegacyPermissions(seed, [
-    {
-      modifiedTime: '2026-09-30T10:01:00.000Z',
-      event: { version: 1, fileId: 'base', sequence: 1, permission: { owner: 'admin', public: false } }
-    },
-    {
-      modifiedTime: '2026-09-30T10:02:00.000Z',
-      event: { version: 1, fileId: 'new', sequence: 2, permission: { owner: 'test', public: true } }
-    }
-  ]);
-  assert.equal(migrated.songs.base.public, false);
-  assert.equal(migrated.songs.new.public, true);
-  const deleted = materializeLegacyPermissions(migrated, [
-    { modifiedTime: '2026-09-30T10:03:00.000Z', event: { version: 1, fileId: 'base', sequence: 3, deleted: true } }
-  ]);
-  assert.equal(Object.hasOwn(deleted.songs, 'base'), false);
 }
 
 assert.equal(songFileName({ name: '簡單愛', arrangementId: 'arr-123' }), '簡單愛__arr-123.json');
@@ -140,6 +114,7 @@ assert.equal(normalizeCatalogIndex({ version: 1, files: driveFiles, songs: [] })
   const saveBlock = source.slice(source.indexOf('async function saveUserSong('), source.indexOf('async function publishSong('));
   assert.doesNotMatch(saveBlock, /writePermissionRecord/, 'ordinary score saves must not rewrite permission authority');
   assert.doesNotMatch(source, /writePermissions\(/, 'runtime must never perform shared permissions read-modify-write');
+  assert.doesNotMatch(source, /migrateLegacyPermissions|materializeLegacyPermissions|normalizeLegacyPermission/, 'production runtime must not carry a legacy permission migration path');
 
   const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
   assert.match(deleteBlock, /method:\s*'DELETE'[\s\S]*deletePermissionRecord\(fileId\)\.catch/s);
