@@ -35,11 +35,13 @@ const baseSong = {
     rhythmRows: [],
     rowMeasureCounts: [2, 4]
   };
-  assert.throws(
-    () => cleanSongForWrite(legacySong),
-    /V3_DOCUMENT_REQUIRED/,
-    'server persistence must reject legacy rows instead of writing a new legacy Drive song'
-  );
+  const persisted = cleanSongForWrite(legacySong);
+  assert.equal(persisted.document.version, 3, 'legacy input must be migrated before persistence');
+  assert.equal(persisted.document.measures.length, 6, 'canonical V2→V3 migration must preserve legacy row measure counts');
+  assert.equal(Object.hasOwn(persisted, 'rows'), false, 'server persistence must never write legacy rows');
+  assert.equal(Object.hasOwn(persisted, 'rhythmRows'), false, 'server persistence must never write legacy rhythmRows');
+  assert.equal(Object.hasOwn(persisted, 'rowMeasureCounts'), false, 'server persistence must never write legacy rowMeasureCounts');
+  assert.equal(Object.hasOwn(persisted, '_opentab'), false, 'song persistence must never store permission metadata');
 }
 
 {
