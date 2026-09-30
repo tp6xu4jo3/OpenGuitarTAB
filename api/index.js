@@ -17,12 +17,16 @@ import { isDocumentV3, normalizeDocumentV3 } from '../src/editor/model.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
+const PERMISSION_RECORDS_FOLDER_ID = process.env.PERMISSION_RECORDS_FOLDER_ID || '1RQMJwYqcqNi58VRZF_HlA8-Az6yIwfK6';
 const SESSION_COOKIE = 'opentab_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const INDEX_FILE_NAME = 'index.json';
 const ARTIST_MEDIA_FILE_NAME = 'artists.json';
 const PERMISSIONS_FILE_NAME = 'permissions.json';
 const RESERVED_JSON_NAMES = new Set([INDEX_FILE_NAME, ARTIST_MEDIA_FILE_NAME, PERMISSIONS_FILE_NAME]);
+const DRIVE_READ_CONCURRENCY = 8;
+const STANDARD_TUNING = 'standard';
+const PERMISSION_RECORD_KIND = 'permission';
 const SONG_FIELD_ORDER = [
   'id',
   'workId',
@@ -42,9 +46,6 @@ const SONG_FIELD_ORDER = [
   'album',
   'document'
 ];
-const LEGACY_SONG_FIELD_ORDER = ['rowMeasureCounts', 'rhythmRows', 'rows'];
-const DRIVE_READ_CONCURRENCY = 8;
-const STANDARD_TUNING = 'standard';
 
 let driveTokenCache = null;
 
@@ -83,7 +84,11 @@ async function readBody(req) {
   let raw = '';
   for await (const chunk of req) raw += chunk;
   if (!raw) return {};
-  try { return JSON.parse(raw); } catch { throw new Error('INVALID_JSON_BODY'); }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error('INVALID_JSON_BODY');
+  }
 }
 
 function parseCookies(header = '') {
@@ -133,7 +138,10 @@ function currentSession(req) {
 
 function setSessionCookie(res, session) {
   const token = signSession(session);
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`);
+  res.setHeader(
+    'Set-Cookie',
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`
+  );
 }
 
 function clearSessionCookie(res) {
@@ -159,16 +167,22 @@ function safeStringEqual(a, b) {
 }
 
 function userConfig(username) {
-  if (username === 'admin') return {
-    username: 'admin', role: 'admin',
-    passwordHash: process.env.ADMIN_PASSWORD_HASH,
-    password: process.env.ADMIN_PASSWORD
-  };
-  if (username === 'test') return {
-    username: 'test', role: 'test',
-    passwordHash: process.env.TEST_PASSWORD_HASH,
-    password: process.env.TEST_PASSWORD
-  };
+  if (username === 'admin') {
+    return {
+      username: 'admin',
+      role: 'admin',
+      passwordHash: process.env.ADMIN_PASSWORD_HASH,
+      password: process.env.ADMIN_PASSWORD
+    };
+  }
+  if (username === 'test') {
+    return {
+      username: 'test',
+      role: 'test',
+      passwordHash: process.env.TEST_PASSWORD_HASH,
+      password: process.env.TEST_PASSWORD
+    };
+  }
   return null;
 }
 
@@ -207,6 +221,7 @@ async function getDriveToken() {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
   if (!clientId || !clientSecret || !refreshToken) throw new Error('DRIVE_OAUTH_NOT_CONFIGURED');
+
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -218,7 +233,9 @@ async function getDriveToken() {
     })
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) throw new Error(`DRIVE_TOKEN_FAILED:${payload.error || response.status}`);
+  if (!response.ok || !payload.access_token) {
+    throw new Error(`DRIVE_TOKEN_FAILED:${payload.error || response.status}`);
+  }
   driveTokenCache = {
     token: payload.access_token,
     expiresAt: Date.now() + Math.max(60, Number(payload.expires_in) || 3600) * 1000
@@ -239,30 +256,30 @@ async function driveFetch(path, { method = 'GET', headers = {}, body, upload = f
   throw new Error(`DRIVE_${method}_${response.status}:${detail.slice(0, 300)}`);
 }
 
-async function listJsonFiles(folderId) {
+async function listJsonFiles(folderId, { includeReserved = false } = {}) {
   const files = [];
   let pageToken = '';
   do {
     const params = new URLSearchParams({
       q: `'${folderId}' in parents and trashed = false and mimeType = 'application/json'`,
-      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,parents)',
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,parents,appProperties)',
       orderBy: 'modifiedTime desc',
       pageSize: '1000'
     });
     if (pageToken) params.set('pageToken', pageToken);
-    const response = await driveFetch(`/files?${params}`);
-    const payload = await response.json();
+    const payload = await (await driveFetch(`/files?${params}`)).json();
     files.push(...(payload.files || []));
     pageToken = payload.nextPageToken || '';
   } while (pageToken);
-  return files.filter(file => !RESERVED_JSON_NAMES.has(file.name));
+  return includeReserved ? files : files.filter(file => !RESERVED_JSON_NAMES.has(file.name));
 }
 
 async function findNamedJsonFile(folderId, name) {
   const safeName = String(name).replace(/'/g, "\\'");
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false and mimeType = 'application/json' and name = '${safeName}'`,
-    fields: 'files(id,name,mimeType,modifiedTime,size,parents)',
+    fields: 'files(id,name,mimeType,modifiedTime,size,parents,appProperties)',
+    orderBy: 'modifiedTime desc',
     pageSize: '2'
   });
   const payload = await (await driveFetch(`/files?${params}`)).json();
@@ -293,7 +310,11 @@ async function readDriveJson(fileId, invalidCode = 'INVALID_SONG_JSON') {
   const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?alt=media`);
   const text = (await response.text()).replace(/^\uFEFF/, '');
   let value;
-  try { value = JSON.parse(text); } catch { throw new Error(invalidCode); }
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error(invalidCode);
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(invalidCode);
   return value;
 }
@@ -302,12 +323,15 @@ async function writeNamedJsonFile(folderId, name, value, existingFile = null) {
   const body = JSON.stringify(value, null, 2);
   const existing = existingFile || await findNamedJsonFile(folderId, name);
   if (existing) {
-    const response = await driveFetch(`/files/${encodeURIComponent(existing.id)}?uploadType=media&fields=id,name,modifiedTime`, {
-      method: 'PATCH',
-      upload: true,
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-      body
-    });
+    const response = await driveFetch(
+      `/files/${encodeURIComponent(existing.id)}?uploadType=media&fields=id,name,modifiedTime`,
+      {
+        method: 'PATCH',
+        upload: true,
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        body
+      }
+    );
     return response.json();
   }
 
@@ -324,6 +348,31 @@ async function writeNamedJsonFile(folderId, name, value, existingFile = null) {
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body: multipart
   });
+  return response.json();
+}
+
+async function createJsonFileRaw(folderId, name, value, appProperties = {}) {
+  const body = JSON.stringify(value, null, 2);
+  const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
+  const metadata = JSON.stringify({
+    name,
+    parents: [folderId],
+    ...(appProperties && Object.keys(appProperties).length ? { appProperties } : {})
+  });
+  const multipart = [
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${body}\r\n`,
+    `--${boundary}--`
+  ].join('');
+  const response = await driveFetch(
+    '/files?uploadType=multipart&fields=id,name,modifiedTime,appProperties',
+    {
+      method: 'POST',
+      upload: true,
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body: multipart
+    }
+  );
   return response.json();
 }
 
@@ -355,7 +404,85 @@ export function normalizeSongPermissions(raw) {
   return { version: 1, songs };
 }
 
-async function readPermissions() {
+function normalizePermissionEvent(raw) {
+  if (!raw || Number(raw.version) !== 1) return null;
+  const fileId = String(raw.fileId || '').trim();
+  if (!fileId) return null;
+  const sequence = Number(raw.sequence);
+  const deleted = raw.deleted === true;
+  const permission = deleted ? null : normalizePermissionRecord(raw.permission);
+  if (!deleted && !permission) return null;
+  return {
+    version: 1,
+    fileId,
+    sequence: Number.isFinite(sequence) ? sequence : 0,
+    deleted,
+    permission
+  };
+}
+
+export function permissionEventAppProperties(rawEvent) {
+  const event = normalizePermissionEvent(rawEvent);
+  if (!event) return null;
+  const properties = {
+    kind: PERMISSION_RECORD_KIND,
+    version: '1',
+    fileId: event.fileId,
+    sequence: String(event.sequence),
+    deleted: event.deleted ? '1' : '0'
+  };
+  if (!event.deleted) {
+    const permission = event.permission;
+    properties.owner = permission.owner;
+    properties.public = permission.public ? '1' : '0';
+    for (const key of ['uploadedBy', 'updatedBy', 'sourcePublicFileId']) {
+      if (permission[key]) properties[key] = String(permission[key]);
+    }
+    if (permission.publishedAt !== undefined) {
+      properties.publishedAtJson = JSON.stringify(permission.publishedAt);
+    }
+  }
+  return properties;
+}
+
+export function permissionEventFromFile(file) {
+  const properties = file?.appProperties;
+  if (!properties || properties.kind !== PERMISSION_RECORD_KIND || properties.version !== '1') return null;
+  const fileId = String(properties.fileId || '').trim();
+  if (!fileId) return null;
+  const deleted = properties.deleted === '1';
+  let publishedAt;
+  if (properties.publishedAtJson !== undefined) {
+    try {
+      publishedAt = JSON.parse(properties.publishedAtJson);
+    } catch {
+      return null;
+    }
+  }
+  const permission = deleted
+    ? null
+    : normalizePermissionRecord({
+        owner: properties.owner,
+        public: properties.public === '1',
+        uploadedBy: properties.uploadedBy,
+        updatedBy: properties.updatedBy,
+        sourcePublicFileId: properties.sourcePublicFileId,
+        ...(publishedAt !== undefined ? { publishedAt } : {})
+      });
+  if (!deleted && !permission) return null;
+  return {
+    file,
+    event: {
+      version: 1,
+      fileId,
+      sequence: Number(properties.sequence) || 0,
+      deleted,
+      permission
+    }
+  };
+}
+
+async function readPermissionSeed() {
   const file = await findNamedJsonFile(PUBLIC_FOLDER_ID, PERMISSIONS_FILE_NAME);
   if (!file) throw new Error('PERMISSIONS_FILE_MISSING');
   const normalized = normalizeSongPermissions(await readDriveJson(file.id, 'INVALID_PERMISSIONS'));
@@ -363,15 +490,94 @@ async function readPermissions() {
   return normalized;
 }
 
-async function writePermissions(permissions) {
-  const normalized = normalizeSongPermissions(permissions);
-  if (!normalized) throw new Error('INVALID_PERMISSIONS');
-  await writeNamedJsonFile(PUBLIC_FOLDER_ID, PERMISSIONS_FILE_NAME, normalized);
-  return normalized;
+async function readPermissionEvents() {
+  const files = await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true });
+  return files.map(permissionEventFromFile).filter(Boolean);
+}
+
+function permissionRecordOrder(item) {
+  const modifiedTime = String(item?.file?.modifiedTime || item?.modifiedTime || '');
+  const event = normalizePermissionEvent(item?.event || item);
+  return {
+    modifiedTime,
+    sequence: Number(event?.sequence) || 0,
+    id: String(item?.file?.id || item?.id || '')
+  };
+}
+
+function comparePermissionRecords(left, right) {
+  const a = permissionRecordOrder(left);
+  const b = permissionRecordOrder(right);
+  const byTime = a.modifiedTime.localeCompare(b.modifiedTime);
+  if (byTime) return byTime;
+  if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+  return a.id.localeCompare(b.id);
+}
+
+export function materializePermissions(seed, events) {
+  const normalizedSeed = normalizeSongPermissions(seed) || { version: 1, songs: {} };
+  const songs = structuredClone(normalizedSeed.songs);
+  const latest = new Map();
+
+  for (const rawItem of Array.isArray(events) ? events : []) {
+    const parsed = rawItem?.event
+      ? rawItem
+      : permissionEventFromFile(rawItem) || { event: normalizePermissionEvent(rawItem) };
+    const event = normalizePermissionEvent(parsed?.event);
+    if (!event) continue;
+    const current = latest.get(event.fileId);
+    if (!current || comparePermissionRecords(parsed, current) > 0) latest.set(event.fileId, parsed);
+  }
+
+  for (const [fileId, item] of latest) {
+    if (item.event.deleted) delete songs[fileId];
+    else songs[fileId] = item.event.permission;
+  }
+  return { version: 1, songs };
+}
+
+async function readPermissions() {
+  const [seed, events] = await Promise.all([readPermissionSeed(), readPermissionEvents()]);
+  return materializePermissions(seed, events);
 }
 
 function permissionForFile(permissions, fileId) {
   return normalizePermissionRecord(permissions?.songs?.[String(fileId || '')]);
+}
+
+async function cleanupPermissionRecords(fileId) {
+  const targetId = String(fileId || '').trim();
+  if (!targetId) return;
+  const records = (await readPermissionEvents()).filter(item => item.event.fileId === targetId);
+  if (records.length <= 1) return;
+  const winner = records.reduce((best, item) => (comparePermissionRecords(item, best) > 0 ? item : best));
+  await Promise.allSettled(
+    records
+      .filter(item => item.file.id !== winner.file.id)
+      .map(item => driveFetch(`/files/${encodeURIComponent(item.file.id)}`, { method: 'DELETE' }))
+  );
+}
+
+async function appendPermissionEvent(fileId, permission, { deleted = false } = {}) {
+  const id = String(fileId || '').trim();
+  if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
+  const normalized = deleted ? null : normalizePermissionRecord(permission);
+  if (!deleted && !normalized) throw new Error('INVALID_PERMISSION_RECORD');
+  const sequence = Date.now() * 1000 + crypto.randomInt(0, 1000);
+  const event = {
+    version: 1,
+    fileId: id,
+    sequence,
+    deleted: Boolean(deleted),
+    ...(deleted ? {} : { permission: normalized })
+  };
+  const appProperties = permissionEventAppProperties(event);
+  const name = `${id}-${sequence}-${crypto.randomBytes(4).toString('hex')}.json`;
+  await createJsonFileRaw(PERMISSION_RECORDS_FOLDER_ID, name, event, appProperties);
+  await cleanupPermissionRecords(id).catch(error => {
+    console.warn('Permission record cleanup failed:', id, String(error?.message || error));
+  });
+  return normalized;
 }
 
 function authoritativeSong(song, file, permission) {
@@ -410,7 +616,9 @@ function catalogMeta(song, file) {
     album: String(enriched.album || ''),
     source: String(enriched.source || ''),
     playStyle: enriched.playStyle === 'chord' ? 'chord' : enriched.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
-    difficulty: Number.isFinite(Number(enriched.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(enriched.difficulty)))) : null,
+    difficulty: Number.isFinite(Number(enriched.difficulty))
+      ? Math.min(5, Math.max(1, Math.round(Number(enriched.difficulty))))
+      : null,
     tempo: Number(enriched.tempo) || 120,
     capo: Number.isFinite(Number(enriched.capo)) ? Number(enriched.capo) : 0,
     beatsPerMeasure: Number(enriched.beatsPerMeasure) === 3 ? 3 : 4,
@@ -433,8 +641,8 @@ function attachCatalogPermission(metadata, permission) {
 
 export function cleanSongForWrite(song) {
   const input = ensureArrangementIdentity(song);
+  if (!isDocumentV3(input.document)) throw new Error('V3_DOCUMENT_REQUIRED');
   const beatsPerMeasure = Number(input.beatsPerMeasure) === 3 ? 3 : 4;
-  const hasDocumentV3 = isDocumentV3(input.document);
   const defaults = {
     id: String(input.id || `song-${Date.now().toString(36)}`),
     workId: input.workId,
@@ -447,33 +655,49 @@ export function cleanSongForWrite(song) {
     tuning: input.tuning ?? STANDARD_TUNING,
     source: String(input.source || ''),
     playStyle: input.playStyle === 'chord' ? 'chord' : input.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
-    difficulty: Number.isFinite(Number(input.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(input.difficulty)))) : undefined,
+    difficulty: Number.isFinite(Number(input.difficulty))
+      ? Math.min(5, Math.max(1, Math.round(Number(input.difficulty))))
+      : undefined,
     createdAt: Number(input.createdAt) || Date.now(),
     updatedAt: Number(input.updatedAt) || Date.now(),
     artist: String(input.artist || ''),
     album: String(input.album || ''),
-    document: hasDocumentV3 ? normalizeDocumentV3(input.document) : undefined
+    document: normalizeDocumentV3(input.document)
   };
   const persisted = {};
   for (const key of SONG_FIELD_ORDER) {
     if (defaults[key] !== undefined) persisted[key] = structuredClone(defaults[key]);
   }
-  if (!hasDocumentV3) {
-    const legacy = {
-      rowMeasureCounts: Array.isArray(input.rowMeasureCounts) ? structuredClone(input.rowMeasureCounts) : undefined,
-      rhythmRows: Array.isArray(input.rhythmRows) ? structuredClone(input.rhythmRows) : [],
-      rows: Array.isArray(input.rows) ? structuredClone(input.rows) : []
-    };
-    for (const key of LEGACY_SONG_FIELD_ORDER) {
-      if (legacy[key] !== undefined) persisted[key] = structuredClone(legacy[key]);
-    }
-  }
   return persisted;
 }
 
 function songFileName(song) {
-  const id = String(song?.id || `song-${Date.now().toString(36)}`).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80);
+  const id = String(song?.id || `song-${Date.now().toString(36)}`)
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .slice(0, 80);
   return `${id || 'song'}.json`;
+}
+
+async function entriesFromFiles(folderId, files, permissions) {
+  const sourceFiles = Array.isArray(files) ? files : [];
+  const results = await settledMapWithConcurrency(sourceFiles, DRIVE_READ_CONCURRENCY, async file => {
+    const permission = permissionForFile(permissions, file.id);
+    if (!permission) return null;
+    const song = authoritativeSong(await readDriveJson(file.id), file, permission);
+    return isManagedSong(song, folderId) ? { file, folderId, song } : null;
+  });
+  const fatal = results.find(result =>
+    result.status === 'rejected' && String(result.reason?.message || result.reason) !== 'INVALID_SONG_JSON'
+  );
+  if (fatal) throw fatal.reason;
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn('Skipping invalid Drive song JSON:', sourceFiles[index]?.id, sourceFiles[index]?.name);
+    }
+  });
+  return results
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => result.value);
 }
 
 async function entriesFromFolder(folderId, permissionsInput = null) {
@@ -481,32 +705,26 @@ async function entriesFromFolder(folderId, permissionsInput = null) {
     listJsonFiles(folderId),
     permissionsInput ? Promise.resolve(permissionsInput) : readPermissions()
   ]);
-  const results = await settledMapWithConcurrency(files, DRIVE_READ_CONCURRENCY, async file => {
-    const permission = permissionForFile(permissions, file.id);
-    if (!permission) {
-      console.warn('Skipping Drive song without centralized permission:', file.id, file.name);
-      return null;
-    }
-    const song = authoritativeSong(await readDriveJson(file.id), file, permission);
-    return isManagedSong(song, folderId) ? { file, folderId, song } : null;
-  });
-  const fatal = results.find(result =>
-    result.status === 'rejected'
-    && String(result.reason?.message || result.reason) !== 'INVALID_SONG_JSON'
-  );
-  if (fatal) throw fatal.reason;
-  results.forEach((result, index) => {
-    if (result.status === 'rejected') console.warn('Skipping invalid Drive song JSON:', files[index]?.id, files[index]?.name);
-  });
-  return results
-    .filter(result => result.status === 'fulfilled' && result.value)
-    .map(result => result.value);
+  return entriesFromFiles(folderId, files, permissions);
 }
 
-function normalizeCatalogIndex(raw) {
+function catalogFileManifest(files) {
+  return (Array.isArray(files) ? files : [])
+    .filter(file => file && typeof file === 'object' && !Array.isArray(file) && file.id)
+    .map(file => ({
+      id: String(file.id),
+      name: String(file.name || ''),
+      modifiedTime: String(file.modifiedTime || '')
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function normalizeCatalogIndex(raw) {
   if (!raw || Number(raw.version) !== 1 || !Array.isArray(raw.songs)) return null;
+  const files = Array.isArray(raw.files) ? catalogFileManifest(raw.files) : null;
   return {
     version: 1,
+    files,
     songs: raw.songs
       .filter(item => item && typeof item === 'object' && !Array.isArray(item))
       .map(item => {
@@ -519,43 +737,64 @@ function normalizeCatalogIndex(raw) {
   };
 }
 
-async function rebuildCatalogIndex(folderId) {
-  const permissions = await readPermissions();
-  const entries = await entriesFromFolder(folderId, permissions);
+export function catalogIndexMatchesFiles(index, files) {
+  if (!index || !Array.isArray(index.files) || !Array.isArray(index.songs)) return false;
+  const currentFiles = catalogFileManifest(files);
+  const indexedFiles = catalogFileManifest(index.files);
+  if (currentFiles.length !== indexedFiles.length) return false;
+  for (let indexPosition = 0; indexPosition < currentFiles.length; indexPosition += 1) {
+    const current = currentFiles[indexPosition];
+    const indexed = indexedFiles[indexPosition];
+    if (
+      current.id !== indexed.id ||
+      current.name !== indexed.name ||
+      current.modifiedTime !== indexed.modifiedTime
+    ) {
+      return false;
+    }
+  }
+
+  const currentById = new Map(currentFiles.map(file => [file.id, file]));
+  const seenSongFileIds = new Set();
+  for (const song of index.songs) {
+    const fileId = String(song?._driveFileId || '');
+    const file = currentById.get(fileId);
+    if (!file || seenSongFileIds.has(fileId)) return false;
+    seenSongFileIds.add(fileId);
+    if (String(song?._driveFileName || '') !== file.name) return false;
+    if (String(song?._driveModifiedTime || '') !== file.modifiedTime) return false;
+  }
+  return true;
+}
+
+async function rebuildCatalogIndex(folderId, files = null, permissionsInput = null) {
+  const [sourceFiles, permissions] = await Promise.all([
+    Array.isArray(files) ? Promise.resolve(files) : listJsonFiles(folderId),
+    permissionsInput ? Promise.resolve(permissionsInput) : readPermissions()
+  ]);
+  const entries = await entriesFromFiles(folderId, sourceFiles, permissions);
   const index = {
     version: 1,
+    files: catalogFileManifest(sourceFiles),
     songs: entries.map(entry => catalogMeta(entry.song, entry.file))
   };
   await writeNamedJsonFile(folderId, INDEX_FILE_NAME, index);
   return index;
 }
 
-async function readCatalogIndex(folderId) {
-  const file = await findNamedJsonFile(folderId, INDEX_FILE_NAME);
-  if (!file) return rebuildCatalogIndex(folderId);
+async function readCatalogIndex(folderId, permissionsInput = null) {
+  const [file, files] = await Promise.all([
+    findNamedJsonFile(folderId, INDEX_FILE_NAME),
+    listJsonFiles(folderId)
+  ]);
+  if (!file) return rebuildCatalogIndex(folderId, files, permissionsInput);
   try {
     const normalized = normalizeCatalogIndex(await readDriveJson(file.id, 'INVALID_CATALOG_INDEX'));
-    if (normalized) return normalized;
+    if (normalized && catalogIndexMatchesFiles(normalized, files)) return normalized;
   } catch (error) {
     if (String(error?.message || error) !== 'INVALID_CATALOG_INDEX') throw error;
   }
-  return rebuildCatalogIndex(folderId);
-}
-
-async function writeCatalogIndex(folderId, index) {
-  const normalized = normalizeCatalogIndex(index);
-  if (!normalized) throw new Error('INVALID_CATALOG_INDEX');
-  await writeNamedJsonFile(folderId, INDEX_FILE_NAME, normalized);
-  return normalized;
-}
-
-async function upsertCatalogIndexEntry(folderId, metadata) {
-  const index = await readCatalogIndex(folderId);
-  const fileId = String(metadata?._driveFileId || '');
-  if (!fileId) throw new Error('CATALOG_FILE_ID_REQUIRED');
-  const songs = index.songs.filter(item => String(item?._driveFileId || '') !== fileId);
-  songs.push(structuredClone(metadata));
-  await writeCatalogIndex(folderId, { version: 1, songs });
+  return rebuildCatalogIndex(folderId, files, permissionsInput);
 }
 
 async function readArtistMedia() {
@@ -564,27 +803,11 @@ async function readArtistMedia() {
   return normalizeArtistMedia(await readDriveJson(file.id, 'INVALID_ARTIST_MEDIA'));
 }
 
-async function upsertPermission(fileId, meta) {
-  const id = String(fileId || '').trim();
-  const permission = normalizePermissionRecord(meta);
-  if (!id) throw new Error('PERMISSION_FILE_ID_REQUIRED');
-  if (!permission) throw new Error('INVALID_PERMISSION_RECORD');
-  const permissions = await readPermissions();
-  await writePermissions({
-    version: 1,
-    songs: { ...permissions.songs, [id]: permission }
-  });
-  return permission;
-}
-
-async function createJsonFile(folderId, song, meta) {
+async function createSongFile(folderId, song, permission) {
   const persisted = cleanSongForWrite(song);
-  const permission = normalizePermissionRecord(meta);
-  if (!permission) throw new Error('INVALID_PERMISSION_RECORD');
-  const [index, permissions] = await Promise.all([
-    readCatalogIndex(folderId),
-    readPermissions()
-  ]);
+  const normalizedPermission = normalizePermissionRecord(permission);
+  if (!normalizedPermission) throw new Error('INVALID_PERMISSION_RECORD');
+
   const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
   const metadata = JSON.stringify({ name: songFileName(persisted), parents: [folderId] });
   const media = JSON.stringify(persisted, null, 2);
@@ -600,41 +823,27 @@ async function createJsonFile(folderId, song, meta) {
     body
   });
   const file = await response.json();
-  const nextPermissions = {
-    version: 1,
-    songs: { ...permissions.songs, [file.id]: permission }
-  };
-  const nextIndex = {
-    version: 1,
-    songs: [
-      ...index.songs.filter(item => String(item?._driveFileId || '') !== String(file.id)),
-      catalogMeta(persisted, file)
-    ]
-  };
   try {
-    await writePermissions(nextPermissions);
-    await writeCatalogIndex(folderId, nextIndex);
+    await appendPermissionEvent(file.id, normalizedPermission);
   } catch (error) {
-    await Promise.allSettled([
-      writePermissions(permissions),
-      driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' })
-    ]);
+    await driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' }).catch(() => null);
     throw error;
   }
-  return attachFileMeta(authoritativeSong(persisted, file, permission), file);
+  return attachFileMeta(authoritativeSong(persisted, file, normalizedPermission), file);
 }
 
-async function updateJsonFile(fileId, song, folderId, permission) {
+async function updateSongFile(fileId, song, permission) {
   const persisted = cleanSongForWrite(song);
-  await readCatalogIndex(folderId);
-  const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,modifiedTime`, {
-    method: 'PATCH',
-    upload: true,
-    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-    body: JSON.stringify(persisted, null, 2)
-  });
+  const response = await driveFetch(
+    `/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,modifiedTime`,
+    {
+      method: 'PATCH',
+      upload: true,
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify(persisted, null, 2)
+    }
+  );
   const file = await response.json();
-  await upsertCatalogIndexEntry(folderId, catalogMeta(persisted, file));
   return attachFileMeta(authoritativeSong(persisted, file, permission), file);
 }
 
@@ -652,11 +861,11 @@ async function readManagedEntry(fileId, permissionsInput = null) {
 }
 
 async function managedPublicCatalog() {
-  const [publicIndex, testIndex, media, permissions] = await Promise.all([
-    readCatalogIndex(PUBLIC_FOLDER_ID),
-    readCatalogIndex(TEST_FOLDER_ID),
-    readArtistMedia(),
-    readPermissions()
+  const permissions = await readPermissions();
+  const [publicIndex, testIndex, media] = await Promise.all([
+    readCatalogIndex(PUBLIC_FOLDER_ID, permissions),
+    readCatalogIndex(TEST_FOLDER_ID, permissions),
+    readArtistMedia()
   ]);
   const songs = [...publicIndex.songs, ...testIndex.songs]
     .map(item => attachCatalogPermission(item, permissionForFile(permissions, item?._driveFileId)))
@@ -695,11 +904,7 @@ function writeMeta(existingSong, session, patch = {}) {
     updatedBy: session.username
   };
   if (meta.public === true || meta.publishedAt) meta.uploadedBy = owner;
-  delete meta.hidden;
-  delete meta.publicFileId;
-  delete meta.sourceUser;
-  delete meta.sourceFileId;
-  return meta;
+  return normalizePermissionRecord(meta);
 }
 
 async function saveUserSong(session, song) {
@@ -707,22 +912,18 @@ async function saveUserSong(session, song) {
   if (!fileId) {
     const owner = session.username;
     const isAdmin = session.role === 'admin';
-    const meta = {
+    const permission = {
       owner,
       public: isAdmin,
-      updatedBy: session.username,
       ...(isAdmin ? { uploadedBy: owner, publishedAt: Date.now() } : {})
     };
     const folderId = isAdmin ? PUBLIC_FOLDER_ID : TEST_FOLDER_ID;
-    return createJsonFile(folderId, song, meta);
+    return createSongFile(folderId, song, permission);
   }
 
   const entry = await readManagedEntry(fileId);
   if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
-  const meta = writeMeta(entry.song, session, { public: songIsPublic(entry.song) });
-  const saved = await updateJsonFile(fileId, song, entry.folderId, meta);
-  await upsertPermission(fileId, meta);
-  return saved;
+  return updateSongFile(fileId, song, entry.song._opentab);
 }
 
 async function publishSong(session, song) {
@@ -732,12 +933,12 @@ async function publishSong(session, song) {
   if (!fileId) throw new Error('SAVE_BEFORE_PUBLISH');
   const entry = await readManagedEntry(fileId);
   if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
-  const meta = writeMeta(entry.song, session, {
+  const permission = writeMeta(entry.song, session, {
     public: true,
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
-  const saved = await updateJsonFile(fileId, { ...song, artist }, entry.folderId, meta);
-  await upsertPermission(fileId, meta);
+  const saved = await updateSongFile(fileId, { ...song, artist }, permission);
+  await appendPermissionEvent(fileId, permission);
   return saved;
 }
 
@@ -746,43 +947,18 @@ async function setPublicState(session, fileId, isPublic) {
   if (!canUnlistSong(session, entry.song)) throw new Error('VISIBILITY_FORBIDDEN');
   const patch = { public: Boolean(isPublic) };
   if (patch.public) patch.publishedAt = entry.song?._opentab?.publishedAt || Date.now();
-  const meta = writeMeta(entry.song, session, patch);
-  await upsertPermission(fileId, meta);
-  return attachFileMeta(authoritativeSong(entry.song, entry.file, meta), entry.file);
+  const permission = writeMeta(entry.song, session, patch);
+  await appendPermissionEvent(fileId, permission);
+  return attachFileMeta(authoritativeSong(entry.song, entry.file, permission), entry.file);
 }
 
 async function deleteUserSong(session, fileId) {
   const entry = await readManagedEntry(fileId);
   if (!canDeleteSong(session, entry.song)) throw new Error('DELETE_FORBIDDEN');
-  const [index, permissions] = await Promise.all([
-    readCatalogIndex(entry.folderId),
-    readPermissions()
-  ]);
-  const nextIndex = {
-    version: 1,
-    songs: index.songs.filter(item => String(item?._driveFileId || '') !== String(fileId))
-  };
-  const nextPermissionSongs = { ...permissions.songs };
-  delete nextPermissionSongs[String(fileId)];
-  const nextPermissions = { version: 1, songs: nextPermissionSongs };
-
-  await writeCatalogIndex(entry.folderId, nextIndex);
-  try {
-    await writePermissions(nextPermissions);
-  } catch (error) {
-    await writeCatalogIndex(entry.folderId, index).catch(() => null);
-    throw error;
-  }
-
-  try {
-    await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
-  } catch (error) {
-    await Promise.allSettled([
-      writeCatalogIndex(entry.folderId, index),
-      writePermissions(permissions)
-    ]);
-    throw error;
-  }
+  await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+  await appendPermissionEvent(fileId, null, { deleted: true }).catch(error => {
+    console.error('Failed to persist permission tombstone after score delete', error);
+  });
 }
 
 async function clonePublicToTest(fileId, session) {
@@ -800,13 +976,11 @@ async function clonePublicToTest(fileId, session) {
   copy.arrangementId = createCatalogId('arr');
   copy.createdAt = Date.now();
   copy.updatedAt = Date.now();
-  const meta = {
+  return createSongFile(TEST_FOLDER_ID, copy, {
     owner: session.username,
     public: false,
-    updatedBy: session.username,
     sourcePublicFileId: fileId
-  };
-  return createJsonFile(TEST_FOLDER_ID, copy, meta);
+  });
 }
 
 function publicSession(session) {
@@ -848,7 +1022,9 @@ export default async function handler(req, res) {
       if (!fileId) return json(res, 400, { error: 'FILE_ID_REQUIRED' });
       const [entry, media] = await Promise.all([readManagedEntry(fileId), readArtistMedia()]);
       if (!songIsPublic(entry.song)) return json(res, 404, { error: 'PUBLIC_SONG_NOT_AVAILABLE' });
-      return json(res, 200, { song: enrichSongMedia(attachFileMeta(entry.song, entry.file), media) });
+      return json(res, 200, {
+        song: enrichSongMedia(attachFileMeta(entry.song, entry.file), media)
+      });
     }
 
     const session = requireSession(req, res);
@@ -904,7 +1080,15 @@ export default async function handler(req, res) {
     const forbidden = message.includes('_FORBIDDEN') || message.includes('OUTSIDE_LIBRARY');
     const notFound = message.includes('NOT_AVAILABLE') || message.includes('NOT_MANAGED');
     const badRequest = message.includes('_REQUIRED') || message.includes('INVALID_');
-    const status = forbidden ? 403 : notFound ? 404 : badRequest ? 400 : message === 'ADMIN_LIBRARY_IS_PUBLIC_LIBRARY' ? 409 : 500;
+    const status = forbidden
+      ? 403
+      : notFound
+        ? 404
+        : badRequest
+          ? 400
+          : message === 'ADMIN_LIBRARY_IS_PUBLIC_LIBRARY'
+            ? 409
+            : 500;
     if (status >= 500) console.error(error);
     return json(res, status, { error: message.split(':')[0] });
   }

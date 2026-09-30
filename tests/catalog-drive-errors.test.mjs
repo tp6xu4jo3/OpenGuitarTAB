@@ -8,6 +8,7 @@ const { default: handler } = await import('../api/index.js');
 
 const PUBLIC_FOLDER_ID = '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
+const PERMISSION_RECORDS_FOLDER_ID = '1RQMJwYqcqNi58VRZF_HlA8-Az6yIwfK6';
 
 function mockResponse(body, status = 200) {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
@@ -74,6 +75,8 @@ function permissions(secondPublic = true) {
 }
 
 function installDriveMock({ failSecondSong = false, invalidSecondSong = false, secondPublic = true } = {}) {
+  let permissionRecordMediaReads = 0;
+
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const method = String(init.method || 'GET').toUpperCase();
@@ -89,6 +92,7 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
     const q = url.searchParams.get('q') || '';
     const isPublicQuery = q.includes(`'${PUBLIC_FOLDER_ID}' in parents`);
     const isTestQuery = q.includes(`'${TEST_FOLDER_ID}' in parents`);
+    const isPermissionRecordsQuery = q.includes(`'${PERMISSION_RECORDS_FOLDER_ID}' in parents`);
 
     if (url.pathname === '/drive/v3/files' && method === 'GET') {
       if (isPublicQuery && q.includes("name = 'index.json'")) {
@@ -107,6 +111,12 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
           files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
         });
       }
+      if (isPermissionRecordsQuery) {
+        return mockResponse({ files: [] });
+      }
+      if (isTestQuery) {
+        return mockResponse({ files: [] });
+      }
       if (isPublicQuery) {
         return mockResponse({
           files: [
@@ -122,7 +132,7 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
     }
 
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
-      return mockResponse({ version: 1, songs: [] });
+      return mockResponse({ version: 1, files: [], songs: [] });
     }
 
     if (url.pathname === '/drive/v3/files/song-good' && url.searchParams.get('alt') === 'media') {
@@ -146,11 +156,20 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
       });
     }
 
+    if (url.pathname.includes('/drive/v3/files/permission-record') && url.searchParams.get('alt') === 'media') {
+      permissionRecordMediaReads += 1;
+      return mockResponse({});
+    }
+
     if (url.pathname === '/upload/drive/v3/files' && method === 'POST') {
       return mockResponse({ id: 'new-public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
     }
 
     throw new Error(`Unexpected Drive request: ${method} ${url}`);
+  };
+
+  return {
+    permissionRecordMediaReads: () => permissionRecordMediaReads
   };
 }
 
@@ -160,13 +179,18 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
   assert.equal(failed.status, 500, 'transient Drive song read failures must fail the whole catalog request');
   assert.equal(failed.body.error, 'DRIVE_GET_503');
 
-  installDriveMock();
+  const metrics = installDriveMock();
   const retried = await invokeCatalog();
   assert.equal(retried.status, 200, 'a later request must retry instead of serving a partial cached catalog');
   assert.deepEqual(
     retried.body.songs.map(item => item.id).sort(),
     ['song-good', 'song-second'],
     'successful retry must restore every readable song'
+  );
+  assert.equal(
+    metrics.permissionRecordMediaReads(),
+    0,
+    'permission overlay reads must use Drive appProperties metadata, not download every record JSON'
   );
 }
 
