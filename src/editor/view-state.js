@@ -79,7 +79,7 @@ function syncControlVisibility() {
   const scoreToggle = document.getElementById('rhythmToggleButton');
   const densityControl = document.getElementById('scoreDensityControl');
   if (scoreToggle) scoreToggle.hidden = preview;
-  if (densityControl) densityControl.hidden = preview || !isScoreViewActive();
+  if (densityControl) densityControl.hidden = !isScoreViewActive();
 }
 
 function syncDensityUi() {
