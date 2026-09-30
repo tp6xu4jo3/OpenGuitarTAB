@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LocalTestDataSource, LOCAL_TEST_STORAGE_KEY } from '../src/data/local-test-data-source.js';
 import { ServerDataSource } from '../src/data/server-data-source.js';
+import { deriveLegacyWorkId } from '../src/catalog/work-model.js';
 import { settledMapWithConcurrency } from '../api/index.js';
 import { createDataSource } from '../src/data/data-source.js';
 import { DATA_SOURCE_TARGET } from '../src/data/runtime-target.js';
@@ -13,6 +14,7 @@ class MemoryStorage {
 }
 
 const baseHref = 'https://tp6xu4jo3.github.io/OpenGuitarTAB/';
+const alphaWorkId = deriveLegacyWorkId({ name: 'Alpha' });
 const catalog = {
   works: [
     { id: 'work-a', workId: 'work-a', name: 'Alpha', artist: 'Artist A', album: 'One', arrangements: [{ id: 'arr-drive-pages-a', arrangementId: 'arr-drive-pages-a', workId: 'work-a', songId: 'song-a', source: 'fixture', playStyle: 'fingerstyle', difficulty: 2, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 90, capo: 1, beatsPerMeasure: 4, _driveFileId: 'pages-a', _driveFileName: 'pages-a.json', _driveModifiedTime: 'fixture-a' }] },
@@ -54,7 +56,7 @@ assert.equal(session.user.username, 'admin');
 let library = await local.library();
 assert.equal(library.songs.length, 2);
 const alpha = library.songs.find(song => song.id === 'song-a');
-assert.equal(alpha.workId, 'work-a');
+assert.equal(alpha.workId, alphaWorkId);
 assert.equal(alpha.arrangementId, 'arr-drive-pages-a');
 assert.equal(alpha._driveFileId, 'pages-a');
 assert.equal(alpha.cover, 'alpha-cover.jpg', 'library media must be projected from artists.json instead of the song fixture');
@@ -101,7 +103,7 @@ assert.ok(fetchCalls.every(url => url.includes('/test-data/pages/')), 'LocalTest
   assert.equal(result.songs.length, 2);
   assert.equal(result.songs.every(song => !Object.hasOwn(song, 'document') && !Object.hasOwn(song, 'rows')), true, 'catalog metadata must not carry score documents');
   assert.equal(result.songs.find(song => song.id === 'song-a').cover, 'alpha-cover.jpg');
-  assert.equal(result.works.find(work => work.workId === 'work-a').artistImage, 'artist-a.jpg');
+  assert.equal(result.works.find(work => work.workId === alphaWorkId).artistImage, 'artist-a.jpg');
 }
 
 {
