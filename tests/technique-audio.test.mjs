@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { frettedSlideSteps, pitchPlanForTab, stringLevelDb } from '../src/editor/audio-engine.js';
+import { frettedSlideSteps, pitchPlanForTab, stringLevelDb, MASTER_OUTPUT_DB, MASTER_OUTPUT_GAIN } from '../src/editor/audio-engine.js';
 import { samplePlanForTab, SAMPLE_ATTACK_PREROLL_SECONDS, SAMPLE_COUNT, SAMPLE_DURATION_SECONDS, SAMPLE_FRETS_BY_STRING } from '../src/editor/sample-bank.js';
 import { playbackNoteSchedule } from '../src/editor/playback-articulation.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
@@ -24,6 +24,8 @@ assert.ok(upArpeggio.at(-1).delayMs > downStrum.at(-1).delayMs);
 
 assert.equal(stringLevelDb(0), 0);
 assert.equal(stringLevelDb(5), 0, 'relative sample loudness must be mastered into the bank, not patched per string at runtime');
+assert.equal(MASTER_OUTPUT_DB, -6, 'recorded guitar playback should reserve 6 dB of output headroom for polyphonic summing');
+assert.ok(Math.abs(MASTER_OUTPUT_GAIN - Math.pow(10, -6 / 20)) < 1e-12);
 assert.equal(SAMPLE_COUNT, 42);
 assert.equal(SAMPLE_DURATION_SECONDS, 3);
 assert.equal(SAMPLE_ATTACK_PREROLL_SECONDS, 0.02);
@@ -92,6 +94,8 @@ assert.ok(sampleAsset.size > 1_800_000);
 assert.match(bankSource, /guitar-samples\.m4a\?rev=20260929b/, 'the one current bank URL must change revision when its bytes change');
 assert.match(bankSource, /fetch\(SAMPLE_BANK_URL, \{ cache: 'force-cache' \}\)/, 'bank must preload through browser cache');
 assert.match(bankSource, /context\.decodeAudioData\(encoded\)/, 'bank must decode once before playback');
+assert.match(audioSource, /MASTER_OUTPUT_DB = -6/,'the output stage must reserve explicit polyphonic headroom');
+assert.match(audioSource, /masterGain\.gain\.value = MASTER_OUTPUT_GAIN/,'all guitar voices and metronome output must pass through the mastered headroom stage');
 assert.match(audioSource, /plan\.offsetSeconds \+ SAMPLE_ATTACK_PREROLL_SECONDS[\s\S]*SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS/s, 'the physically aligned bank must use one fixed 20 ms safe pre-roll');
 assert.match(audioSource, /basePlaybackRate \* step\.playbackRate/, 'slides must move relative to the selected recorded anchor');
 assert.match(audioSource, /SLIDE_TRANSITION_LEVEL = 0\.62/, 'the physical slide transition should be quieter than the endpoint notes');
