@@ -28,11 +28,8 @@ export function createCatalogId(prefix = 'id') {
 }
 
 export function deriveLegacyWorkId(song) {
-  const explicit = String(song?.workId || '').trim();
-  if (explicit) return explicit;
-  const artist = identityText(song?.artist);
   const name = identityText(song?.name || song?.title || '未命名曲譜');
-  return `work-${stableHash(`${artist}\u0000${name}`)}`;
+  return `work-${stableHash(name)}`;
 }
 
 export function ensureArrangementIdentity(song, { fileId = '', idFactory = createCatalogId } = {}) {
