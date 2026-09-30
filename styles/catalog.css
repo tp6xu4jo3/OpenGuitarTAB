@@ -75,7 +75,7 @@
 .work-card-arrangement-info{min-width:0;flex:1 1 auto}
 .work-card-arrangement-primary{display:flex;min-width:0;align-items:center;gap:7px}
 .work-card-arrangement-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:13px}
-.work-card-arrangement-difficulty{flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#3a3a3a;color:#d0d0d0;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap}
+.work-card-arrangement-difficulty{flex:0 0 auto;display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;background:#3a3a3a;color:#d0d0d0;font-size:10px;font-weight:800;line-height:1;white-space:nowrap}
 .work-card-arrangement-meta{margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#a7a7a7;font-size:10px}
 .work-card-arrangement-actions{position:relative;display:flex;flex:0 0 auto;align-items:center;justify-content:flex-end;gap:5px}
 .work-card-action{min-height:29px;padding:0 9px;border:1px solid #606060;border-radius:999px;background:transparent;color:#fff;font:inherit;font-size:10px;font-weight:800;cursor:pointer}
