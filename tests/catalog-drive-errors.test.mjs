@@ -10,6 +10,11 @@ const PUBLIC_FOLDER_ID = '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
 const PERMISSION_RECORDS_FOLDER_ID = '1RQMJwYqcqNi58VRZF_HlA8-Az6yIwfK6';
 
+const publicFiles = [
+  { id: 'song-good', name: 'song-good.json', modifiedTime: '2026-09-30T00:00:01.000Z' },
+  { id: 'song-second', name: 'song-second.json', modifiedTime: '2026-09-30T00:00:02.000Z' }
+];
+
 function mockResponse(body, status = 200) {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
   return {
@@ -64,6 +69,21 @@ function song(id, name) {
   };
 }
 
+function catalogSong(file, id, name) {
+  return {
+    id,
+    name,
+    tempo: 80,
+    capo: 0,
+    beatsPerMeasure: 4,
+    artist: 'Test Artist',
+    album: 'Test Album',
+    _driveFileId: file.id,
+    _driveFileName: file.name,
+    _driveModifiedTime: file.modifiedTime
+  };
+}
+
 function permissions(secondPublic = true) {
   return {
     version: 1,
@@ -74,8 +94,16 @@ function permissions(secondPublic = true) {
   };
 }
 
-function installDriveMock({ failSecondSong = false, invalidSecondSong = false, secondPublic = true } = {}) {
+function installDriveMock({
+  failSecondSong = false,
+  invalidSecondSong = false,
+  secondPublic = true,
+  publicIndex = null
+} = {}) {
   let permissionRecordMediaReads = 0;
+  let songGoodMediaReads = 0;
+  let songSecondMediaReads = 0;
+  let publicIndexWrites = 0;
 
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
@@ -96,7 +124,11 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
 
     if (url.pathname === '/drive/v3/files' && method === 'GET') {
       if (isPublicQuery && q.includes("name = 'index.json'")) {
-        return mockResponse({ files: [] });
+        return mockResponse({
+          files: publicIndex
+            ? [{ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }]
+            : []
+        });
       }
       if (isPublicQuery && q.includes("name = 'artists.json'")) {
         return mockResponse({ files: [] });
@@ -118,12 +150,7 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
         return mockResponse({ files: [] });
       }
       if (isPublicQuery) {
-        return mockResponse({
-          files: [
-            { id: 'song-good', name: 'song-good.json', modifiedTime: '2026-09-30T00:00:01.000Z' },
-            { id: 'song-second', name: 'song-second.json', modifiedTime: '2026-09-30T00:00:02.000Z' }
-          ]
-        });
+        return mockResponse({ files: publicFiles });
       }
     }
 
@@ -132,14 +159,20 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
     }
 
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
-      return mockResponse({ version: 1, files: [], songs: [] });
+      return mockResponse({ version: 1, files: [], omittedFileIds: [], songs: [] });
+    }
+
+    if (url.pathname === '/drive/v3/files/public-index' && url.searchParams.get('alt') === 'media') {
+      return mockResponse(publicIndex);
     }
 
     if (url.pathname === '/drive/v3/files/song-good' && url.searchParams.get('alt') === 'media') {
+      songGoodMediaReads += 1;
       return mockResponse(song('song-good', 'Good Song'));
     }
 
     if (url.pathname === '/drive/v3/files/song-second' && url.searchParams.get('alt') === 'media') {
+      songSecondMediaReads += 1;
       if (failSecondSong) return mockResponse('temporary Drive failure', 503);
       if (invalidSecondSong) return mockResponse('{not-json');
       return mockResponse(song('song-second', 'Recovered Song'));
@@ -162,14 +195,23 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
     }
 
     if (url.pathname === '/upload/drive/v3/files' && method === 'POST') {
+      publicIndexWrites += 1;
       return mockResponse({ id: 'new-public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
+    }
+
+    if (url.pathname === '/upload/drive/v3/files/public-index' && method === 'PATCH') {
+      publicIndexWrites += 1;
+      return mockResponse({ id: 'public-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:03.000Z' });
     }
 
     throw new Error(`Unexpected Drive request: ${method} ${url}`);
   };
 
   return {
-    permissionRecordMediaReads: () => permissionRecordMediaReads
+    permissionRecordMediaReads: () => permissionRecordMediaReads,
+    songGoodMediaReads: () => songGoodMediaReads,
+    songSecondMediaReads: () => songSecondMediaReads,
+    publicIndexWrites: () => publicIndexWrites
   };
 }
 
@@ -225,6 +267,42 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
   const forgedSong = await invokeCatalogSong('song-second');
   assert.equal(forgedSong.status, 404, 'forged _opentab data inside song JSON must not make a private song public');
   assert.equal(forgedSong.body.error, 'PUBLIC_SONG_NOT_AVAILABLE');
+}
+
+{
+  const staleSecondFile = {
+    ...publicFiles[1],
+    modifiedTime: '2026-09-30T00:00:01.500Z'
+  };
+  const metrics = installDriveMock({
+    publicIndex: {
+      version: 1,
+      files: [publicFiles[0], staleSecondFile],
+      omittedFileIds: [],
+      songs: [
+        catalogSong(publicFiles[0], 'song-good', 'Good Song'),
+        catalogSong(staleSecondFile, 'song-second', 'Stale Song')
+      ]
+    }
+  });
+  const catalog = await invokeCatalog();
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(
+    catalog.body.songs.map(item => [item.id, item.name]).sort(),
+    [['song-good', 'Good Song'], ['song-second', 'Recovered Song']],
+    'stale catalog metadata must refresh the changed song while preserving unchanged metadata'
+  );
+  assert.equal(
+    metrics.songGoodMediaReads(),
+    0,
+    'an unchanged song must not be downloaded when another score changes modifiedTime'
+  );
+  assert.equal(
+    metrics.songSecondMediaReads(),
+    1,
+    'the changed score must be downloaded exactly once to refresh its catalog metadata'
+  );
+  assert.equal(metrics.publicIndexWrites(), 1, 'the repaired derived cache should be persisted once');
 }
 
 console.log('catalog Drive error handling tests passed');
