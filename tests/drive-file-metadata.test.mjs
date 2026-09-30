@@ -44,11 +44,12 @@ import {
   const file = {
     id: 'file-a',
     name: 'song-a.json',
-    modifiedTime: '2026-09-30T01:00:00.000Z',
+    modifiedTime: '2026-09-30T02:00:00.000Z',
     md5Checksum: 'checksum-a',
     description: JSON.stringify({
       schema: 'opentab-catalog-v1',
       checksum: 'checksum-a',
+      scoreModifiedTime: '2026-09-30T01:00:00.000Z',
       metadata
     })
   };
@@ -57,7 +58,7 @@ import {
     _driveFileId: 'file-a',
     _driveFileName: 'song-a.json',
     _driveModifiedTime: '2026-09-30T01:00:00.000Z'
-  });
+  }, 'metadata-only Drive writes must not change the score modification time exposed to the catalog');
   assert.equal(
     catalogSnapshotFromDriveFile({ ...file, md5Checksum: 'content-changed' }),
     null,
@@ -90,6 +91,10 @@ import {
   assert.ok(
     source.includes('ensureSongDocumentV3(input)'),
     'server persistence must use the canonical legacy→V3 migration before writing'
+  );
+  assert.ok(
+    source.includes('scoreModifiedTime:'),
+    'catalog snapshots must preserve score content time separately from metadata write time'
   );
 }
 
