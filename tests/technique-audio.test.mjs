@@ -21,6 +21,7 @@ assert.deepEqual(upStrum.map(item => item.note.id), ['high', 'mid', 'low']);
 assert.ok(downStrum.at(-1).delayMs > 0 && downStrum.at(-1).delayMs <= 48);
 const upArpeggio = scheduleFor({ type: 'arpeggio', direction: 'up' });
 assert.ok(upArpeggio.at(-1).delayMs > downStrum.at(-1).delayMs);
+assert.equal(upArpeggio.at(-1).delayMs, 190, 'a 120 BPM arpeggio should use the tightened 0.38-beat spread');
 
 assert.equal(stringLevelDb(0), 0);
 assert.equal(stringLevelDb(5), 0, 'relative sample loudness must be mastered into the bank, not patched per string at runtime');
@@ -85,6 +86,7 @@ assert.equal(Object.hasOwn(sourceNote, 'arc'), false);
 const audioSource = await readFile(new URL('../src/editor/audio-engine.js', import.meta.url), 'utf8');
 const bankSource = await readFile(new URL('../src/editor/sample-bank.js', import.meta.url), 'utf8');
 const controllerSource = await readFile(new URL('../src/editor/playback-controller.js', import.meta.url), 'utf8');
+const headerCss = await readFile(new URL('../styles/header.css', import.meta.url), 'utf8');
 const audioAssetNames = (await readdir(new URL('../assets/audio/', import.meta.url)))
   .filter(name => /^guitar-samples.*\.m4a$/i.test(name))
   .sort();
@@ -112,5 +114,9 @@ assert.match(controllerSource, /function buildNextStringDelayMap\(playback, beat
 assert.match(controllerSource, /nextSameStringSeconds:[\s\S]*state\.nextStringDelayMs/s, 'each plucked note must receive its next same-string attack gap');
 assert.match(controllerSource, /dampPrevious: false/, 'score playback must rely on pre-note damping instead of post-attack overlap');
 assert.match(controllerSource, /audio\.hasActiveSlide\(string, note\.slideArrivalRelationId\)/);
+assert.match(controllerSource, /preparing: false/,'playback must expose a preparation state instead of silently ignoring clicks while work is pending');
+assert.match(controllerSource, /requestAnimationFrame\(resolve\)/,'the busy indicator must get a paint opportunity before audio decode or index rebuild');
+assert.match(controllerSource, /button-spinner/,'the Play button must reuse the visible spinner feedback used by Save');
+assert.match(headerCss, /\.play-button\.is-busy/,'playback busy feedback must be styled in the canonical header stylesheet');
 
 console.log('technique audio tests passed');
