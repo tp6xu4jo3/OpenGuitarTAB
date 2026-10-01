@@ -291,10 +291,11 @@ function syncHandleMetadata(handle, target) {
   if (!handle || !target) return;
   handle.dataset.row = String(target.rowIndex);
   handle.dataset.visualRow = String(target.visualRowIndex);
-  handle.setAttribute('aria-label', `第 ${target.rowIndex + 1} 列，可拖曳排序`);
+  const displayRow = target.visualRowIndex + 1;
+  handle.setAttribute('aria-label', `第 ${displayRow} 列，可拖曳排序`);
   const label = handle.querySelector('.row-module-label');
-  if (label) label.textContent = `第 ${target.rowIndex + 1} 列`;
-  handle.querySelector('.row-module-more')?.setAttribute('aria-label', `第 ${target.rowIndex + 1} 列操作`);
+  if (label) label.textContent = `第 ${displayRow} 列`;
+  handle.querySelector('.row-module-more')?.setAttribute('aria-label', `第 ${displayRow} 列操作`);
 }
 
 function syncVisualRowMetadata(system, visualRowIndex) {

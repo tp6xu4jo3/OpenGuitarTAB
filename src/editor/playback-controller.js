@@ -371,7 +371,7 @@ function playNote(note, beatMs) {
   audio.playNote(string, note.fret, {
     harmonic,
     slideToFret: slide?.toFret ?? null,
-    slideSeconds: slide ? Math.max(0.06, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
+    slideSeconds: slide ? Math.max(0.015, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
     slideRelationId: slide?.relationId || '',
     nextSameStringSeconds: (state.nextStringDelayMs.get(String(note.id || '')) ?? Number.NaN) / 1000,
     dampPrevious: false

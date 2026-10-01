@@ -60,9 +60,13 @@ const slideSteps = frettedSlideSteps(5, 9, 0.4);
 assert.deepEqual(slideSteps.map(step => step.fret), [6, 7, 8, 9]);
 assert.ok(slideSteps.every((step, index) => index === 0 || step.playbackRate > slideSteps[index - 1].playbackRate));
 assert.ok(Math.abs(slideSteps.at(-1).playbackRate - Math.pow(2, 4 / 12)) < 1e-9);
-assert.ok(slideSteps[0].atSeconds > 0.3, 'a rhythmic slide should hold the source note before the quick motion');
-assert.ok(Math.abs(slideSteps.at(-1).atSeconds - 0.4) < 1e-9, 'the slide must arrive exactly at the target-note onset');
-assert.ok(slideSteps.at(-1).atSeconds - slideSteps[0].atSeconds < 0.12, 'the fret transition should occupy only a short part of the relation duration');
+assert.ok(slideSteps[0].atSeconds > 0.24, 'a rhythmic slide should hold the source note before the fixed late motion window');
+assert.ok(Math.abs(slideSteps.at(-1).atSeconds - 0.355) < 1e-9, 'a long relation should reach the target 45 ms before its notated arrival');
+assert.ok(slideSteps.at(-1).atSeconds - slideSteps[0].atSeconds <= 0.09 + 1e-9, 'the fret transition should occupy only the fixed late motion window');
+assert.ok(slideSteps.every(step => step.transitionSeconds > 0), 'every fret interval should have audible pitch motion');
+const shortSlide = frettedSlideSteps(5, 9, 0.08);
+assert.ok(Math.abs(shortSlide.at(-1).atSeconds - 0.06) < 1e-9, 'short relations must shrink the slide motion and target hold to fit');
+assert.ok(shortSlide[0].atSeconds < slideSteps[0].atSeconds, 'short relations must not retain the long-relation source hold');
 
 const documentModel = {
   version: 3,
@@ -100,8 +104,12 @@ assert.match(audioSource, /MASTER_OUTPUT_DB = -6/,'the output stage must reserve
 assert.match(audioSource, /masterGain\.gain\.value = MASTER_OUTPUT_GAIN/,'all guitar voices and metronome output must pass through the mastered headroom stage');
 assert.match(audioSource, /plan\.offsetSeconds \+ SAMPLE_ATTACK_PREROLL_SECONDS[\s\S]*SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS/s, 'the physically aligned bank must use one fixed 20 ms safe pre-roll');
 assert.match(audioSource, /basePlaybackRate \* step\.playbackRate/, 'slides must move relative to the selected recorded anchor');
-assert.match(audioSource, /SLIDE_TRANSITION_LEVEL = 0\.62/, 'the physical slide transition should be quieter than the endpoint notes');
-assert.match(audioSource, /linearRampToValueAtTime\(level \* SLIDE_TRANSITION_LEVEL[\s\S]*linearRampToValueAtTime\(level, now \+ slideEnd\)/s, 'slide gain must dip only during motion and recover at the target arrival');
+assert.match(audioSource, /SLIDE_MOTION_SECONDS = 0\.12/, 'normal slides should use a fixed 120 ms motion window');
+assert.match(audioSource, /SLIDE_TARGET_HOLD_SECONDS = 0\.045/, 'slides should settle on the target briefly before the notated target onset');
+assert.match(audioSource, /SLIDE_TRANSITION_LEVEL = 0\.9/, 'physical slide motion should be only about ten percent quieter than endpoint notes');
+assert.doesNotMatch(audioSource, /SLIDE_ENDPOINT_BOOST/, 'slide endpoints must use normal single-note loudness');
+assert.match(audioSource, /setValueAtTime\(previousRate, rampStart\)[\s\S]*linearRampToValueAtTime\(nextRate, stepEnd\)/s, 'slides must move to each successive fret with a separate pitch transition');
+assert.match(audioSource, /linearRampToValueAtTime\(level \* SLIDE_TRANSITION_LEVEL[\s\S]*linearRampToValueAtTime\(level, now \+ slideEnd\)/s, 'slide gain must dip only during motion and recover to normal at target arrival');
 assert.doesNotMatch(audioSource, /if \(!pitch\.sliding && Number\.isFinite\(nextDelay\)/, 'a sustained slide target must still damp before the next real same-string attack');
 assert.match(audioSource, /SAME_STRING_DAMP_LEAD_SECONDS = 0\.025/, 'sequenced same-string notes should begin damping before the next attack');
 assert.match(audioSource, /SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0\.002/, 'the old string voice should reach silence just before the next attack');
@@ -111,6 +119,7 @@ assert.match(audioSource, /activeVoices = Array\(STRING_TUNING\.length\)\.fill\(
 assert.doesNotMatch(audioSource, /pluckBuffer|addPickNoise|Math\.random\(\)/, 'recorded samples must be the only guitar source');
 assert.match(audioSource, /void engine\.samples\.preload\(\)/, 'network preload must start before Play');
 assert.match(controllerSource, /function buildNextStringDelayMap\(playback, beatMs\)[\s\S]*playbackNoteSchedule\(event, beatMs\)[\s\S]*delays\.set\(previous\.noteId/s, 'playback must derive exact next attacks per string including articulation delay');
+assert.match(controllerSource, /slideSeconds: slide \? Math\.max\(0\.015,/,'short rhythmic slides should no longer be forced to the old 60 ms minimum');
 assert.match(controllerSource, /nextSameStringSeconds:[\s\S]*state\.nextStringDelayMs/s, 'each plucked note must receive its next same-string attack gap');
 assert.match(controllerSource, /dampPrevious: false/, 'score playback must rely on pre-note damping instead of post-attack overlap');
 assert.match(controllerSource, /audio\.hasActiveSlide\(string, note\.slideArrivalRelationId\)/);
