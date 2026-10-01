@@ -421,6 +421,16 @@ async function deletePermissionRecord(songFileId) {
   await driveFetch(`/files/${encodeURIComponent(file.id)}`, { method: 'DELETE' });
 }
 
+async function readPermissionRecord(songFileId) {
+  const id = String(songFileId || '').trim();
+  if (!id) return null;
+  const file = await findNamedJsonFile(PERMISSION_RECORDS_FOLDER_ID, permissionRecordFileName(id));
+  if (!file) return null;
+  const value = normalizePermissionFile(await readDriveJson(file.id, 'INVALID_PERMISSION_RECORD'));
+  if (!value || value.songFileId !== id) throw new Error('INVALID_PERMISSION_RECORD');
+  return value;
+}
+
 async function readPermissions() {
   const files = (await listJsonFiles(PERMISSION_RECORDS_FOLDER_ID, { includeReserved: true }))
     .filter(file => String(file.name || '').startsWith(PERMISSION_FILE_PREFIX));
@@ -526,7 +536,8 @@ function attachCatalogPermission(metadata, permission) {
     ...metadata,
     owner: normalized.owner,
     uploadedBy: String(normalized.uploadedBy || normalized.owner || 'OpenGuitarTAB'),
-    public: normalized.public
+    public: normalized.public,
+    _opentab: structuredClone(normalized)
   };
 }
 
@@ -600,14 +611,6 @@ async function entriesFromFiles(folderId, files, permissions) {
     .map(result => result.value);
 }
 
-async function entriesFromFolder(folderId, permissionsInput = null) {
-  const [files, permissions] = await Promise.all([
-    listJsonFiles(folderId),
-    permissionsInput ? Promise.resolve(permissionsInput) : readPermissions()
-  ]);
-  return entriesFromFiles(folderId, files, permissions);
-}
-
 function manifestEntry(file) {
   return {
     driveFileId: String(file?.driveFileId || file?.id || ''),
@@ -623,30 +626,68 @@ function catalogFileManifest(files) {
     .sort((left, right) => left.driveFileId.localeCompare(right.driveFileId));
 }
 
+function normalizeCatalogWork(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  const workId = String(item.workId || '').trim();
+  if (!workId) return null;
+  return {
+    workId,
+    name: String(item.name || ''),
+    artist: String(item.artist || ''),
+    album: String(item.album || '')
+  };
+}
+
+function normalizeCatalogArrangement(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  return {
+    songId: String(item.songId || ''),
+    workId: String(item.workId || ''),
+    arrangementId: String(item.arrangementId || ''),
+    source: String(item.source || ''),
+    playStyle: item.playStyle === 'chord' ? 'chord' : item.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+    difficulty: Number.isFinite(Number(item.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(item.difficulty)))) : null,
+    tempo: Number(item.tempo) || 120,
+    capo: Number.isFinite(Number(item.capo)) ? Number(item.capo) : 0,
+    beatsPerMeasure: Number(item.beatsPerMeasure) === 3 ? 3 : 4,
+    driveFileId: String(item.driveFileId || '')
+  };
+}
+
+function attachTransientCatalogSongs(index, songs) {
+  Object.defineProperty(index, 'songs', {
+    value: songs,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
+  return index;
+}
+
 export function normalizeCatalogIndex(raw) {
-  if (!raw || Number(raw.version) !== 2 || !Array.isArray(raw.manifest) || !Array.isArray(raw.songs)) return null;
+  if (
+    !raw || Number(raw.version) !== 3
+    || !Array.isArray(raw.manifest)
+    || !Array.isArray(raw.works)
+    || !Array.isArray(raw.arrangements)
+  ) return null;
   const manifest = catalogFileManifest(raw.manifest);
   const omittedDriveFileIds = Array.isArray(raw.omittedDriveFileIds)
     ? raw.omittedDriveFileIds.map(fileId => String(fileId || '').trim()).filter(Boolean).sort()
     : null;
-  const songs = raw.songs
-    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
-    .map(item => ({
-      songId: String(item.songId || ''),
-      workId: String(item.workId || ''),
-      arrangementId: String(item.arrangementId || ''),
-      name: String(item.name || ''),
-      artist: String(item.artist || ''),
-      album: String(item.album || ''),
-      source: String(item.source || ''),
-      playStyle: item.playStyle === 'chord' ? 'chord' : item.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
-      difficulty: Number.isFinite(Number(item.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(item.difficulty)))) : null,
-      tempo: Number(item.tempo) || 120,
-      capo: Number.isFinite(Number(item.capo)) ? Number(item.capo) : 0,
-      beatsPerMeasure: Number(item.beatsPerMeasure) === 3 ? 3 : 4,
-      driveFileId: String(item.driveFileId || '')
-    }));
-  return { version: 2, manifest, omittedDriveFileIds, songs };
+  const works = raw.works.map(normalizeCatalogWork).filter(Boolean);
+  const arrangements = raw.arrangements.map(normalizeCatalogArrangement).filter(Boolean);
+  const workById = new Map(works.map(work => [work.workId, work]));
+  const songs = arrangements.map(arrangement => {
+    const work = workById.get(arrangement.workId) || {};
+    return {
+      ...arrangement,
+      name: String(work.name || ''),
+      artist: String(work.artist || ''),
+      album: String(work.album || '')
+    };
+  });
+  return attachTransientCatalogSongs({ version: 3, manifest, omittedDriveFileIds, works, arrangements }, songs);
 }
 
 function catalogManifestEntryMatches(left, right) {
@@ -660,9 +701,14 @@ function catalogManifestEntryMatches(left, right) {
 }
 
 function catalogIndexCoverageIsValid(index) {
-  if (!index || !Array.isArray(index.manifest) || !Array.isArray(index.songs) || !Array.isArray(index.omittedDriveFileIds)) {
-    return false;
-  }
+  if (
+    !index
+    || !Array.isArray(index.manifest)
+    || !Array.isArray(index.works)
+    || !Array.isArray(index.arrangements)
+    || !Array.isArray(index.songs)
+    || !Array.isArray(index.omittedDriveFileIds)
+  ) return false;
 
   const fileIds = new Set();
   for (const file of index.manifest) {
@@ -671,18 +717,29 @@ function catalogIndexCoverageIsValid(index) {
     fileIds.add(fileId);
   }
 
+  const workIds = new Set();
+  for (const work of index.works) {
+    const workId = String(work?.workId || '');
+    if (!workId || workIds.has(workId)) return false;
+    workIds.add(workId);
+  }
+
+  if (index.songs.length !== index.arrangements.length) return false;
   const coveredFileIds = new Set();
+  const referencedWorkIds = new Set();
   for (const song of index.songs) {
     const fileId = String(song?.driveFileId || '');
-    if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
+    const workId = String(song?.workId || '');
+    if (!fileIds.has(fileId) || coveredFileIds.has(fileId) || !workIds.has(workId)) return false;
     coveredFileIds.add(fileId);
+    referencedWorkIds.add(workId);
   }
   for (const rawFileId of index.omittedDriveFileIds) {
     const fileId = String(rawFileId || '');
     if (!fileIds.has(fileId) || coveredFileIds.has(fileId)) return false;
     coveredFileIds.add(fileId);
   }
-  return coveredFileIds.size === fileIds.size;
+  return coveredFileIds.size === fileIds.size && referencedWorkIds.size === workIds.size;
 }
 
 export function catalogIndexRefreshPlan(index, files) {
@@ -740,19 +797,75 @@ export function catalogIndexMatchesFiles(index, files) {
   return true;
 }
 
+function catalogIndexFromSongs(sourceFiles, songs, omittedDriveFileIds = []) {
+  const manifest = catalogFileManifest(sourceFiles);
+  const modifiedTimeByFileId = new Map(manifest.map(file => [file.driveFileId, file.modifiedTime]));
+  const normalizedSongs = (Array.isArray(songs) ? songs : [])
+    .filter(song => song && typeof song === 'object' && !Array.isArray(song))
+    .map(song => ({
+      songId: String(song.songId || ''),
+      workId: String(song.workId || ''),
+      arrangementId: String(song.arrangementId || ''),
+      name: String(song.name || ''),
+      artist: String(song.artist || ''),
+      album: String(song.album || ''),
+      source: String(song.source || ''),
+      playStyle: song.playStyle === 'chord' ? 'chord' : song.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+      difficulty: Number.isFinite(Number(song.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(song.difficulty)))) : null,
+      tempo: Number(song.tempo) || 120,
+      capo: Number.isFinite(Number(song.capo)) ? Number(song.capo) : 0,
+      beatsPerMeasure: Number(song.beatsPerMeasure) === 3 ? 3 : 4,
+      driveFileId: String(song.driveFileId || '')
+    }));
+  const workAuthority = [...normalizedSongs].sort((left, right) =>
+    String(modifiedTimeByFileId.get(right.driveFileId) || '').localeCompare(String(modifiedTimeByFileId.get(left.driveFileId) || ''))
+    || left.driveFileId.localeCompare(right.driveFileId)
+  );
+  const workMap = new Map();
+  for (const song of workAuthority) {
+    if (!song.workId || workMap.has(song.workId)) continue;
+    workMap.set(song.workId, {
+      workId: song.workId,
+      name: song.name,
+      artist: song.artist,
+      album: song.album
+    });
+  }
+  const works = [...workMap.values()].sort((left, right) => left.workId.localeCompare(right.workId));
+  const arrangements = normalizedSongs
+    .map(song => ({
+      songId: song.songId,
+      workId: song.workId,
+      arrangementId: song.arrangementId,
+      source: song.source,
+      playStyle: song.playStyle,
+      difficulty: song.difficulty,
+      tempo: song.tempo,
+      capo: song.capo,
+      beatsPerMeasure: song.beatsPerMeasure,
+      driveFileId: song.driveFileId
+    }))
+    .sort((left, right) => left.driveFileId.localeCompare(right.driveFileId));
+  const index = {
+    version: 3,
+    manifest,
+    omittedDriveFileIds: [...new Set(omittedDriveFileIds.map(fileId => String(fileId || '')).filter(Boolean))].sort(),
+    works,
+    arrangements
+  };
+  return attachTransientCatalogSongs(index, normalizedSongs);
+}
+
 function catalogIndexFromEntries(sourceFiles, entries) {
   const includedFileIds = new Set(entries.map(entry => String(entry.file.id)));
-  return {
-    version: 2,
-    manifest: catalogFileManifest(sourceFiles),
-    omittedDriveFileIds: sourceFiles
-      .map(file => String(file?.id || ''))
-      .filter(fileId => fileId && !includedFileIds.has(fileId))
-      .sort(),
-    songs: entries
-      .map(entry => catalogIndexSong(entry.song, entry.file))
-      .sort((left, right) => String(left.driveFileId || '').localeCompare(String(right.driveFileId || '')))
-  };
+  const omittedDriveFileIds = sourceFiles
+    .map(file => String(file?.id || ''))
+    .filter(fileId => fileId && !includedFileIds.has(fileId));
+  return catalogIndexFromSongs(
+    sourceFiles,
+    entries.map(entry => catalogIndexSong(entry.song, entry.file)),
+    omittedDriveFileIds
+  );
 }
 
 async function rebuildCatalogIndex(folderId, files = null, permissionsInput = null, existingFile = null) {
@@ -778,15 +891,14 @@ async function refreshCatalogIndex(folderId, indexFile, index, files, permission
     if (fileId && !refreshedFileIds.has(fileId)) omittedDriveFileIds.add(fileId);
   }
 
-  const nextIndex = {
-    version: 2,
-    manifest: plan.manifest,
-    omittedDriveFileIds: [...omittedDriveFileIds].sort(),
-    songs: [
+  const nextIndex = catalogIndexFromSongs(
+    plan.manifest,
+    [
       ...plan.reusableSongs,
       ...refreshedEntries.map(entry => catalogIndexSong(entry.song, entry.file))
-    ].sort((left, right) => String(left.driveFileId || '').localeCompare(String(right.driveFileId || '')))
-  };
+    ],
+    [...omittedDriveFileIds]
+  );
   await writeNamedJsonFile(folderId, INDEX_FILE_NAME, nextIndex, indexFile);
   return nextIndex;
 }
@@ -851,11 +963,13 @@ async function updateSongFile(fileId, song, permission) {
 }
 
 async function readManagedEntry(fileId, permissionsInput = null) {
-  const [{ file, folderId }, permissions] = await Promise.all([
+  const [{ file, folderId }, permissionValue] = await Promise.all([
     assertManagedFile(fileId),
-    permissionsInput ? Promise.resolve(permissionsInput) : readPermissions()
+    permissionsInput
+      ? Promise.resolve(permissionForFile(permissionsInput, fileId))
+      : readPermissionRecord(fileId).then(value => normalizePermissionRecord(value))
   ]);
-  const permission = permissionForFile(permissions, file.id);
+  const permission = normalizePermissionRecord(permissionValue);
   if (!permission) throw new Error('PUBLIC_SONG_NOT_MANAGED');
   const raw = await readDriveJson(fileId);
   const song = authoritativeSong(raw, file, permission);
@@ -878,21 +992,28 @@ async function managedPublicCatalog() {
   return { works: aggregateCatalogWorks(songs), songs };
 }
 
+function libraryMetadata(index, permissions, media) {
+  return catalogApiSongs(index)
+    .map(item => attachCatalogPermission(item, permissionForFile(permissions, item?._driveFileId)))
+    .filter(Boolean)
+    .map(item => enrichSongMedia(item, media));
+}
+
 async function userLibrary(session) {
   const [media, permissions] = await Promise.all([readArtistMedia(), readPermissions()]);
   if (session.role === 'admin') {
-    const [publicEntries, testEntries] = await Promise.all([
-      entriesFromFolder(PUBLIC_FOLDER_ID, permissions),
-      entriesFromFolder(TEST_FOLDER_ID, permissions)
+    const [publicIndex, testIndex] = await Promise.all([
+      readCatalogIndex(PUBLIC_FOLDER_ID, permissions),
+      readCatalogIndex(TEST_FOLDER_ID, permissions)
     ]);
-    return [...publicEntries, ...testEntries.filter(entry => songWasPublished(entry.song))]
-      .map(entry => enrichSongMedia(attachFileMeta(entry.song, entry.file), media))
+    const publicSongs = libraryMetadata(publicIndex, permissions, media);
+    const publishedUserSongs = libraryMetadata(testIndex, permissions, media).filter(song => songWasPublished(song));
+    return [...publicSongs, ...publishedUserSongs]
       .sort((a, b) => String(b._driveModifiedTime || '').localeCompare(String(a._driveModifiedTime || '')));
   }
-  const testEntries = await entriesFromFolder(TEST_FOLDER_ID, permissions);
-  return testEntries
-    .filter(entry => songOwner(entry.song) === session.username)
-    .map(entry => enrichSongMedia(attachFileMeta(entry.song, entry.file), media))
+  const testIndex = await readCatalogIndex(TEST_FOLDER_ID, permissions);
+  return libraryMetadata(testIndex, permissions, media)
+    .filter(song => songOwner(song) === session.username)
     .sort((a, b) => String(b._driveModifiedTime || '').localeCompare(String(a._driveModifiedTime || '')));
 }
 
@@ -1024,7 +1145,10 @@ export default async function handler(req, res) {
       const fileId = requestUrl.searchParams.get('fileId');
       if (!fileId) return json(res, 400, { error: 'FILE_ID_REQUIRED' });
       const [entry, media] = await Promise.all([readManagedEntry(fileId), readArtistMedia()]);
-      if (!songIsPublic(entry.song)) return json(res, 404, { error: 'PUBLIC_SONG_NOT_AVAILABLE' });
+      const session = currentSession(req);
+      if (!songIsPublic(entry.song) && !canEditSong(session, entry.song)) {
+        return json(res, 404, { error: 'PUBLIC_SONG_NOT_AVAILABLE' });
+      }
       return json(res, 200, {
         song: enrichSongMedia(attachFileMeta(entry.song, entry.file), media)
       });
