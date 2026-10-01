@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
+import {
+  ordinaryBeamGroupKey,
+  resolvedOrdinaryDurationValue,
+  rhythmPointsCanBeam
+} from '../src/editor/rhythm-notation.js';
 
 const renderer = await readFile(new URL('../src/editor/renderer.js', import.meta.url), 'utf8');
 const songBrowser = await readFile(new URL('../src/catalog/song-browser.js', import.meta.url), 'utf8');
@@ -56,12 +61,29 @@ assert.doesNotMatch(editorCss, /radial-gradient/, 'slot dots should not be paint
 assert.match(editorCss, /\.content\.score-view \.v3-slot-dot\{display:none\}/, 'edit affordance dots must remain hidden in score view');
 
 assert.match(renderer, /const groupBeamCount = Number\(group\?\.beamCount\)[\s\S]*beams: Number\.isFinite\(groupBeamCount\)[\s\S]*rhythmBeamCountForValue\(durationValue\)/s, 'explicit triplet/subdivision beam counts must override ordinary duration inference');
-assert.match(renderer, /function inferredOrdinaryDurationValue\(event, orderedEvents\)[\s\S]*denominator === 1 \? 1 : denominator === 2 \? 0\.5 : 0\.25/s, 'ordinary base-grid notes should infer quarter/eighth/sixteenth notation from their rhythmic position');
-assert.match(renderer, /const next = orderedEvents\.find[\s\S]*Math\.min\(impliedDuration,[\s\S]*fractionToNumber\(next\.at\) - atValue/s, 'ordinary inferred note values must shorten when the next onset arrives sooner');
-assert.match(renderer, /Math\.abs\(storedDuration - fractionToNumber\(BASE_GRID_STEP\)\) > 1e-9\) return storedDuration/s, 'non-default explicit durations must stay authoritative');
-assert.match(renderer, /function rhythmDotCountForValue[\s\S]*base \* 1\.5[\s\S]*v3-rhythm-dot/s, 'dotted binary note values should render an augmentation dot');
+const overlapMeasure = { timeSignature: { numerator: 4, denominator: 4 } };
+const overlapEvents = [
+  { at: [2, 1], duration: [1, 1] },
+  { at: [5, 2], duration: [1, 2] }
+];
+assert.equal(resolvedOrdinaryDurationValue(overlapEvents[0], overlapEvents, overlapMeasure), 0.5, 'an ordinary single-voice note must stop at the next onset even when its stored duration is longer');
+assert.equal(resolvedOrdinaryDurationValue({ at: [0, 1], duration: [1, 4] }, [{ at: [0, 1], duration: [1, 4] }], overlapMeasure), 1, 'default grid duration should still infer a quarter note on the downbeat when no earlier onset interrupts it');
+assert.equal(ordinaryBeamGroupKey(overlapMeasure, 2, 1), ordinaryBeamGroupKey(overlapMeasure, 2.5, 1), 'eighth notes inside the same 4/4 beat should share the primary beam group');
+assert.notEqual(ordinaryBeamGroupKey(overlapMeasure, 2.5, 1), ordinaryBeamGroupKey(overlapMeasure, 3, 1), '4/4 primary beams should break at the next beat');
+const sixEight = { timeSignature: { numerator: 6, denominator: 8 } };
+assert.equal(ordinaryBeamGroupKey(sixEight, 0, 1), ordinaryBeamGroupKey(sixEight, 1, 1), '6/8 should group the first three eighth notes as one dotted-quarter beat');
+assert.notEqual(ordinaryBeamGroupKey(sixEight, 1, 1), ordinaryBeamGroupKey(sixEight, 1.5, 1), '6/8 should start a new beam group at the second dotted-quarter beat');
+const threeFour = { timeSignature: { numerator: 3, denominator: 4 } };
+assert.equal(ordinaryBeamGroupKey(threeFour, 0, 1), ordinaryBeamGroupKey(threeFour, 2.5, 1), '3/4 primary eighth-note beams may span the bar');
+assert.notEqual(ordinaryBeamGroupKey(threeFour, 0, 2), ordinaryBeamGroupKey(threeFour, 1, 2), '3/4 secondary beams should still reveal quarter-note beat structure');
+const beamedLeft = { at: 2, durationValue: 0.5, beams: 1, group: null };
+const beamedRight = { at: 2.5, durationValue: 0.5, beams: 1, group: null };
+assert.equal(rhythmPointsCanBeam(beamedLeft, beamedRight, overlapMeasure, 1), true, 'contiguous eighths in one beat should beam together');
+assert.equal(rhythmPointsCanBeam(beamedLeft, { ...beamedRight, at: 2.75 }, overlapMeasure, 1), false, 'implicit rhythmic gaps should not be bridged by a beam');
+assert.match(renderer, /v3-rhythm-hook v3-rhythm-hook-\$\{direction\}/, 'mixed eighth/sixteenth groups should use directional secondary beam hooks');
 assert.match(editorCss, /--v3-rhythm-stroke:2px;--v3-rhythm-beam-thickness:5px/, 'beams should be visually heavier than stems');
-assert.match(editorCss, /\.v3-rhythm-flag\{width:10px;transform:none\}/, 'secondary beamlets should remain horizontal rather than looking like detached diagonal tails');
+assert.match(editorCss, /\.v3-rhythm-flag\{[^}]*rotate\(-38deg\)/, 'isolated short notes should use a real angled flag instead of a horizontal beamlet');
+assert.match(editorCss, /\.v3-rhythm-hook-backward\{transform:translateX\(-100%\)\}/, 'secondary beam hooks should be able to point backward toward the primary beam group');
 assert.match(renderer, /const fullyBeamed = [\s\S]*groupPoints\.length === slots\.length[\s\S]*v3-rhythm-tuplet-number v3-rhythm-tuplet-number-only/s, 'fully beamed tuplets should show only the centered numeral');
 assert.match(editorCss, /\.v3-rhythm-tuplet-number-only\{[^}]*top:32px/s, 'beamed tuplet numerals should sit outside the downward stems and beam');
 assert.match(editorCss, /\.v3-rhythm-tuplet-bracket\{[^}]*top:32px/s, 'unbeamed or incomplete tuplets should place their split bracket outside the downward stems and beam');

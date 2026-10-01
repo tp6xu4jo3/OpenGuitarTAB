@@ -23,6 +23,12 @@ import {
   STRING_COUNT
 } from './model.js';
 import { editableTimesForMeasure } from './rhythm-grid.js';
+import {
+  resolvedOrdinaryDurationValue,
+  rhythmBeamCountForValue,
+  rhythmDotCountForValue,
+  rhythmPointsCanBeam
+} from './rhythm-notation.js';
 import { isPreviewActive, isScoreViewActive, scoreDensityMode } from './view-state.js';
 
 const EDITOR_RAIL_WIDTH = 102;
@@ -79,42 +85,6 @@ function layoutAvailableWidth(root) {
   const measured = candidates.length ? Math.min(...candidates) : 0;
   const rail = isScoreViewActive() ? 0 : EDITOR_RAIL_WIDTH;
   return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + rail) - rail);
-}
-
-function rhythmBeamCountForValue(value) {
-  if (!Number.isFinite(value) || value >= 1) return 0;
-  if (value >= 0.5) return 1;
-  if (value >= 0.25) return 2;
-  return 3;
-}
-
-function rhythmBeamCount(duration) {
-  return rhythmBeamCountForValue(fractionToNumber(duration || BASE_GRID_STEP));
-}
-
-function inferredOrdinaryDurationValue(event, orderedEvents) {
-  const storedDuration = fractionToNumber(event?.duration || BASE_GRID_STEP);
-  if (Math.abs(storedDuration - fractionToNumber(BASE_GRID_STEP)) > 1e-9) return storedDuration;
-
-  const at = normalizeFraction(event?.at || [0, 1]);
-  const denominator = Math.abs(Number(at[1])) || 1;
-  let impliedDuration = denominator === 1 ? 1 : denominator === 2 ? 0.5 : 0.25;
-  const atValue = fractionToNumber(at);
-  const next = orderedEvents.find(candidate => fractionToNumber(candidate.at) > atValue + 1e-9);
-  if (next) impliedDuration = Math.min(impliedDuration, Math.max(0, fractionToNumber(next.at) - atValue));
-  return impliedDuration;
-}
-
-function inferredOrdinaryBeamCount(event, orderedEvents) {
-  return rhythmBeamCountForValue(inferredOrdinaryDurationValue(event, orderedEvents));
-}
-
-function rhythmDotCountForValue(value) {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  for (const base of [2, 1, 0.5, 0.25, 0.125]) {
-    if (Math.abs(value - base * 1.5) <= 1e-9) return 1;
-  }
-  return 0;
 }
 
 function rhythmStemTopForEvent(event, stringCount = STRING_COUNT) {
@@ -428,7 +398,7 @@ export class SparseScoreRenderer {
       const visualTime = visualTimeByKey.get(fractionKey(event.at));
       const group = explicitRhythmGroup(measure, event);
       const groupBeamCount = Number(group?.beamCount);
-      const durationValue = inferredOrdinaryDurationValue(event, orderedEvents);
+      const durationValue = resolvedOrdinaryDurationValue(event, orderedEvents, measure);
       return {
         event,
         x: geometry.percentForKey(fractionKey(event.at))
@@ -438,16 +408,13 @@ export class SparseScoreRenderer {
           ? Math.max(0, Math.trunc(groupBeamCount))
           : rhythmBeamCountForValue(durationValue),
         dots: group?.type === 'tuplet' ? 0 : rhythmDotCountForValue(durationValue),
+        durationValue,
         group,
         stemTop: rhythmStemTopForEvent(event, this.stringCount)
       };
     });
 
-    const groups = new Map();
     points.forEach(point => {
-      const key = point.group?.id ? `group:${point.group.id}` : `beat:${Math.floor(point.at + 1e-9)}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(point);
       const stem = div('v3-rhythm-stem');
       stem.style.left = `${point.x}%`;
       stem.style.top = `${point.stemTop}px`;
@@ -460,27 +427,41 @@ export class SparseScoreRenderer {
       }
     });
 
-    groups.forEach(groupPoints => {
-      groupPoints.sort((left, right) => left.at - right.at);
-      const maxBeams = Math.max(0, ...groupPoints.map(point => point.beams));
-      for (let level = 1; level <= maxBeams; level++) {
-        groupPoints.forEach((point, index) => {
-          if (point.beams < level) return;
-          const next = groupPoints[index + 1];
-          const canConnect = Boolean(next && next.beams >= level);
-          if (canConnect) {
-            const beam = div(`v3-rhythm-beam v3-rhythm-beam-${level}`);
-            beam.style.left = `${point.x}%`;
-            beam.style.width = `${Math.max(0.5, next.x - point.x)}%`;
-            layer.appendChild(beam);
-            return;
-          }
-          const previous = groupPoints[index - 1];
-          if (previous && previous.beams >= level) return;
+    for (let index = 0; index + 1 < points.length; index += 1) {
+      const point = points[index];
+      const next = points[index + 1];
+      const maxLevel = Math.min(point.beams, next.beams);
+      for (let level = 1; level <= maxLevel; level += 1) {
+        if (!rhythmPointsCanBeam(point, next, measure, level)) continue;
+        const beam = div(`v3-rhythm-beam v3-rhythm-beam-${level}`);
+        beam.style.left = `${point.x}%`;
+        beam.style.width = `${Math.max(0.5, next.x - point.x)}%`;
+        layer.appendChild(beam);
+      }
+    }
+
+    points.forEach((point, index) => {
+      if (point.beams <= 0) return;
+      const previous = points[index - 1];
+      const next = points[index + 1];
+      const primaryPrevious = rhythmPointsCanBeam(previous, point, measure, 1);
+      const primaryNext = rhythmPointsCanBeam(point, next, measure, 1);
+      if (!primaryPrevious && !primaryNext) {
+        for (let level = 1; level <= point.beams; level += 1) {
           const flag = div(`v3-rhythm-flag v3-rhythm-beam-${level}`);
           flag.style.left = `${point.x}%`;
           layer.appendChild(flag);
-        });
+        }
+        return;
+      }
+      for (let level = 2; level <= point.beams; level += 1) {
+        const secondaryPrevious = rhythmPointsCanBeam(previous, point, measure, level);
+        const secondaryNext = rhythmPointsCanBeam(point, next, measure, level);
+        if (secondaryPrevious || secondaryNext) continue;
+        const direction = primaryNext ? 'forward' : 'backward';
+        const hook = div(`v3-rhythm-hook v3-rhythm-hook-${direction} v3-rhythm-beam-${level}`);
+        hook.style.left = `${point.x}%`;
+        layer.appendChild(hook);
       }
     });
 
