@@ -921,16 +921,39 @@ async function readCatalogIndex(folderId, permissionsInput = null) {
   return rebuildCatalogIndex(folderId, files, permissionsInput, file);
 }
 
-async function readArtistMedia() {
+export function ensureArtistProfileData(raw, artistName) {
+  const media = normalizeArtistMedia(raw);
+  const artist = String(artistName || '').trim();
+  if (!artist || Object.hasOwn(media.artists, artist)) return { media, changed: false };
+  media.artists[artist] = { image: '', albums: {}, songs: {} };
+  return { media, changed: true };
+}
+
+async function readArtistMediaState() {
   const file = await findNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME);
-  if (!file) return normalizeArtistMedia({ version: 2, artists: {} });
-  return normalizeArtistMedia(await readDriveJson(file.id, 'INVALID_ARTIST_MEDIA'));
+  const media = file
+    ? normalizeArtistMedia(await readDriveJson(file.id, 'INVALID_ARTIST_MEDIA'))
+    : normalizeArtistMedia({ version: 2, artists: {} });
+  return { file, media };
+}
+
+async function readArtistMedia() {
+  return (await readArtistMediaState()).media;
+}
+
+async function ensureArtistProfile(artistName) {
+  const state = await readArtistMediaState();
+  const ensured = ensureArtistProfileData(state.media, artistName);
+  if (!ensured.changed) return ensured.media;
+  await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, ensured.media, state.file);
+  return ensured.media;
 }
 
 async function createSongFile(folderId, song, permission) {
   const persisted = cleanSongForWrite(song);
   const normalizedPermission = normalizePermissionRecord(permission);
   if (!normalizedPermission) throw new Error('INVALID_PERMISSION_RECORD');
+  if (persisted.artist.trim()) await ensureArtistProfile(persisted.artist);
 
   const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
   const metadata = JSON.stringify({ name: songFileName(persisted), parents: [folderId] });
@@ -958,6 +981,7 @@ async function createSongFile(folderId, song, permission) {
 
 async function updateSongFile(fileId, song, permission) {
   const persisted = cleanSongForWrite(song);
+  if (persisted.artist.trim()) await ensureArtistProfile(persisted.artist);
   const file = await updateNamedJsonFile(fileId, songFileName(persisted), persisted);
   return attachFileMeta(authoritativeSong(persisted, file, permission), file);
 }
