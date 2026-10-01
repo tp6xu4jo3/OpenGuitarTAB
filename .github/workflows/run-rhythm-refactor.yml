@@ -15,7 +15,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply canonical rhythm rewrite
-        run: python .github/scripts/rhythm_refactor.py
+        run: |
+          python .github/scripts/rhythm_refactor.py
+          python .github/scripts/rhythm_test_adjust.py
       - name: Validate refactor
         run: |
           npm test
@@ -24,9 +26,9 @@ jobs:
           npm run build
       - name: Commit canonical changes
         run: |
-          git rm .github/workflows/apply-rhythm-refactor.yml .github/workflows/run-rhythm-refactor.yml .github/scripts/rhythm_refactor.py
+          git rm .github/workflows/apply-rhythm-refactor.yml .github/workflows/run-rhythm-refactor.yml .github/scripts/rhythm_refactor.py .github/scripts/rhythm_test_adjust.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/editor/renderer.js src/editor/rhythm-notation.js styles/editor-v3.css tests/editor-rhythm-polish.test.mjs
+          git add src/editor/renderer.js src/editor/rhythm-notation.js styles/editor-v3.css tests/editor-rhythm-polish.test.mjs tests/ui-layout-regression.test.mjs
           git commit -m "refactor: make tab rhythm beams meter aware"
           git push origin HEAD:${GITHUB_REF_NAME}
