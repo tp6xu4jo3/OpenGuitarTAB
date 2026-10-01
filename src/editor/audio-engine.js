@@ -10,7 +10,7 @@ const SAME_STRING_DAMP_LEAD_SECONDS = 0.025;
 const SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0.002;
 const MANUAL_RELEASE_SECONDS = 0.018;
 const MIN_SLIDE_SECONDS = 0.015;
-const SLIDE_MOTION_SECONDS = 0.12;
+const SLIDE_MOTION_SECONDS = 0.25;
 const SLIDE_TARGET_HOLD_SECONDS = 0.045;
 const SLIDE_TRANSITION_LEVEL = 0.9;
 export const MASTER_OUTPUT_DB = -6;
@@ -79,8 +79,7 @@ export function frettedSlideSteps(fromFret, toFret, slideSeconds) {
     return {
       fret,
       playbackRate: Math.pow(2, (fret - start) / 12),
-      atSeconds: sourceHoldSeconds + stepDuration * (index + 1),
-      transitionSeconds: Math.min(stepDuration, Math.max(0.0005, stepDuration * 0.78))
+      atSeconds: sourceHoldSeconds + stepDuration * (index + 1)
     };
   });
 }
@@ -130,17 +129,10 @@ export class GuitarAudioEngine {
     const basePlaybackRate = plan.playbackRate;
     source.buffer = this.samples.buffer;
     source.playbackRate.setValueAtTime(basePlaybackRate, startTime);
-    let previousRate = basePlaybackRate;
-    let previousStepTime = startTime;
     for (const step of slideSteps) {
-      const stepEnd = startTime + Math.max(0, Number(step.atSeconds) || 0);
-      const transitionSeconds = Math.max(0, Number(step.transitionSeconds) || 0);
-      const rampStart = Math.max(previousStepTime, stepEnd - transitionSeconds);
+      const stepTime = startTime + Math.max(0, Number(step.atSeconds) || 0);
       const nextRate = basePlaybackRate * step.playbackRate;
-      source.playbackRate.setValueAtTime(previousRate, rampStart);
-      source.playbackRate.linearRampToValueAtTime(nextRate, stepEnd);
-      previousRate = nextRate;
-      previousStepTime = stepEnd;
+      source.playbackRate.setValueAtTime(nextRate, stepTime);
     }
     source.connect(destination);
     source.start(
@@ -218,7 +210,7 @@ export class GuitarAudioEngine {
     if (slideSteps.length) {
       const firstStep = slideSteps[0];
       const lastStep = slideSteps.at(-1);
-      const slideStart = Math.max(0, firstStep.atSeconds - firstStep.transitionSeconds);
+      const slideStart = Math.max(0, firstStep.atSeconds);
       const slideEnd = Math.max(slideStart, lastStep.atSeconds);
       const slideSpan = Math.max(0.001, slideEnd - slideStart);
       const dipEnd = Math.min(slideEnd, slideStart + Math.min(0.012, slideSpan * 0.18));
