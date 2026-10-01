@@ -73,9 +73,37 @@ function catalogSong(file, id, name) {
     source: '',
     playStyle: 'fingerstyle',
     difficulty: 2,
-    driveFileId: file.id,
-    driveFileName: file.name,
-    driveModifiedTime: file.modifiedTime
+    driveFileId: file.id
+  };
+}
+
+function catalogIndex(files, songs) {
+  return {
+    version: 3,
+    manifest: files.map(file => ({
+      driveFileId: file.id,
+      fileName: file.name,
+      modifiedTime: file.modifiedTime
+    })),
+    omittedDriveFileIds: [],
+    works: songs.map(item => ({
+      workId: item.workId,
+      name: item.name,
+      artist: item.artist,
+      album: item.album
+    })),
+    arrangements: songs.map(item => ({
+      songId: item.songId,
+      workId: item.workId,
+      arrangementId: item.arrangementId,
+      source: item.source,
+      playStyle: item.playStyle,
+      difficulty: item.difficulty,
+      tempo: item.tempo,
+      capo: item.capo,
+      beatsPerMeasure: item.beatsPerMeasure,
+      driveFileId: item.driveFileId
+    }))
   };
 }
 
@@ -111,6 +139,12 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
         return mockResponse({ files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }] });
       }
       if (isPermissionRecordsQuery) {
+        if (q.includes("name = 'permission-song-good.json'")) {
+          return mockResponse({ files: [{ id: 'permission-good', name: 'permission-song-good.json', modifiedTime: '2026-09-30T00:00:03.000Z' }] });
+        }
+        if (q.includes("name = 'permission-song-second.json'")) {
+          return mockResponse({ files: [{ id: 'permission-second', name: 'permission-song-second.json', modifiedTime: '2026-09-30T00:00:04.000Z' }] });
+        }
         return mockResponse({ files: [
           { id: 'permission-good', name: 'permission-song-good.json', modifiedTime: '2026-09-30T00:00:03.000Z' },
           { id: 'permission-second', name: 'permission-song-second.json', modifiedTime: '2026-09-30T00:00:04.000Z' }
@@ -129,7 +163,7 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
       return mockResponse(permissionValue('song-second', secondPublic));
     }
     if (url.pathname === '/drive/v3/files/test-index' && url.searchParams.get('alt') === 'media') {
-      return mockResponse({ version: 2, manifest: [], omittedDriveFileIds: [], songs: [] });
+      return mockResponse({ version: 3, manifest: [], omittedDriveFileIds: [], works: [], arrangements: [] });
     }
     if (url.pathname === '/drive/v3/files/public-index' && url.searchParams.get('alt') === 'media') return mockResponse(publicIndex);
 
@@ -216,18 +250,13 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
 {
   const staleSecondFile = { ...publicFiles[1], modifiedTime: '2026-09-30T00:00:01.500Z' };
   const metrics = installDriveMock({
-    publicIndex: {
-      version: 2,
-      manifest: [
-        { driveFileId: publicFiles[0].id, fileName: publicFiles[0].name, modifiedTime: publicFiles[0].modifiedTime },
-        { driveFileId: staleSecondFile.id, fileName: staleSecondFile.name, modifiedTime: staleSecondFile.modifiedTime }
-      ],
-      omittedDriveFileIds: [],
-      songs: [
+    publicIndex: catalogIndex(
+      [publicFiles[0], staleSecondFile],
+      [
         catalogSong(publicFiles[0], 'song-good', 'Good Song'),
         catalogSong(staleSecondFile, 'song-second', 'Stale Song')
       ]
-    }
+    )
   });
   const catalog = await invokeCatalog();
   assert.equal(catalog.status, 200);

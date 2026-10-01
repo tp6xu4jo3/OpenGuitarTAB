@@ -36,23 +36,31 @@ assert.equal(songFileName({ name: 'A/B\\C', arrangementId: 'arr 123' }), 'A-B-C_
 
 const driveFiles = [
   { id: 'file-a', name: '歌曲A__arr-a.json', modifiedTime: '2026-09-30T01:00:00.000Z' },
-  { id: 'file-b', name: '歌曲B__arr-b.json', modifiedTime: '2026-09-30T02:00:00.000Z' }
+  { id: 'file-b', name: '歌曲A__arr-b.json', modifiedTime: '2026-09-30T02:00:00.000Z' }
 ];
 const index = normalizeCatalogIndex({
-  version: 2,
+  version: 3,
   manifest: driveFiles.map(file => ({
     driveFileId: file.id,
     fileName: file.name,
     modifiedTime: file.modifiedTime
   })),
   omittedDriveFileIds: [],
-  songs: driveFiles.map((file, indexPosition) => ({
-    songId: `song-${indexPosition}`,
-    workId: `work-${indexPosition}`,
-    arrangementId: `arr-${indexPosition}`,
-    name: `Song ${indexPosition}`,
+  works: [{
+    workId: 'work-shared',
+    name: 'Song A',
     artist: 'Artist',
-    album: '',
+    album: 'Album'
+  }],
+  arrangements: driveFiles.map((file, indexPosition) => ({
+    songId: `song-${indexPosition}`,
+    workId: 'work-shared',
+    arrangementId: `arr-${indexPosition}`,
+    name: 'must-not-persist-here',
+    artist: 'must-not-persist-here',
+    album: 'must-not-persist-here',
+    cover: 'must-not-persist-here',
+    artistImage: 'must-not-persist-here',
     source: '',
     playStyle: 'fingerstyle',
     difficulty: 2,
@@ -67,14 +75,28 @@ const index = normalizeCatalogIndex({
   }))
 });
 assert.ok(index);
-assert.equal(index.version, 2);
-assert.equal(Object.hasOwn(index, 'files'), false, 'v2 index must use manifest rather than an ambiguous files array');
-assert.equal(Object.hasOwn(index.songs[0], 'id'), false, 'v2 song cache must use songId rather than a generic id');
-assert.equal(Object.hasOwn(index.songs[0], '_driveFileId'), false, 'persisted cache fields must use explicit names rather than private-style aliases');
-assert.equal(Object.hasOwn(index.songs[0], 'driveFileName'), false, 'fileName belongs only to manifest and must not be duplicated in songs');
-assert.equal(Object.hasOwn(index.songs[0], 'driveModifiedTime'), false, 'modifiedTime belongs only to manifest and must not be duplicated in songs');
-assert.equal(Object.hasOwn(index.songs[0], 'owner'), false, 'index cache must not persist authorization');
-assert.equal(index.songs[0].driveFileId, 'file-a');
+assert.equal(index.version, 3);
+assert.equal(index.works.length, 1, 'same-work arrangements must share one persisted work metadata record');
+assert.deepEqual(index.works[0], { workId: 'work-shared', name: 'Song A', artist: 'Artist', album: 'Album' });
+assert.equal(index.arrangements.length, 2);
+for (const arrangement of index.arrangements) {
+  assert.equal(Object.hasOwn(arrangement, 'name'), false, 'arrangements must not duplicate work title');
+  assert.equal(Object.hasOwn(arrangement, 'artist'), false, 'arrangements must not duplicate work artist');
+  assert.equal(Object.hasOwn(arrangement, 'album'), false, 'arrangements must not duplicate work album');
+  assert.equal(Object.hasOwn(arrangement, 'cover'), false, 'media must stay in artists.json rather than the catalog index');
+  assert.equal(Object.hasOwn(arrangement, 'artistImage'), false, 'artist media must stay in artists.json rather than the catalog index');
+  assert.equal(Object.hasOwn(arrangement, 'driveFileName'), false, 'fileName belongs only to manifest');
+  assert.equal(Object.hasOwn(arrangement, 'driveModifiedTime'), false, 'modifiedTime belongs only to manifest');
+  assert.equal(Object.hasOwn(arrangement, 'owner'), false, 'index cache must not persist authorization');
+}
+assert.equal(index.songs.length, 2, 'runtime may expose joined transient metadata for existing catalog consumers');
+assert.equal(index.songs[0].name, 'Song A');
+assert.equal(index.songs[0].artist, 'Artist');
+assert.equal(index.songs[0].album, 'Album');
+const persistedIndex = JSON.parse(JSON.stringify(index));
+assert.equal(Object.hasOwn(persistedIndex, 'songs'), false, 'joined song metadata must be transient and never duplicated in index.json');
+assert.equal(persistedIndex.works.length, 1);
+assert.equal(persistedIndex.arrangements.length, 2);
 assert.equal(catalogIndexMatchesFiles(index, driveFiles), true);
 
 const changedFiles = driveFiles.map(file => file.id === 'file-a'
@@ -97,14 +119,26 @@ const addedPlan = catalogIndexRefreshPlan(
 assert.deepEqual(addedPlan.filesToRead.map(file => file.id), ['file-c']);
 assert.equal(catalogIndexMatchesFiles(index, driveFiles.slice(0, 1)), false);
 assert.deepEqual(catalogIndexRefreshPlan(index, driveFiles.slice(0, 1)).filesToRead, []);
-assert.equal(normalizeCatalogIndex({ version: 1, files: driveFiles, songs: [] }), null, 'legacy index must rebuild directly into v2');
+assert.equal(normalizeCatalogIndex({ version: 2, manifest: [], songs: [] }), null, 'legacy v2 index must rebuild directly into deduplicated v3');
 
 {
   const omittedIndex = normalizeCatalogIndex({
-    version: 2,
+    version: 3,
     manifest: driveFiles.map(file => ({ driveFileId: file.id, fileName: file.name, modifiedTime: file.modifiedTime })),
     omittedDriveFileIds: ['file-b'],
-    songs: [index.songs.find(song => song.driveFileId === 'file-a')]
+    works: [{ workId: 'work-a', name: 'Song A', artist: 'Artist', album: '' }],
+    arrangements: [{
+      songId: 'song-a',
+      workId: 'work-a',
+      arrangementId: 'arr-a',
+      source: '',
+      playStyle: 'fingerstyle',
+      difficulty: 2,
+      tempo: 120,
+      capo: 0,
+      beatsPerMeasure: 4,
+      driveFileId: 'file-a'
+    }]
   });
   assert.equal(catalogIndexMatchesFiles(omittedIndex, driveFiles), true);
   const plan = catalogIndexRefreshPlan(omittedIndex, driveFiles);
@@ -119,9 +153,19 @@ assert.equal(normalizeCatalogIndex({ version: 1, files: driveFiles, songs: [] })
   assert.doesNotMatch(source, /writePermissions\(/, 'runtime must never perform shared permissions read-modify-write');
   assert.doesNotMatch(source, /migrateLegacyPermissions|materializeLegacyPermissions|normalizeLegacyPermission/, 'production runtime must not carry a legacy permission migration path');
 
-  const catalogIndexSongBlock = source.slice(source.indexOf('function catalogIndexSong('), source.indexOf('function catalogApiMeta('));
-  assert.doesNotMatch(catalogIndexSongBlock, /driveFileName|driveModifiedTime/, 'song cache must not duplicate manifest file metadata');
-  assert.match(source, /function catalogApiSongs\([\s\S]*index\?\.manifest[\s\S]*catalogApiMeta/, 'catalog API metadata must join file metadata from manifest by driveFileId');
+  const arrangementPersistence = source.slice(source.indexOf('const arrangements = normalizedSongs'), source.indexOf('const index = {', source.indexOf('const arrangements = normalizedSongs')));
+  assert.doesNotMatch(arrangementPersistence, /name:|artist:|album:|cover:|artistImage:/, 'persisted arrangement cache must contain only arrangement-specific metadata');
+  assert.match(source, /version: 3[\s\S]*works,[\s\S]*arrangements/s, 'catalog index v3 must persist shared work metadata separately from arrangements');
+  assert.match(source, /Object\.defineProperty\(index, 'songs'[\s\S]*enumerable: false/s, 'flattened catalog metadata may exist only as a non-persisted runtime projection');
+  assert.match(source, /function catalogApiSongs\([\s\S]*index\?\.manifest[\s\S]*index\?\.songs[\s\S]*catalogApiMeta/s, 'catalog API metadata must join work metadata and manifest metadata at runtime');
+
+  const libraryBlock = source.slice(source.indexOf('async function userLibrary('), source.indexOf('function writeMeta('));
+  assert.match(libraryBlock, /readCatalogIndex\(/, 'personal library listing must use catalog metadata indexes');
+  assert.doesNotMatch(libraryBlock, /entriesFromFiles|readDriveJson/, 'personal library listing must not download every full score JSON');
+
+  const managedEntryBlock = source.slice(source.indexOf('async function readManagedEntry('), source.indexOf('async function managedPublicCatalog('));
+  assert.match(managedEntryBlock, /readPermissionRecord\(fileId\)/, 'single-score reads should fetch only that score permission record');
+  assert.doesNotMatch(managedEntryBlock, /readPermissions\(\)/, 'single-score reads must not scan the entire permission folder');
 
   const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
   assert.match(deleteBlock, /method:\s*'DELETE'[\s\S]*deletePermissionRecord\(fileId\)\.catch/s);

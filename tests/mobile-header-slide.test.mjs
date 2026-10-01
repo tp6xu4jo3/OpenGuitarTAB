@@ -28,10 +28,15 @@ assert.match(
 );
 assert.match(
   audioSource,
-  /for \(const step of slideSteps\)[\s\S]*setValueAtTime\(previousRate, rampStart\)[\s\S]*linearRampToValueAtTime\(nextRate, stepEnd\)/s,
-  'slide playback must glide separately to every intermediate fret rather than jump or draw one straight ramp to the destination'
+  /for \(const step of slideSteps\)[\s\S]*const stepTime = startTime \+[^;]+;[\s\S]*source\.playbackRate\.setValueAtTime\(nextRate, stepTime\)/s,
+  'slide playback must switch to each intermediate fret as a discrete semitone step'
 );
-assert.match(audioSource, /SLIDE_MOTION_SECONDS = 0\.12/);
+assert.doesNotMatch(
+  audioSource,
+  /source\.playbackRate\.linearRampToValueAtTime/,
+  'fret-stepped slide pitch must not interpolate continuously between fret pitches'
+);
+assert.match(audioSource, /SLIDE_MOTION_SECONDS = 0\.25/);
 assert.match(audioSource, /SLIDE_TARGET_HOLD_SECONDS = 0\.045/);
 assert.match(audioSource, /SLIDE_TRANSITION_LEVEL = 0\.9/);
 assert.doesNotMatch(audioSource, /SLIDE_ENDPOINT_BOOST/,'slide endpoints must stay at normal single-note loudness');

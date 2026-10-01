@@ -12,6 +12,7 @@ let previewLoadGeneration = 0;
 let libraryLoadedUsername = '';
 let libraryLoadRequest = null;
 let libraryLoadRequestUsername = '';
+const librarySongLoadRequests = new Map();
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -371,7 +372,7 @@ async function loadUserLibrary() {
   try {
     const result = await dataSource.library();
     if (generation !== libraryLoadGeneration || String(window.authState?.user?.username || '') !== username) return;
-    songs = (Array.isArray(result.songs) ? result.songs : []).map(hydrateSong);
+    songs = (Array.isArray(result.songs) ? result.songs : []).map(song => ({ ...song }));
     libraryLoadedUsername = username;
     libraryLoadError = '';
     if (!songs.some(song => song.id === currentSongId)) currentSongId = songs[0]?.id || null;
@@ -410,6 +411,22 @@ function ensureUserLibraryLoaded() {
   });
   libraryLoadRequest = request;
   libraryLoadRequestUsername = username;
+  return request;
+}
+
+function ensureLibrarySongLoaded(id) {
+  const song = songs.find(item => String(item?.id || '') === String(id || ''));
+  if (!song) return Promise.resolve(null);
+  if (song.document) return Promise.resolve(song);
+  const fileId = String(song._driveFileId || '');
+  if (!fileId) return Promise.resolve(null);
+  if (librarySongLoadRequests.has(fileId)) return librarySongLoadRequests.get(fileId);
+  const request = dataSource.loadSong(fileId)
+    .then(result => replaceSongRecord(hydrateSong(result.song)))
+    .finally(() => {
+      if (librarySongLoadRequests.get(fileId) === request) librarySongLoadRequests.delete(fileId);
+    });
+  librarySongLoadRequests.set(fileId, request);
   return request;
 }
 
@@ -452,18 +469,28 @@ async function openCatalogPreview(id) {
   }
 }
 
-function openLocalEditor(id) {
+async function openLocalEditor(id) {
   if (!window.authState?.user) { openLoginModal(`#/editor/${encodeURIComponent(id)}`); return; }
-  previewSong = null;
-  saveSongButton.hidden = false;
-  downloadSongButton.hidden = dataSource.isLocalTest;
-  addPreviewSongButton.hidden = true;
-  setPreviewActive(false);
-  setScoreViewEnabled(false);
-  showPage('editor');
-  loadSong(id);
-  const song = currentSong();
-  editorTitle.textContent = song?.name || '吉他 TAB 譜製作器';
+  const requestedHash = location.hash;
+  try {
+    const loaded = await ensureLibrarySongLoaded(id);
+    if (location.hash !== requestedHash) return;
+    if (!loaded) { setRoute('#/catalog'); return; }
+    previewSong = null;
+    saveSongButton.hidden = false;
+    downloadSongButton.hidden = dataSource.isLocalTest;
+    addPreviewSongButton.hidden = true;
+    setPreviewActive(false);
+    setScoreViewEnabled(false);
+    showPage('editor');
+    loadSong(loaded.id);
+    editorTitle.textContent = loaded.name || '吉他 TAB 譜製作器';
+  } catch (error) {
+    if (location.hash !== requestedHash) return;
+    console.error(error);
+    showToast('曲譜載入失敗');
+    setRoute('#/library');
+  }
 }
 
 function handleRoute() {
@@ -501,11 +528,11 @@ function handleRoute() {
       openLoginModal(`#/editor/${encodeURIComponent(id)}`);
       return;
     }
-    if (songs.some(song => song.id === id)) { openLocalEditor(id); return; }
+    if (songs.some(song => song.id === id)) { void openLocalEditor(id); return; }
     const requestedHash = location.hash;
     void ensureUserLibraryLoaded().then(() => {
       if (location.hash !== requestedHash) return;
-      if (songs.some(song => song.id === id)) openLocalEditor(id);
+      if (songs.some(song => song.id === id)) void openLocalEditor(id);
       else setRoute('#/catalog');
     });
     return;
@@ -551,6 +578,7 @@ window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
   const pendingRoute = event.detail?.pendingRoute;
   libraryLoadedUsername = '';
+  librarySongLoadRequests.clear();
   if (!event.detail?.user) {
     libraryLoadGeneration += 1;
     previewLoadGeneration += 1;
@@ -573,6 +601,7 @@ window.addEventListener('opentab:test-data-reset', async () => {
   previewSong = null;
   setPreviewActive(false);
   libraryLoadedUsername = '';
+  librarySongLoadRequests.clear();
   await Promise.all([loadCatalog(), loadUserLibrary()]);
   showToast('已重設為repo測試資料');
   handleRoute();
