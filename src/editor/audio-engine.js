@@ -9,8 +9,10 @@ const STRING_TUNING = [329.6275569128699, 246.94165062806206, 195.99771799008746
 const SAME_STRING_DAMP_LEAD_SECONDS = 0.025;
 const SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0.002;
 const MANUAL_RELEASE_SECONDS = 0.018;
-const SLIDE_TRANSITION_LEVEL = 0.62;
-const SLIDE_ENDPOINT_BOOST = 1.12;
+const MIN_SLIDE_SECONDS = 0.015;
+const SLIDE_MOTION_SECONDS = 0.12;
+const SLIDE_TARGET_HOLD_SECONDS = 0.045;
+const SLIDE_TRANSITION_LEVEL = 0.9;
 export const MASTER_OUTPUT_DB = -6;
 export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
 let installedEngine = null;
@@ -54,7 +56,7 @@ export function pitchPlanForTab(stringIndex, fret, { capo = 0, slideToFret = nul
     targetFret,
     frequency,
     targetFrequency: sliding ? frequencyForTab(stringIndex, targetFret, capo) : frequency,
-    glideSeconds: sliding ? clamp(Number(slideSeconds) || 0.25, 0.06, 4) : 0,
+    glideSeconds: sliding ? clamp(Number(slideSeconds) || 0.25, MIN_SLIDE_SECONDS, 4) : 0,
     sliding
   };
 }
@@ -67,17 +69,18 @@ export function frettedSlideSteps(fromFret, toFret, slideSeconds) {
   if (target === start) return [];
   const direction = Math.sign(target - start);
   const count = Math.abs(target - start);
-  const duration = clamp(Number(slideSeconds) || 0.25, 0.06, 4);
-  const motionDuration = Math.min(duration, clamp(0.04 + count * 0.018, 0.07, 0.18));
-  const holdDuration = Math.max(0, duration - motionDuration);
+  const duration = clamp(Number(slideSeconds) || 0.25, MIN_SLIDE_SECONDS, 4);
+  const targetHoldSeconds = Math.min(SLIDE_TARGET_HOLD_SECONDS, duration * 0.25);
+  const motionDuration = Math.min(SLIDE_MOTION_SECONDS, Math.max(0.001, duration - targetHoldSeconds));
+  const sourceHoldSeconds = Math.max(0, duration - targetHoldSeconds - motionDuration);
   const stepDuration = motionDuration / count;
   return Array.from({ length: count }, (_, index) => {
     const fret = start + direction * (index + 1);
     return {
       fret,
       playbackRate: Math.pow(2, (fret - start) / 12),
-      atSeconds: holdDuration + stepDuration * (index + 1),
-      transitionSeconds: Math.min(0.026, Math.max(0.006, stepDuration * 0.35))
+      atSeconds: sourceHoldSeconds + stepDuration * (index + 1),
+      transitionSeconds: Math.min(stepDuration, Math.max(0.0005, stepDuration * 0.78))
     };
   });
 }
@@ -127,10 +130,17 @@ export class GuitarAudioEngine {
     const basePlaybackRate = plan.playbackRate;
     source.buffer = this.samples.buffer;
     source.playbackRate.setValueAtTime(basePlaybackRate, startTime);
+    let previousRate = basePlaybackRate;
+    let previousStepTime = startTime;
     for (const step of slideSteps) {
-      const stepTime = startTime + Math.max(0, Number(step.atSeconds) || 0);
+      const stepEnd = startTime + Math.max(0, Number(step.atSeconds) || 0);
+      const transitionSeconds = Math.max(0, Number(step.transitionSeconds) || 0);
+      const rampStart = Math.max(previousStepTime, stepEnd - transitionSeconds);
       const nextRate = basePlaybackRate * step.playbackRate;
-      source.playbackRate.setValueAtTime(nextRate, stepTime);
+      source.playbackRate.setValueAtTime(previousRate, rampStart);
+      source.playbackRate.linearRampToValueAtTime(nextRate, stepEnd);
+      previousRate = nextRate;
+      previousStepTime = stepEnd;
     }
     source.connect(destination);
     source.start(
@@ -204,8 +214,7 @@ export class GuitarAudioEngine {
     filter.frequency.setValueAtTime(harmonic ? 520 : 15000, now);
     filter.Q.setValueAtTime(harmonic ? 0.75 : 0.35, now);
     const level = harmonic ? 0.86 : 1;
-    const endpointLevel = pitch.sliding ? level * SLIDE_ENDPOINT_BOOST : level;
-    gain.gain.setValueAtTime(endpointLevel, now);
+    gain.gain.setValueAtTime(level, now);
     if (slideSteps.length) {
       const firstStep = slideSteps[0];
       const lastStep = slideSteps.at(-1);
@@ -213,13 +222,11 @@ export class GuitarAudioEngine {
       const slideEnd = Math.max(slideStart, lastStep.atSeconds);
       const slideSpan = Math.max(0.001, slideEnd - slideStart);
       const dipEnd = Math.min(slideEnd, slideStart + Math.min(0.012, slideSpan * 0.18));
-      const restoreStart = Math.max(dipEnd, slideEnd - Math.min(0.015, slideSpan * 0.2));
-      gain.gain.setValueAtTime(endpointLevel, now + slideStart);
+      const restoreStart = Math.max(dipEnd, slideEnd - Math.min(0.012, slideSpan * 0.18));
+      gain.gain.setValueAtTime(level, now + slideStart);
       gain.gain.linearRampToValueAtTime(level * SLIDE_TRANSITION_LEVEL, now + dipEnd);
       gain.gain.setValueAtTime(level * SLIDE_TRANSITION_LEVEL, now + restoreStart);
       gain.gain.linearRampToValueAtTime(level, now + slideEnd);
-      gain.gain.setValueAtTime(endpointLevel, now + slideEnd);
-      gain.gain.linearRampToValueAtTime(level, now + slideEnd + 0.045);
     }
     const { source, basePlaybackRate } = this.connectSample(plan, now, filter, slideSteps);
     filter.connect(gain);
