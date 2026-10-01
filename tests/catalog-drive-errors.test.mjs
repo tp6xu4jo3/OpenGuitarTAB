@@ -139,6 +139,12 @@ function installDriveMock({ failSecondSong = false, invalidSecondSong = false, s
         return mockResponse({ files: [{ id: 'test-index', name: 'index.json', modifiedTime: '2026-09-30T00:00:00.000Z' }] });
       }
       if (isPermissionRecordsQuery) {
+        if (q.includes("name = 'permission-song-good.json'")) {
+          return mockResponse({ files: [{ id: 'permission-good', name: 'permission-song-good.json', modifiedTime: '2026-09-30T00:00:03.000Z' }] });
+        }
+        if (q.includes("name = 'permission-song-second.json'")) {
+          return mockResponse({ files: [{ id: 'permission-second', name: 'permission-song-second.json', modifiedTime: '2026-09-30T00:00:04.000Z' }] });
+        }
         return mockResponse({ files: [
           { id: 'permission-good', name: 'permission-song-good.json', modifiedTime: '2026-09-30T00:00:03.000Z' },
           { id: 'permission-second', name: 'permission-song-second.json', modifiedTime: '2026-09-30T00:00:04.000Z' }
