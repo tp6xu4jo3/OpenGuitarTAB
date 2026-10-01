@@ -1,0 +1,305 @@
+name: Refactor artist profile lifecycle
+
+on:
+  push:
+    branches:
+      - refactor/sync-artist-profiles
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Refactor canonical artist media lifecycle
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          api_path = Path('api/index.js')
+          api = api_path.read_text()
+
+          old_import = "import { enrichSongMedia, normalizeArtistMedia } from '../src/catalog/media.js';"
+          new_import = "import { enrichSongMedia, ensureArtistProfileData, normalizeArtistMedia, removeArtistProfileData } from '../src/catalog/media.js';"
+          assert old_import in api
+          api = api.replace(old_import, new_import, 1)
+
+          api, count = re.subn(
+              r"\nexport function ensureArtistProfileData\(raw, artistName\) \{.*?\n\}\n\nasync function readArtistMediaState",
+              "\nasync function readArtistMediaState",
+              api,
+              count=1,
+              flags=re.S,
+          )
+          assert count == 1
+
+          ensure_block = """async function ensureArtistProfile(artistName) {
+            const state = await readArtistMediaState();
+            const ensured = ensureArtistProfileData(state.media, artistName);
+            if (!ensured.changed) return ensured.media;
+            await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, ensured.media, state.file);
+            return ensured.media;
+          }
+          """
+          assert ensure_block in api
+          lifecycle_block = ensure_block + """
+          async function artistIsReferenced(artistName) {
+            const artist = String(artistName || '').trim();
+            if (!artist) return false;
+            const [publicIndex, testIndex] = await Promise.all([
+              readCatalogIndex(PUBLIC_FOLDER_ID),
+              readCatalogIndex(TEST_FOLDER_ID)
+            ]);
+            return [...(publicIndex?.works || []), ...(testIndex?.works || [])]
+              .some(work => String(work?.artist || '').trim() === artist);
+          }
+
+          async function pruneArtistProfileIfUnused(artistName) {
+            const artist = String(artistName || '').trim();
+            if (!artist || await artistIsReferenced(artist)) return false;
+            const state = await readArtistMediaState();
+            const removed = removeArtistProfileData(state.media, artist);
+            if (!removed.changed) return false;
+            await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, removed.media, state.file);
+            return true;
+          }
+          """
+          api = api.replace(ensure_block, lifecycle_block, 1)
+
+          old_update = """async function updateSongFile(fileId, song, permission) {
+            const persisted = cleanSongForWrite(song);
+            if (persisted.artist.trim()) await ensureArtistProfile(persisted.artist);
+            const file = await updateNamedJsonFile(fileId, songFileName(persisted), persisted);
+            return attachFileMeta(authoritativeSong(persisted, file, permission), file);
+          }"""
+          new_update = """async function updateSongFile(fileId, song, permission, previousArtistName = '') {
+            const persisted = cleanSongForWrite(song);
+            const previousArtist = String(previousArtistName || '').trim();
+            const nextArtist = persisted.artist.trim();
+            if (nextArtist) await ensureArtistProfile(nextArtist);
+            const file = await updateNamedJsonFile(fileId, songFileName(persisted), persisted);
+            if (previousArtist && previousArtist !== nextArtist) await pruneArtistProfileIfUnused(previousArtist);
+            return attachFileMeta(authoritativeSong(persisted, file, permission), file);
+          }"""
+          assert old_update in api
+          api = api.replace(old_update, new_update, 1)
+
+          old_save_call = "return updateSongFile(fileId, song, entry.song._opentab);"
+          new_save_call = "return updateSongFile(fileId, song, entry.song._opentab, entry.song.artist);"
+          assert old_save_call in api
+          api = api.replace(old_save_call, new_save_call, 1)
+
+          old_publish_call = "const saved = await updateSongFile(fileId, { ...song, artist }, permission);"
+          new_publish_call = "const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song.artist);"
+          assert old_publish_call in api
+          api = api.replace(old_publish_call, new_publish_call, 1)
+
+          old_delete = """async function deleteUserSong(session, fileId) {
+            const entry = await readManagedEntry(fileId);
+            if (!canDeleteSong(session, entry.song)) throw new Error('DELETE_FORBIDDEN');
+            await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+            await deletePermissionRecord(fileId).catch(error => {
+              console.error('Failed to delete permission record after score delete', error);
+            });
+          }"""
+          new_delete = """async function deleteUserSong(session, fileId) {
+            const entry = await readManagedEntry(fileId);
+            if (!canDeleteSong(session, entry.song)) throw new Error('DELETE_FORBIDDEN');
+            const artist = String(entry.song?.artist || '').trim();
+            await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+            await deletePermissionRecord(fileId).catch(error => {
+              console.error('Failed to delete permission record after score delete', error);
+            });
+            if (artist) await pruneArtistProfileIfUnused(artist);
+          }"""
+          assert old_delete in api
+          api = api.replace(old_delete, new_delete, 1)
+          api_path.write_text(api)
+
+          Path('src/catalog/media.js').write_text("""function cleanText(value) {
+            return String(value ?? '').trim();
+          }
+
+          function cleanUrl(value) {
+            return cleanText(value);
+          }
+
+          export function normalizeArtistMedia(raw) {
+            const artists = raw?.artists && typeof raw.artists === 'object' && !Array.isArray(raw.artists)
+              ? raw.artists
+              : {};
+            const normalized = { version: 2, artists: {} };
+
+            for (const [artistName, rawProfile] of Object.entries(artists)) {
+              const artist = cleanText(artistName);
+              if (!artist || !rawProfile || typeof rawProfile !== 'object' || Array.isArray(rawProfile)) continue;
+              const profile = { image: cleanUrl(rawProfile.image), albums: {} };
+              const rawAlbums = rawProfile.albums && typeof rawProfile.albums === 'object' && !Array.isArray(rawProfile.albums)
+                ? rawProfile.albums
+                : {};
+              for (const [albumName, rawAlbum] of Object.entries(rawAlbums)) {
+                const album = cleanText(albumName);
+                if (!album) continue;
+                const cover = typeof rawAlbum === 'string' ? cleanUrl(rawAlbum) : cleanUrl(rawAlbum?.cover);
+                if (cover) profile.albums[album] = { cover };
+              }
+              const rawSongs = rawProfile.songs && typeof rawProfile.songs === 'object' && !Array.isArray(rawProfile.songs)
+                ? rawProfile.songs
+                : {};
+              const songs = {};
+              for (const [songId, rawSong] of Object.entries(rawSongs)) {
+                const id = cleanText(songId);
+                if (!id) continue;
+                const cover = typeof rawSong === 'string' ? cleanUrl(rawSong) : cleanUrl(rawSong?.cover);
+                if (cover) songs[id] = { cover };
+              }
+              if (Object.keys(songs).length) profile.songs = songs;
+              normalized.artists[artist] = profile;
+            }
+
+            return normalized;
+          }
+
+          export function ensureArtistProfileData(raw, artistName) {
+            const media = normalizeArtistMedia(raw);
+            const artist = cleanText(artistName);
+            if (!artist || Object.hasOwn(media.artists, artist)) return { media, changed: false };
+            media.artists[artist] = { image: '', albums: {} };
+            return { media, changed: true };
+          }
+
+          export function removeArtistProfileData(raw, artistName) {
+            const media = normalizeArtistMedia(raw);
+            const artist = cleanText(artistName);
+            if (!artist || !Object.hasOwn(media.artists, artist)) return { media, changed: false };
+            delete media.artists[artist];
+            return { media, changed: true };
+          }
+
+          export function mediaForArtist(raw, artistName) {
+            const media = normalizeArtistMedia(raw);
+            return media.artists[cleanText(artistName)] || null;
+          }
+
+          export function mediaForSong(raw, song) {
+            const profile = mediaForArtist(raw, song?.artist);
+            if (!profile) return { artistImage: '', cover: '' };
+            const album = cleanText(song?.album);
+            const songId = cleanText(song?.id || song?.songId);
+            return {
+              artistImage: cleanUrl(profile.image),
+              cover: cleanUrl(profile.albums?.[album]?.cover) || cleanUrl(profile.songs?.[songId]?.cover)
+            };
+          }
+
+          export function enrichSongMedia(song, raw) {
+            if (!song || typeof song !== 'object' || Array.isArray(song)) return song;
+            const media = mediaForSong(raw, song);
+            return {
+              ...song,
+              artistImage: media.artistImage,
+              cover: media.cover
+            };
+          }
+          """)
+
+          Path('tests/artist-profile.test.mjs').write_text("""import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          import {
+            ensureArtistProfileData,
+            normalizeArtistMedia,
+            removeArtistProfileData
+          } from '../src/catalog/media.js';
+
+          {
+            const original = {
+              version: 2,
+              artists: {
+                '周杰倫': {
+                  image: 'https://example.com/jay.jpg',
+                  albums: { '范特西': { cover: 'https://example.com/fantasy.jpg' } },
+                  songs: {}
+                }
+              }
+            };
+
+            const created = ensureArtistProfileData(original, '  盧廣仲  ');
+            assert.equal(created.changed, true);
+            assert.deepEqual(created.media.artists['盧廣仲'], {
+              image: '',
+              albums: {}
+            });
+            assert.equal(Object.hasOwn(created.media.artists['盧廣仲'], 'songs'), false);
+            assert.equal(created.media.artists['周杰倫'].image, 'https://example.com/jay.jpg');
+            assert.equal(created.media.artists['周杰倫'].albums['范特西'].cover, 'https://example.com/fantasy.jpg');
+            assert.equal(Object.hasOwn(created.media.artists['周杰倫'], 'songs'), false, 'empty song overrides must not be serialized');
+
+            const existing = ensureArtistProfileData(created.media, '周杰倫');
+            assert.equal(existing.changed, false);
+
+            const removed = removeArtistProfileData(created.media, '盧廣仲');
+            assert.equal(removed.changed, true);
+            assert.equal(Object.hasOwn(removed.media.artists, '盧廣仲'), false);
+
+            const blank = ensureArtistProfileData(created.media, '   ');
+            assert.equal(blank.changed, false);
+            assert.equal(Object.hasOwn(blank.media.artists, ''), false);
+          }
+
+          {
+            const media = normalizeArtistMedia({
+              version: 2,
+              artists: {
+                Artist: {
+                  image: '',
+                  albums: {},
+                  songs: {
+                    'song-a': { cover: 'https://example.com/song-a.jpg' }
+                  }
+                }
+              }
+            });
+            assert.deepEqual(media.artists.Artist.songs, {
+              'song-a': { cover: 'https://example.com/song-a.jpg' }
+            }, 'non-empty per-song cover overrides remain supported');
+          }
+
+          {
+            const source = await readFile(new URL('../api/index.js', import.meta.url), 'utf8');
+            const createBlock = source.slice(source.indexOf('async function createSongFile('), source.indexOf('async function updateSongFile('));
+            const updateBlock = source.slice(source.indexOf('async function updateSongFile('), source.indexOf('async function readManagedEntry('));
+            const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
+            assert.match(createBlock, /ensureArtistProfile\\(persisted\\.artist\\)/, 'new scores must register a non-empty artist profile before writing the score');
+            assert.match(updateBlock, /pruneArtistProfileIfUnused\\(previousArtist\\)/, 'changing artist must remove the old profile after its last score disappears');
+            assert.match(deleteBlock, /pruneArtistProfileIfUnused\\(artist\\)/, 'deleting the final score for an artist must remove that profile');
+            assert.match(source, /publicIndex\\?\\.works[\\s\\S]*testIndex\\?\\.works/, 'artist retention must consider both public and test catalog works');
+          }
+
+          console.log('artist profile tests passed');
+          """)
+
+          vercel = Path('vercel.json').read_text()
+          assert '"deploymentEnabled": false' in vercel
+          PY
+      - run: npm test
+      - run: npm run benchmark:editor-layout
+      - run: npm run check
+      - run: npm run build
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/index.js src/catalog/media.js tests/artist-profile.test.mjs
+          git commit -m "refactor: synchronize artist media profiles"
+          git push
