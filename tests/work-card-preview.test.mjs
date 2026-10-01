@@ -22,6 +22,12 @@ assert.match(app,/createArrangementMenu/,'edit and visibility actions must share
 assert.match(app,/'編輯'/);
 assert.match(app,/'下架'/);
 assert.match(app,/'＋ 加入'/);
+const libraryActions=app.slice(app.indexOf('function renderLibraryArrangementActions'),app.indexOf('function ensureLibrarySearchInput'));
+assert.match(libraryActions,/work-card-action primary work-card-action-icon work-card-edit-icon/,'library edit must use the shared green circular icon button');
+assert.match(libraryActions,/createArrangementMenu\(menuItems\)/,'library visibility and delete actions must use the shared ellipsis menu');
+assert.match(libraryActions,/label: isPublic \? '下架' : '重新上架'/,'library visibility action must stay available inside the menu');
+assert.match(libraryActions,/label: '刪除', danger: true/,'library delete must stay available as a danger menu item');
+assert.doesNotMatch(libraryActions,/actionButton\('編輯'|actionButton\('刪除'/,'library must not render standalone text edit/delete buttons');
 assert.doesNotMatch(browser,/work-card-toggle|收合/,'back face must not include a redundant collapse button');
 assert.doesNotMatch(catalogCss,/\.work-card\.is-expanded\s*\{[^}]*grid-row|grid-column:span/s,'flipped card must keep its original rail footprint');
 assert.match(catalogCss,/\.work-card\.is-expanded \.work-card-inner\s*\{[^}]*rotateY\(180deg\)/s);

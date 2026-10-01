@@ -262,20 +262,28 @@ function renderLibraryArrangementActions({ arrangement, container }) {
   if (!song) return;
   const permissions = libraryActionsFor(song);
   if (permissions.edit) {
-    const edit = actionButton('編輯', 'work-card-action primary');
+    const edit = iconButton(
+      'work-card-action primary work-card-action-icon work-card-edit-icon',
+      '編輯',
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.4 2.4 0 0 0 0-3.4l-.6-.6a2.4 2.4 0 0 0-3.4 0L4.5 15.5v4Z"/><path d="m13.8 6.2 4 4"/></svg>'
+    );
     edit.addEventListener('click', event => { event.stopPropagation(); setRoute(`#/editor/${encodeURIComponent(song.id)}`); });
     container.appendChild(edit);
   }
+
+  const menuItems = [];
   if (permissions.visibility) {
-    const visibility = actionButton(songIsPublic(song) ? '下架' : '重新上架');
-    visibility.addEventListener('click', async event => { event.stopPropagation(); await toggleSongPublic(song); });
-    container.appendChild(visibility);
+    const isPublic = songIsPublic(song);
+    menuItems.push({
+      label: isPublic ? '下架' : '重新上架',
+      danger: isPublic,
+      run: () => toggleSongPublic(song)
+    });
   }
   if (permissions.delete) {
-    const del = actionButton('刪除', 'work-card-action danger');
-    del.addEventListener('click', event => { event.stopPropagation(); requestDeleteSong(song.id); });
-    container.appendChild(del);
+    menuItems.push({ label: '刪除', danger: true, run: () => requestDeleteSong(song.id) });
   }
+  if (menuItems.length) container.appendChild(createArrangementMenu(menuItems));
 }
 
 function ensureLibrarySearchInput() {
