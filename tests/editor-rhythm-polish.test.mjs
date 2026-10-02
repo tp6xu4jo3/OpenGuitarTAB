@@ -61,8 +61,9 @@ assert.doesNotMatch(editorCss, /radial-gradient/, 'slot dots should not be paint
 assert.match(editorCss, /\.content\.score-view \.v3-slot-dot\{display:none\}/, 'edit affordance dots must remain hidden in score view');
 
 assert.match(renderer, /const groupBeamCount = Number\(group\?\.beamCount\)[\s\S]*beams: Number\.isFinite\(groupBeamCount\)[\s\S]*rhythmBeamCountForValue\(durationValue\)/s, 'explicit triplet/subdivision beam counts must override ordinary duration inference');
-assert.match(renderer, /const SCORE_STEM_TOP = 2;[\s\S]*stem\.style\.top = `\$\{SCORE_STEM_TOP\}px`[\s\S]*stem\.style\.height = `\$\{SCORE_STEM_END - SCORE_STEM_TOP\}px`/s, 'TAB rhythm stems must use one fixed lane below the sixth string');
-assert.doesNotMatch(renderer, /rhythmStemTopForEvent|SCORE_RHYTHM_LAYER_TOP|SCORE_NOTE_HALF_HEIGHT/, 'beside-staff TAB rhythm must never extend stems upward to fret numbers');
+assert.match(renderer, /function rhythmStemTopForEvent\(event, stringCount = STRING_COUNT\)[\s\S]*const lowestString = strings\.length \? Math\.max\(\.\.\.strings\) : stringCount - 1;[\s\S]*noteCenter \+ SCORE_NOTE_HALF_HEIGHT \+ 2 - SCORE_RHYTHM_LAYER_TOP/s, 'TAB rhythm stems must start just below the lowest sounding note');
+assert.match(renderer, /stemTop: rhythmStemTopForEvent\(event, this\.stringCount\)[\s\S]*stem\.style\.top = `\$\{point\.stemTop\}px`[\s\S]*stem\.style\.height = `\$\{Math\.max\(4, SCORE_STEM_END - point\.stemTop\)\}px`/s, 'each event stem must extend from its lowest note to the shared beam lane');
+assert.doesNotMatch(renderer, /const SCORE_STEM_TOP = 2;/, 'score view must not force every stem to start below string six');
 const overlapMeasure = { timeSignature: { numerator: 4, denominator: 4 } };
 const overlapEvents = [
   { at: [2, 1], duration: [1, 1] },
