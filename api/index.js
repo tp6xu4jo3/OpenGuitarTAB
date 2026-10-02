@@ -12,7 +12,13 @@ import {
   createCatalogId,
   ensureArrangementIdentity
 } from '../src/catalog/work-model.js';
-import { enrichSongMedia, ensureArtistProfileData, normalizeArtistMedia, removeArtistProfileData } from '../src/catalog/media.js';
+import {
+  enrichSongMedia,
+  ensureArtistAlbumData,
+  normalizeArtistMedia,
+  removeArtistAlbumData,
+  removeArtistProfileData
+} from '../src/catalog/media.js';
 import { isDocumentV3, normalizeDocumentV3 } from '../src/editor/model.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
@@ -933,32 +939,40 @@ async function readArtistMedia() {
   return (await readArtistMediaState()).media;
 }
 
-async function ensureArtistProfile(artistName) {
+async function ensureArtistMediaEntry(artistName, albumName = '') {
   const state = await readArtistMediaState();
-  const ensured = ensureArtistProfileData(state.media, artistName);
+  const ensured = ensureArtistAlbumData(state.media, artistName, albumName);
   if (!ensured.changed) return ensured.media;
   await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, ensured.media, state.file);
   return ensured.media;
 }
 
-async function artistIsReferenced(artistName) {
+async function artistWorks(artistName) {
   const artist = String(artistName || '').trim();
-  if (!artist) return false;
+  if (!artist) return [];
   const [publicIndex, testIndex] = await Promise.all([
     readCatalogIndex(PUBLIC_FOLDER_ID),
     readCatalogIndex(TEST_FOLDER_ID)
   ]);
   return [...(publicIndex?.works || []), ...(testIndex?.works || [])]
-    .some(work => String(work?.artist || '').trim() === artist);
+    .filter(work => String(work?.artist || '').trim() === artist);
 }
 
-async function pruneArtistProfileIfUnused(artistName) {
+async function pruneArtistMediaIfUnused(artistName, albumName = '') {
   const artist = String(artistName || '').trim();
-  if (!artist || await artistIsReferenced(artist)) return false;
+  const album = String(albumName || '').trim();
+  if (!artist) return false;
+
+  const works = await artistWorks(artist);
   const state = await readArtistMediaState();
-  const removed = removeArtistProfileData(state.media, artist);
-  if (!removed.changed) return false;
-  await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, removed.media, state.file);
+  const next = works.length
+    ? (album && !works.some(work => String(work?.album || '').trim() === album)
+        ? removeArtistAlbumData(state.media, artist, album)
+        : { media: state.media, changed: false })
+    : removeArtistProfileData(state.media, artist);
+
+  if (!next.changed) return false;
+  await writeNamedJsonFile(PUBLIC_FOLDER_ID, ARTIST_MEDIA_FILE_NAME, next.media, state.file);
   return true;
 }
 
@@ -966,7 +980,7 @@ async function createSongFile(folderId, song, permission) {
   const persisted = cleanSongForWrite(song);
   const normalizedPermission = normalizePermissionRecord(permission);
   if (!normalizedPermission) throw new Error('INVALID_PERMISSION_RECORD');
-  if (persisted.artist.trim()) await ensureArtistProfile(persisted.artist);
+  if (persisted.artist.trim()) await ensureArtistMediaEntry(persisted.artist, persisted.album);
 
   const boundary = `opentab_${crypto.randomBytes(12).toString('hex')}`;
   const metadata = JSON.stringify({ name: songFileName(persisted), parents: [folderId] });
@@ -992,13 +1006,18 @@ async function createSongFile(folderId, song, permission) {
   return attachFileMeta(authoritativeSong(persisted, file, normalizedPermission), file);
 }
 
-async function updateSongFile(fileId, song, permission, previousArtistName = '') {
+async function updateSongFile(fileId, song, permission, previousArtistName = '', previousAlbumName = '') {
   const persisted = cleanSongForWrite(song);
   const previousArtist = String(previousArtistName || '').trim();
+  const previousAlbum = String(previousAlbumName || '').trim();
   const nextArtist = persisted.artist.trim();
-  if (nextArtist) await ensureArtistProfile(nextArtist);
+  const nextAlbum = persisted.album.trim();
+
+  if (nextArtist) await ensureArtistMediaEntry(nextArtist, nextAlbum);
   const file = await updateNamedJsonFile(fileId, songFileName(persisted), persisted);
-  if (previousArtist && previousArtist !== nextArtist) await pruneArtistProfileIfUnused(previousArtist);
+  if (previousArtist && (previousArtist !== nextArtist || previousAlbum !== nextAlbum)) {
+    await pruneArtistMediaIfUnused(previousArtist, previousAlbum);
+  }
   return attachFileMeta(authoritativeSong(persisted, file, permission), file);
 }
 
@@ -1087,7 +1106,7 @@ async function saveUserSong(session, song) {
 
   const entry = await readManagedEntry(fileId);
   if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
-  return updateSongFile(fileId, song, entry.song._opentab, entry.song.artist);
+  return updateSongFile(fileId, song, entry.song._opentab, entry.song.artist, entry.song.album);
 }
 
 async function publishSong(session, song) {
@@ -1101,7 +1120,7 @@ async function publishSong(session, song) {
     public: true,
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
-  const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song.artist);
+  const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song.artist, entry.song.album);
   await writePermissionRecord(fileId, permission);
   return saved;
 }
@@ -1120,11 +1139,12 @@ async function deleteUserSong(session, fileId) {
   const entry = await readManagedEntry(fileId);
   if (!canDeleteSong(session, entry.song)) throw new Error('DELETE_FORBIDDEN');
   const artist = String(entry.song?.artist || '').trim();
+  const album = String(entry.song?.album || '').trim();
   await driveFetch(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
   await deletePermissionRecord(fileId).catch(error => {
     console.error('Failed to delete permission record after score delete', error);
   });
-  if (artist) await pruneArtistProfileIfUnused(artist);
+  if (artist) await pruneArtistMediaIfUnused(artist, album);
 }
 
 async function clonePublicToTest(fileId, session) {

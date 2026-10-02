@@ -23,7 +23,7 @@ export function normalizeArtistMedia(raw) {
       const album = cleanText(albumName);
       if (!album) continue;
       const cover = typeof rawAlbum === 'string' ? cleanUrl(rawAlbum) : cleanUrl(rawAlbum?.cover);
-      if (cover) profile.albums[album] = { cover };
+      profile.albums[album] = cover ? { cover } : {};
     }
     const rawSongs = rawProfile.songs && typeof rawProfile.songs === 'object' && !Array.isArray(rawProfile.songs)
       ? rawProfile.songs
@@ -42,11 +42,35 @@ export function normalizeArtistMedia(raw) {
   return normalized;
 }
 
-export function ensureArtistProfileData(raw, artistName) {
+export function ensureArtistAlbumData(raw, artistName, albumName) {
   const media = normalizeArtistMedia(raw);
   const artist = cleanText(artistName);
-  if (!artist || Object.hasOwn(media.artists, artist)) return { media, changed: false };
-  media.artists[artist] = { image: '', albums: {} };
+  const album = cleanText(albumName);
+  if (!artist) return { media, changed: false };
+
+  let changed = false;
+  if (!Object.hasOwn(media.artists, artist)) {
+    media.artists[artist] = { image: '', albums: {} };
+    changed = true;
+  }
+  if (album && !Object.hasOwn(media.artists[artist].albums, album)) {
+    media.artists[artist].albums[album] = {};
+    changed = true;
+  }
+  return { media, changed };
+}
+
+export function ensureArtistProfileData(raw, artistName) {
+  return ensureArtistAlbumData(raw, artistName, '');
+}
+
+export function removeArtistAlbumData(raw, artistName, albumName) {
+  const media = normalizeArtistMedia(raw);
+  const artist = cleanText(artistName);
+  const album = cleanText(albumName);
+  if (!artist || !album || !Object.hasOwn(media.artists, artist)) return { media, changed: false };
+  if (!Object.hasOwn(media.artists[artist].albums, album)) return { media, changed: false };
+  delete media.artists[artist].albums[album];
   return { media, changed: true };
 }
 

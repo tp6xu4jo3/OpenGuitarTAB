@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  ensureArtistAlbumData,
   ensureArtistProfileData,
   normalizeArtistMedia,
+  removeArtistAlbumData,
   removeArtistProfileData
 } from '../src/catalog/media.js';
 
@@ -42,6 +44,45 @@ import {
 }
 
 {
+  const original = {
+    version: 2,
+    artists: {
+      'ヨルシカ': {
+        image: 'https://example.com/yorushika.jpg',
+        albums: {
+          '盗作': { cover: 'https://example.com/tousaku.jpg' }
+        }
+      }
+    }
+  };
+
+  const added = ensureArtistAlbumData(original, ' ヨルシカ ', ' 二人称 ');
+  assert.equal(added.changed, true);
+  assert.deepEqual(added.media.artists['ヨルシカ'].albums['二人称'], {}, 'a newly referenced album must exist even before a cover URL is known');
+  assert.equal(added.media.artists['ヨルシカ'].albums['盗作'].cover, 'https://example.com/tousaku.jpg');
+
+  const existing = ensureArtistAlbumData(added.media, 'ヨルシカ', '二人称');
+  assert.equal(existing.changed, false);
+
+  const removed = removeArtistAlbumData(added.media, 'ヨルシカ', '二人称');
+  assert.equal(removed.changed, true);
+  assert.equal(Object.hasOwn(removed.media.artists['ヨルシカ'].albums, '二人称'), false);
+
+  const normalized = normalizeArtistMedia({
+    version: 2,
+    artists: {
+      'ヨルシカ': {
+        image: '',
+        albums: {
+          '二人称': {}
+        }
+      }
+    }
+  });
+  assert.deepEqual(normalized.artists['ヨルシカ'].albums['二人称'], {}, 'normalization must preserve empty album placeholders');
+}
+
+{
   const media = normalizeArtistMedia({
     version: 2,
     artists: {
@@ -64,10 +105,11 @@ import {
   const createBlock = source.slice(source.indexOf('async function createSongFile('), source.indexOf('async function updateSongFile('));
   const updateBlock = source.slice(source.indexOf('async function updateSongFile('), source.indexOf('async function readManagedEntry('));
   const deleteBlock = source.slice(source.indexOf('async function deleteUserSong('), source.indexOf('async function clonePublicToTest('));
-  assert.match(createBlock, /ensureArtistProfile\(persisted\.artist\)/, 'new scores must register a non-empty artist profile before writing the score');
-  assert.match(updateBlock, /pruneArtistProfileIfUnused\(previousArtist\)/, 'changing artist must remove the old profile after its last score disappears');
-  assert.match(deleteBlock, /pruneArtistProfileIfUnused\(artist\)/, 'deleting the final score for an artist must remove that profile');
-  assert.match(source, /publicIndex\?\.works[\s\S]*testIndex\?\.works/, 'artist retention must consider both public and test catalog works');
+  assert.match(createBlock, /ensureArtistMediaEntry\(persisted\.artist, persisted\.album\)/, 'new scores must register both artist and album metadata before writing the score');
+  assert.match(updateBlock, /ensureArtistMediaEntry\(nextArtist, nextAlbum\)/, 'changing metadata must register a newly referenced album');
+  assert.match(updateBlock, /pruneArtistMediaIfUnused\(previousArtist, previousAlbum\)/, 'changing artist or album must prune metadata that is no longer referenced');
+  assert.match(deleteBlock, /pruneArtistMediaIfUnused\(artist, album\)/, 'deleting the final score for an album or artist must prune stale media metadata');
+  assert.match(source, /publicIndex\?\.works[\s\S]*testIndex\?\.works/, 'artist and album retention must consider both public and test catalog works');
 }
 
 console.log('artist profile tests passed');
