@@ -239,7 +239,7 @@ function renderCatalogArrangementActions({ arrangement, container }) {
   );
   preview.addEventListener('click', event => {
     event.stopPropagation();
-    setRoute(`#/preview/${encodeURIComponent(arrangement.arrangementId || arrangement.songId)}`);
+    setRoute(`#/preview/${encodeURIComponent(arrangement.arrangementId)}`);
   });
   container.appendChild(preview);
 
@@ -447,7 +447,7 @@ async function openCatalogPreview(id) {
     const loaded = await fetchCatalogArrangement(arrangement);
     if (generation !== previewLoadGeneration || location.hash !== routeHash) return;
     previewSong = loaded;
-    previewSong.id = `preview:${arrangement.arrangementId || arrangement.songId}`;
+    previewSong.id = `preview:${arrangement.arrangementId}`;
     previewSong._catalogFileId = arrangement._driveFileId;
     currentSongId = previewSong.id;
     activeBeatsPerMeasure = normalizeBeatsPerMeasure(previewSong.beatsPerMeasure);
