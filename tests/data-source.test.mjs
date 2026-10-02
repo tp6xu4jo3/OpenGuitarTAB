@@ -212,6 +212,42 @@ await server.saveSong({ id: 'server-song' });
 assert.match(serverCalls[0].url, /^https:\/\/openguitartab\.vercel\.app\/api\?action=save$/);
 assert.equal(serverCalls[0].options.method, 'POST');
 
+{
+  const activityStates = [];
+  const source = new ServerDataSource({
+    origin: 'https://openguitartab.vercel.app',
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({ song: { id: 'drive-song', _opentab: {} }, privateSong: { id: 'drive-song' }, works: [], songs: [] })
+    })
+  });
+  source.setDriveActivityListener(state => activityStates.push({ ...state }));
+  const authBaseline = activityStates.length;
+  await source.session();
+  assert.equal(activityStates.length, authBaseline, 'auth/session transport must not show the Google Drive loading screen');
+
+  const driveActions = [
+    ['catalog', '載入公共曲庫…', () => source.catalog()],
+    ['library', '載入個人曲譜…', () => source.library()],
+    ['loadSong', '讀取曲譜…', () => source.loadSong('drive-file')],
+    ['saveSong', '儲存曲譜…', () => source.saveSong({ id: 'drive-song' })],
+    ['deleteSong', '刪除曲譜…', () => source.deleteSong('drive-file')],
+    ['setPublic', '更新曲譜狀態…', () => source.setPublic('drive-file', true)],
+    ['publishSong', '上傳曲譜…', () => source.publishSong({ id: 'drive-song' })],
+    ['clonePublicSong', '加入曲譜…', () => source.clonePublicSong('drive-file')]
+  ];
+  for (const [name, label, run] of driveActions) {
+    const before = activityStates.length;
+    await run();
+    const emitted = activityStates.slice(before);
+    assert.equal(emitted[0]?.active, true, `${name} must open the shared Drive loading lifecycle`);
+    assert.equal(emitted[0]?.label, label, `${name} must expose a useful loading label`);
+    assert.equal(emitted.at(-1)?.active, false, `${name} must close the shared Drive loading lifecycle`);
+  }
+}
+
 const challenged = new ServerDataSource({
   origin: 'https://openguitartab.vercel.app',
   fetchImpl: async () => ({

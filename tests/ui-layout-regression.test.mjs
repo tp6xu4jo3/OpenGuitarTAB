@@ -14,6 +14,10 @@ const responsiveCss=await readFile(new URL('../styles/responsive.css',import.met
 const playbackCss=await readFile(new URL('../styles/playback-controls.css',import.meta.url),'utf8');
 const scoreCss=await readFile(new URL('../styles/score-layout.css',import.meta.url),'utf8');
 const headerCss=await readFile(new URL('../styles/header.css',import.meta.url),'utf8');
+const loadingCss=await readFile(new URL('../styles/loading.css',import.meta.url),'utf8');
+const loadingUi=await readFile(new URL('../src/app-loading.js',import.meta.url),'utf8');
+const bootstrap=await readFile(new URL('../src/bootstrap.js',import.meta.url),'utf8');
+const mainCss=await readFile(new URL('../styles/main.css',import.meta.url),'utf8');
 const structure=await readFile(new URL('../src/editor/structure-controller.js',import.meta.url),'utf8');
 const renderer=await readFile(new URL('../src/editor/renderer.js',import.meta.url),'utf8');
 const notation=await readFile(new URL('../src/editor/notation-renderer.js',import.meta.url),'utf8');
@@ -46,6 +50,13 @@ assert.doesNotMatch(html,/PUBLIC CATALOG|OPEN TAB LIBRARY|YOUR LIBRARY/,'catalog
 assert.doesNotMatch(html,/<h2>公共曲譜<\/h2>/,'catalog must not repeat a public-catalog section title');
 assert.match(html,/class="library-hero-copy"/);
 assert.match(html,/class="library-hero-controls"/);
+assert.match(html,/id="driveLoadingScreen"[^>]*hidden[^>]*aria-hidden="true"/,'the app must ship one hidden full-screen Drive loading surface');
+assert.match(html,/id="driveLoadingLabel">正在同步Google Drive…<\/strong>/,'the Drive loading surface must expose a readable status label');
+assert.match(mainCss,/@import '\.\/loading\.css';/,'the shared loading screen stylesheet must be included by the production bundle');
+assert.match(loadingCss,/\.drive-loading-screen\{[^}]*position:fixed[^}]*inset:0[^}]*z-index:10000[^}]*display:grid/s,'Drive loading must replace the active screen instead of appearing as a small button spinner');
+assert.match(loadingCss,/\.drive-loading-screen\[hidden\]\{display:none!important\}/,'the loading screen hidden state must remain authoritative');
+assert.match(loadingUi,/setDriveActivityListener\(state =>[\s\S]*screen\.hidden = false[\s\S]*setTimeout\(hide, HIDE_GRACE_MS\)/s,'one loading controller must own all Drive activity transitions and keep chained requests from flickering');
+assert.match(bootstrap,/installDriveLoadingScreen\(dataSource\);[\s\S]*dataSource\.catalog\(\)/s,'Drive loading must be installed before the initial catalog request');
 assert.match(html,/rel="icon" href="\.\/assets\/OpenGuitarTABicon\.ico"/,'uploaded app icon must also be the site icon');
 assert.match(html,/class="brand-mark" aria-hidden="true"><img src="\.\/assets\/OpenGuitarTAB\.png"/,'sidebar brand must use the original PNG');
 assert.doesNotMatch(html,/<div class="brand-mark">OG<\/div>/,'legacy OG text mark must be removed');

@@ -1,0 +1,8 @@
+body.drive-loading-active{overflow:hidden}
+.drive-loading-screen{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:rgba(11,11,11,.96);backdrop-filter:blur(3px)}
+.drive-loading-screen[hidden]{display:none!important}
+.drive-loading-content{display:flex;flex-direction:column;align-items:center;gap:16px;padding:28px 32px;color:#fff;text-align:center}
+.drive-loading-content strong{font-size:16px;font-weight:700;letter-spacing:.02em}
+.drive-loading-spinner{width:44px;height:44px;box-sizing:border-box;border:4px solid rgba(255,255,255,.18);border-top-color:#1ed760;border-radius:50%;animation:drive-loading-spin .72s linear infinite}
+@keyframes drive-loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.drive-loading-spinner{animation-duration:1.6s}}

@@ -15,6 +15,8 @@ export class ServerDataSource {
     this.catalogCacheExpiresAt = 0;
     this.catalogRequest = null;
     this.catalogGeneration = 0;
+    this.driveActivityListener = null;
+    this.driveActivities = new Map();
   }
 
   apiUrl(action, params = {}) {
@@ -49,6 +51,35 @@ export class ServerDataSource {
     throw error;
   }
 
+  setDriveActivityListener(listener) {
+    this.driveActivityListener = typeof listener === 'function' ? listener : null;
+    this.emitDriveActivity();
+  }
+
+  emitDriveActivity() {
+    if (!this.driveActivityListener) return;
+    const activities = [...this.driveActivities.values()];
+    const current = activities.at(-1) || null;
+    this.driveActivityListener({
+      active: activities.length > 0,
+      count: activities.length,
+      action: current?.action || null,
+      label: current?.label || ''
+    });
+  }
+
+  async driveRequest(action, options = {}, label = '正在同步Google Drive…') {
+    const token = Symbol(action);
+    this.driveActivities.set(token, { action, label });
+    this.emitDriveActivity();
+    try {
+      return await this.request(action, options);
+    } finally {
+      this.driveActivities.delete(token);
+      this.emitDriveActivity();
+    }
+  }
+
   clearCatalogCache() {
     this.catalogGeneration += 1;
     this.catalogCacheValue = null;
@@ -61,7 +92,7 @@ export class ServerDataSource {
     if (this.catalogCacheValue && now < this.catalogCacheExpiresAt) return this.catalogCacheValue;
     if (this.catalogRequest) return this.catalogRequest;
     const generation = this.catalogGeneration;
-    const pending = this.request('catalog')
+    const pending = this.driveRequest('catalog', {}, '載入公共曲庫…')
       .then(result => {
         if (generation === this.catalogGeneration) {
           this.catalogCacheValue = result;
@@ -77,32 +108,32 @@ export class ServerDataSource {
   session() { return this.request('session'); }
   login(username, password) { return this.request('login', { method: 'POST', body: { username, password } }); }
   logout() { return this.request('logout', { method: 'POST', body: {} }); }
-  loadSong(fileId) { return this.request('catalog-song', { params: { fileId } }); }
-  library() { return this.request('library'); }
+  loadSong(fileId) { return this.driveRequest('catalog-song', { params: { fileId } }, '讀取曲譜…'); }
+  library() { return this.driveRequest('library', {}, '載入個人曲譜…'); }
 
   async saveSong(song) {
-    const result = await this.request('save', { method: 'POST', body: { song } });
+    const result = await this.driveRequest('save', { method: 'POST', body: { song } }, '儲存曲譜…');
     if (result.song?._opentab?.public === true) this.clearCatalogCache();
     return result;
   }
 
   async deleteSong(fileId) {
-    const result = await this.request('delete', { method: 'POST', body: { fileId } });
+    const result = await this.driveRequest('delete', { method: 'POST', body: { fileId } }, '刪除曲譜…');
     this.clearCatalogCache();
     return result;
   }
 
   async setPublic(fileId, isPublic) {
-    const result = await this.request('visibility', { method: 'POST', body: { fileId, public: Boolean(isPublic) } });
+    const result = await this.driveRequest('visibility', { method: 'POST', body: { fileId, public: Boolean(isPublic) } }, '更新曲譜狀態…');
     this.clearCatalogCache();
     return result;
   }
 
   async publishSong(song) {
-    const result = await this.request('publish', { method: 'POST', body: { song } });
+    const result = await this.driveRequest('publish', { method: 'POST', body: { song } }, '上傳曲譜…');
     this.clearCatalogCache();
     return { ...result, privateSong: result.privateSong || result.song };
   }
 
-  clonePublicSong(fileId) { return this.request('clone', { method: 'POST', body: { fileId } }); }
+  clonePublicSong(fileId) { return this.driveRequest('clone', { method: 'POST', body: { fileId } }, '加入曲譜…'); }
 }
