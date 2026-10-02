@@ -33,7 +33,10 @@ import { isPreviewActive, isScoreViewActive, scoreDensityMode } from './view-sta
 
 const EDITOR_RAIL_WIDTH = 102;
 const BASE_GRID_STEP = Object.freeze([1, 4]);
-const SCORE_STEM_TOP = 2;
+const SCORE_STAFF_TOP = 32;
+const SCORE_STAFF_HEIGHT = 112;
+const SCORE_RHYTHM_LAYER_TOP = 154;
+const SCORE_NOTE_HALF_HEIGHT = 13;
 const SCORE_STEM_END = 30;
 
 function div(className) {
@@ -82,6 +85,14 @@ function layoutAvailableWidth(root) {
   const measured = candidates.length ? Math.min(...candidates) : 0;
   const rail = isScoreViewActive() ? 0 : EDITOR_RAIL_WIDTH;
   return Math.max(260, (measured || DEFAULT_LAYOUT_WIDTH + rail) - rail);
+}
+
+function rhythmStemTopForEvent(event, stringCount = STRING_COUNT) {
+  const strings = (event?.notes || [])
+    .map(note => Math.max(0, Math.min(stringCount - 1, Number(note.string) || 0)));
+  const lowestString = strings.length ? Math.max(...strings) : stringCount - 1;
+  const noteCenter = SCORE_STAFF_TOP + ((lowestString + 0.5) / stringCount) * SCORE_STAFF_HEIGHT;
+  return Math.min(-4, noteCenter + SCORE_NOTE_HALF_HEIGHT + 2 - SCORE_RHYTHM_LAYER_TOP);
 }
 
 function eventAt(measure, at) {
@@ -399,15 +410,16 @@ export class SparseScoreRenderer {
           : rhythmBeamCountForValue(durationValue),
         dots: group?.type === 'tuplet' ? 0 : rhythmDotCountForValue(durationValue),
         durationValue,
-        group
+        group,
+        stemTop: rhythmStemTopForEvent(event, this.stringCount)
       };
     });
 
     points.forEach(point => {
       const stem = div('v3-rhythm-stem');
       stem.style.left = `${point.x}%`;
-      stem.style.top = `${SCORE_STEM_TOP}px`;
-      stem.style.height = `${SCORE_STEM_END - SCORE_STEM_TOP}px`;
+      stem.style.top = `${point.stemTop}px`;
+      stem.style.height = `${Math.max(4, SCORE_STEM_END - point.stemTop)}px`;
       layer.appendChild(stem);
       if (point.dots > 0) {
         const dot = div('v3-rhythm-dot');
