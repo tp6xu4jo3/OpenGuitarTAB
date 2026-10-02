@@ -17,7 +17,7 @@ const lazyLibrary = source.slice(source.indexOf('function ensureUserLibraryLoade
 assert.match(lazyLibrary, /libraryLoadedUsername === username/,'a loaded library must be reused for the current user');
 assert.match(lazyLibrary, /libraryLoadRequest && libraryLoadRequestUsername === username/,'concurrent lazy library requests must share one in-flight request');
 assert.match(lazyLibrary, /const request = loadUserLibrary\(\)\.finally/,'lazy loading must delegate to the canonical library loader');
-assert.match(lazyLibrary, /function ensureLibrarySongLoaded\(id\)[\s\S]*if \(song\.document\) return Promise\.resolve\(song\)/s, 'already-loaded full scores should be reused');
+assert.match(lazyLibrary, /function ensureLibrarySongLoaded\(arrangementId\)[\s\S]*String\(item\?\.arrangementId \|\| ''\) === routeId[\s\S]*if \(song\.document\) return Promise\.resolve\(song\)/s, 'lazy score loading must resolve metadata by arrangement identity and reuse an already-loaded full score');
 assert.match(lazyLibrary, /librarySongLoadRequests\.has\(fileId\)[\s\S]*dataSource\.loadSong\(fileId\)[\s\S]*replaceSongRecord\(hydrateSong\(result\.song\)\)/s, 'opening a metadata-only library item must fetch and hydrate only that score with shared in-flight loading');
 
 const previewLoad = source.slice(source.indexOf('async function openCatalogPreview('), source.indexOf('async function openLocalEditor('));
@@ -26,13 +26,13 @@ assert.match(previewLoad, /const routeHash = location\.hash/);
 assert.equal((previewLoad.match(/generation !== previewLoadGeneration \|\| location\.hash !== routeHash/g) || []).length, 2, 'preview success and failure must both ignore stale route requests');
 
 const localEditor = source.slice(source.indexOf('async function openLocalEditor('), source.indexOf('function handleRoute('));
-assert.match(localEditor, /await ensureLibrarySongLoaded\(id\)[\s\S]*showPage\('editor'\)[\s\S]*loadSong\(loaded\.id\)/s, 'editor navigation must wait for the selected full score before rendering');
+assert.match(localEditor, /async function openLocalEditor\(arrangementId\)[\s\S]*await ensureLibrarySongLoaded\(arrangementId\)[\s\S]*showPage\('editor'\)[\s\S]*loadSong\(loaded\.id\)/s, 'editor navigation must resolve the arrangement route and wait for its full score before rendering');
 
 const routeHandler = source.slice(source.indexOf('function handleRoute('), source.indexOf('async function initializeApp('));
 assert.match(routeHandler, /if \(route !== 'preview'\) previewLoadGeneration \+= 1;/, 'leaving preview must invalidate any in-flight preview request');
 assert.match(routeHandler, /if \(route === 'library'\)[\s\S]*void ensureUserLibraryLoaded\(\)/s,'the library metadata should load only when the library route is entered');
 assert.match(routeHandler, /if \(route === 'editor' && id\)[\s\S]*ensureUserLibraryLoaded\(\)\.then/s,'direct editor routes must lazy-load library metadata before resolving a local song');
-assert.match(routeHandler, /songs\.some\(song => song\.id === id\)[^\n]*void openLocalEditor\(id\)/, 'known metadata records should enter the same lazy full-score editor path');
+assert.match(routeHandler, /songs\.some\(song => song\.arrangementId === id\)[^\n]*void openLocalEditor\(id\)/, 'editor routes must resolve metadata by arrangementId before entering the lazy full-score path');
 
 const initializeApp = source.slice(source.indexOf('async function initializeApp('), source.indexOf("mobileMenuButton?.addEventListener"));
 assert.match(initializeApp, /await initializeAuth\(\);[\s\S]*await loadCatalog\(\);/s,'startup must establish auth and load catalog metadata');
@@ -48,3 +48,7 @@ assert.match(authHandler, /libraryLoadGeneration \+= 1;/, 'logout must invalidat
 assert.match(authHandler, /previewLoadGeneration \+= 1;/, 'logout must invalidate in-flight preview requests');
 
 console.log('catalog async regression tests passed');
+
+assert.doesNotMatch(source, /#\/editor\/\$\{encodeURIComponent\((?:song|local)\.id\)\}/, 'editor URLs must not expose mutable/internal song ids');
+assert.match(source, /#\/editor\/\$\{encodeURIComponent\(local\.arrangementId\)\}/, 'catalog edit routes must use arrangement identity');
+assert.match(source, /#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}/, 'library card edit routes must use arrangement identity');
