@@ -92,7 +92,7 @@ function renderSongList() {
     loadButton.className = 'song-load-button';
     loadButton.textContent = song.name || '未命名曲譜';
     loadButton.title = song.name || '未命名曲譜';
-    loadButton.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.id)}`));
+    loadButton.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`));
 
     if (songWasPublished(song) && !songIsPublic(song)) {
       const badge = document.createElement('span');
@@ -321,7 +321,7 @@ async function createNewSong(beatsPerMeasure) {
     meterBadge.textContent = `每小節 ${beats} 拍`;
     renderLibraryGrid();
     if (typeof loadCatalog === 'function') await loadCatalog();
-    setRoute(`#/editor/${encodeURIComponent(saved.id)}`);
+    setRoute(`#/editor/${encodeURIComponent(saved.arrangementId)}`);
     showToast(`已新增 ${beats} 拍空白曲譜`);
   } catch (error) {
     console.error(error);
