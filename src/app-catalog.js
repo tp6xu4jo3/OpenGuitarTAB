@@ -161,7 +161,7 @@ async function editCatalogArrangement(arrangement) {
     showToast('找不到可編輯的曲譜');
     return;
   }
-  setRoute(`#/editor/${encodeURIComponent(local.id)}`);
+  setRoute(`#/editor/${encodeURIComponent(local.arrangementId)}`);
 }
 
 async function unlistCatalogArrangement(arrangement) {
@@ -268,7 +268,7 @@ function renderLibraryArrangementActions({ arrangement, container }) {
       '編輯',
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.4 2.4 0 0 0 0-3.4l-.6-.6a2.4 2.4 0 0 0-3.4 0L4.5 15.5v4Z"/><path d="m13.8 6.2 4 4"/></svg>'
     );
-    edit.addEventListener('click', event => { event.stopPropagation(); setRoute(`#/editor/${encodeURIComponent(song.id)}`); });
+    edit.addEventListener('click', event => { event.stopPropagation(); setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`); });
     container.appendChild(edit);
   }
 
@@ -414,8 +414,9 @@ function ensureUserLibraryLoaded() {
   return request;
 }
 
-function ensureLibrarySongLoaded(id) {
-  const song = songs.find(item => String(item?.id || '') === String(id || ''));
+function ensureLibrarySongLoaded(arrangementId) {
+  const routeId = String(arrangementId || '');
+  const song = songs.find(item => String(item?.arrangementId || '') === routeId);
   if (!song) return Promise.resolve(null);
   if (song.document) return Promise.resolve(song);
   const fileId = String(song._driveFileId || '');
@@ -469,11 +470,11 @@ async function openCatalogPreview(id) {
   }
 }
 
-async function openLocalEditor(id) {
-  if (!window.authState?.user) { openLoginModal(`#/editor/${encodeURIComponent(id)}`); return; }
+async function openLocalEditor(arrangementId) {
+  if (!window.authState?.user) { openLoginModal(`#/editor/${encodeURIComponent(arrangementId)}`); return; }
   const requestedHash = location.hash;
   try {
-    const loaded = await ensureLibrarySongLoaded(id);
+    const loaded = await ensureLibrarySongLoaded(arrangementId);
     if (location.hash !== requestedHash) return;
     if (!loaded) { setRoute('#/catalog'); return; }
     previewSong = null;
@@ -528,11 +529,11 @@ function handleRoute() {
       openLoginModal(`#/editor/${encodeURIComponent(id)}`);
       return;
     }
-    if (songs.some(song => song.id === id)) { void openLocalEditor(id); return; }
+    if (songs.some(song => song.arrangementId === id)) { void openLocalEditor(id); return; }
     const requestedHash = location.hash;
     void ensureUserLibraryLoaded().then(() => {
       if (location.hash !== requestedHash) return;
-      if (songs.some(song => song.id === id)) void openLocalEditor(id);
+      if (songs.some(song => song.arrangementId === id)) void openLocalEditor(id);
       else setRoute('#/catalog');
     });
     return;
