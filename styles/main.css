@@ -15,3 +15,5 @@
 @import './adaptive-measures.css';
 @import './score-layout.css';
 @import './playback-controls.css';
+
+@import './loading.css';
