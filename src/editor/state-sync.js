@@ -10,7 +10,7 @@ export class EditorStateSync {
 
   ensureStore() {
     const song = this.currentSong();
-    return song ? this.registry.forSong(song) : null;
+    return song?.document ? this.registry.forSong(song) : null;
   }
 
   markCurrent(store) {

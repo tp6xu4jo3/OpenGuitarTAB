@@ -4,7 +4,8 @@ import { applyCommand } from '../src/editor/commands.js';
 import { buildSystems } from '../src/editor/layout.js';
 import { createBlankDocumentV3, fractionToNumber } from '../src/editor/model.js';
 import { ensureSongDocumentV3, migrateSongToDocumentV3 } from '../src/editor/migrate-v2.js';
-import { ScoreStore } from '../src/editor/store.js';
+import { EditorStateSync } from '../src/editor/state-sync.js';
+import { ScoreStore, StoreRegistry } from '../src/editor/store.js';
 import { deleteMeasureAt, deleteSystem, insertMeasureAt, insertSystem, moveMeasureAt, moveSystem } from '../src/editor/structure-commands.js';
 import { ToolRegistry } from '../src/editor/tools.js';
 import { deserializeSong, serializeSong } from '../src/core/song-codec.js';
@@ -151,6 +152,26 @@ let slideId;
   const measureId=store.getDocument().measures[0].id;
   const result=store.dispatch({type:'note/set',measureId,at:[2,1],string:3,fret:'9',duration:[1,4]},{idFactory:idFactory()});
   assert.deepEqual(result.changeSet.measures,[measureId]);
+}
+
+{
+  const metadataOnly = {
+    id: 'song-晴る',
+    arrangementId: 'arr-df7982ca-6c5d-4007-a12c-0f94548dd081',
+    name: '晴る',
+    _driveFileId: '19_2iK2gOwcf2-L8Yk128T9VLS_09QQFz'
+  };
+  const registry = new StoreRegistry();
+  const sync = new EditorStateSync(registry, { currentSong: () => metadataOnly });
+  assert.equal(sync.ensureStore(), null, 'metadata-only library records must not mount an editor store before Drive hydration');
+  assert.equal('document' in metadataOnly, false, 'opening an editor route must not synthesize a blank document onto library metadata');
+
+  const hydrated = {
+    ...metadataOnly,
+    document: createBlankDocumentV3({ beats: 4, systems: 1, measuresPerSystem: 1, idFactory: idFactory() })
+  };
+  const hydratedSync = new EditorStateSync(registry, { currentSong: () => hydrated });
+  assert.ok(hydratedSync.ensureStore(), 'a fully hydrated score may mount an editor store');
 }
 {
   const ids=idFactory();
