@@ -10,6 +10,7 @@ import {
 } from './core/song-permissions.js';
 import { APP_CONFIG } from './config/app-config.js';
 import { dataSource } from './data/data-source.js';
+import { installDriveLoadingScreen } from './app-loading.js';
 import { installAudioEngine } from './editor/audio-engine.js';
 import { installChordDragController } from './editor/chord-drag-controller.js';
 import { installEditorV3 } from './editor/controller.js';
@@ -53,6 +54,7 @@ function loadClassicScriptsInOrder(sources) {
   return Promise.all(loads);
 }
 
+installDriveLoadingScreen(dataSource);
 void dataSource.catalog().catch(() => null);
 await loadClassicScriptsInOrder(RUNTIME_SCRIPTS);
 installViewState();
