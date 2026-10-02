@@ -8,7 +8,7 @@ const [catalog, library, importer, stateSync] = await Promise.all([
   readFile(new URL('../src/editor/state-sync.js', import.meta.url), 'utf8')
 ]);
 
-assert.match(catalog, /#\/preview\/\$\{encodeURIComponent\(arrangement\.arrangementId \|\| arrangement\.songId\)\}/, 'preview URLs must identify an arrangement');
+assert.match(catalog, /#\/preview\/\$\{encodeURIComponent\(arrangement\.arrangementId\)\}/, 'preview URLs must use arrangementId as the score route identity');
 assert.match(catalog, /setRoute\(`#\/editor\/\$\{encodeURIComponent\(local\.arrangementId\)\}`\)/, 'catalog edit URLs must identify the same arrangement');
 assert.match(catalog, /setRoute\(`#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}`\)/, 'library card edit URLs must identify the arrangement');
 assert.match(library, /setRoute\(`#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}`\)/, 'sidebar score links must identify the arrangement');
