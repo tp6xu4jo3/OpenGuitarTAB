@@ -29,7 +29,7 @@ export async function importSongFile(file) {
     window.renderSongList?.();
     window.renderLibraryGrid?.();
     if (typeof window.loadCatalog === 'function') await window.loadCatalog();
-    window.setRoute?.(`#/editor/${encodeURIComponent(saved.id)}`);
+    window.setRoute?.(`#/editor/${encodeURIComponent(saved.arrangementId)}`);
     window.showToast?.(`已匯入 ${saved.name}`);
   } catch (error) {
     console.error(error);
