@@ -85,7 +85,29 @@ const sourceNote = playback.entries.find(entry => entry.atBeats === 0)?.notes.fi
 const targetNote = playback.entries.find(entry => entry.atBeats === 1)?.notes.find(note => note.id === 'n2');
 assert.deepEqual(sourceNote.slide, { relationId: 'slide-1', toFret: '7', durationBeats: 1 });
 assert.equal(targetNote.slideArrivalRelationId, 'slide-1');
-assert.equal(Object.hasOwn(sourceNote, 'arc'), false);
+assert.equal(Object.hasOwn(sourceNote, 'arc'), false, 'an arc ending on an empty position must remain visual-only');
+
+const tiedArcDocument = {
+  version: 3,
+  measures: [{ id: 'm-arc', timeSignature: { numerator: 4, denominator: 4 }, groups: [], events: [
+    { id: 'e-arc-1', at: [0, 1], duration: [1, 1], marks: [], notes: [{ id: 'n-arc-1', string: 0, fret: '5', techniques: [] }] },
+    { id: 'e-arc-2', at: [1, 1], duration: [1, 1], marks: [], notes: [{ id: 'n-arc-2', string: 1, fret: '10', techniques: [] }] },
+    { id: 'e-arc-3', at: [2, 1], duration: [1, 1], marks: [], notes: [{ id: 'n-arc-3', string: 1, fret: '8', techniques: [] }] }
+  ] }],
+  relations: [
+    { id: 'arc-same-pitch', type: 'arc', direction: 'up', fromNoteId: 'n-arc-1', fromPosition: { measureId: 'm-arc', at: [0, 1] }, toPosition: { measureId: 'm-arc', at: [1, 1] } },
+    { id: 'arc-different-pitch', type: 'arc', direction: 'up', fromNoteId: 'n-arc-2', fromPosition: { measureId: 'm-arc', at: [1, 1] }, toPosition: { measureId: 'm-arc', at: [2, 1] } }
+  ],
+  layout: {}
+};
+const tiedArcPlayback = buildPlaybackIndex(tiedArcDocument);
+const tiedSource = tiedArcPlayback.entries.find(entry => entry.atBeats === 0)?.notes.find(note => note.id === 'n-arc-1');
+const tiedArrival = tiedArcPlayback.entries.find(entry => entry.atBeats === 1)?.notes.find(note => note.id === 'n-arc-2');
+const differentArrival = tiedArcPlayback.entries.find(entry => entry.atBeats === 2)?.notes.find(note => note.id === 'n-arc-3');
+assert.deepEqual(tiedSource.arcSustain, { relationId: 'arc-same-pitch', toNoteId: 'n-arc-2', durationBeats: 2 }, 'same sounding pitch across different strings must sustain from the first attack through the target duration');
+assert.equal(tiedArrival.arcArrivalRelationId, 'arc-same-pitch', 'the same-pitch target must be marked as a continuation arrival');
+assert.equal(Object.hasOwn(tiedArrival, 'arcSustain'), false, 'a following arc to a different pitch must not become a sustain chain');
+assert.equal(Object.hasOwn(differentArrival, 'arcArrivalRelationId'), false, 'different-pitch arc endpoints must still re-attack normally');
 
 const audioSource = await readFile(new URL('../src/editor/audio-engine.js', import.meta.url), 'utf8');
 const bankSource = await readFile(new URL('../src/editor/sample-bank.js', import.meta.url), 'utf8');
@@ -117,13 +139,18 @@ assert.match(audioSource, /SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS = 0\.002/, 
 assert.match(audioSource, /linearRampToValueAtTime\(0, releaseEnd\)/, 'sequenced damping must finish before the following note starts');
 assert.match(audioSource, /if \(dampPrevious\) this\.stopStringVoice\(string\);/, 'manual audition may still damp immediately while score playback uses pre-scheduled damping');
 assert.match(audioSource, /activeVoices = Array\(STRING_TUNING\.length\)\.fill\(null\)/);
+assert.match(audioSource, /hasActiveArc\(relationId\)[\s\S]*activeVoices\.some\(voice => String\(voice\?\.arcRelationId/s, 'same-pitch arc arrivals must be able to detect the still-ringing source voice');
+assert.match(audioSource, /continueArc\(fromRelationId, toRelationId\)[\s\S]*voice\.arcRelationId = toId/s, 'consecutive same-pitch arcs must continue one voice instead of restarting it');
+assert.match(audioSource, /arcRelationId: String\(arcRelationId \|\| ''\)/, 'newly attacked arc sources must tag the active voice with their sustain relation');
 assert.doesNotMatch(audioSource, /pluckBuffer|addPickNoise|Math\.random\(\)/, 'recorded samples must be the only guitar source');
 assert.match(audioSource, /void engine\.samples\.preload\(\)/, 'network preload must start before Play');
-assert.match(controllerSource, /function buildNextStringDelayMap\(playback, beatMs\)[\s\S]*playbackNoteSchedule\(event, beatMs\)[\s\S]*delays\.set\(previous\.noteId/s, 'playback must derive exact next attacks per string including articulation delay');
+assert.match(controllerSource, /function buildNextStringDelayMap\(playback, beatMs\)[\s\S]*continuation = pureSlideArrival \|\| Boolean\(note\.arcArrivalRelationId\)[\s\S]*find\(item => !item\.continuation\)/s, 'same-pitch arc arrivals must be skipped as attacks when deriving the next real pluck on a string');
 assert.match(controllerSource, /slideSeconds: slide \? Math\.max\(0\.015,/,'short rhythmic slides should no longer be forced to the old 60 ms minimum');
 assert.match(controllerSource, /nextSameStringSeconds:[\s\S]*state\.nextStringDelayMs/s, 'each plucked note must receive its next same-string attack gap');
 assert.match(controllerSource, /dampPrevious: false/, 'score playback must rely on pre-note damping instead of post-attack overlap');
 assert.match(controllerSource, /audio\.hasActiveSlide\(string, note\.slideArrivalRelationId\)/);
+assert.match(controllerSource, /note\.arcArrivalRelationId && audio\.hasActiveArc\(note\.arcArrivalRelationId\)[\s\S]*return;/s, 'a ringing same-pitch arc must suppress the target re-pluck');
+assert.match(controllerSource, /arcRelationId: arc\?\.relationId \|\| ''/, 'arc source attacks must register their sustain relation with the audio engine');
 assert.match(controllerSource, /preparing: false/,'playback must expose a preparation state instead of silently ignoring clicks while work is pending');
 assert.match(controllerSource, /requestAnimationFrame\(resolve\)/,'the busy indicator must get a paint opportunity before audio decode or index rebuild');
 assert.match(controllerSource, /button-spinner/,'the Play button must reuse the visible spinner feedback used by Save');
