@@ -20,35 +20,82 @@ function locationMap(document) {
   return locations;
 }
 
-function slideEffects(document) {
+const OPEN_STRING_SEMITONES = [64, 59, 55, 50, 45, 40];
+
+function notePitchSemitone(note) {
+  const string = Number(note?.string);
+  const fret = Number(noteSoundingFret(note));
+  if (!Number.isInteger(string) || string < 0 || string >= OPEN_STRING_SEMITONES.length || !Number.isFinite(fret)) return null;
+  return OPEN_STRING_SEMITONES[string] + fret;
+}
+
+function relationEffects(document) {
   const noteContext = new Map();
+  const notesByPosition = new Map();
   let measureStartBeat = 0;
   for (const measure of document.measures || []) {
     for (const event of measure.events || []) {
       const absoluteBeat = measureStartBeat + eventTime(event);
-      for (const note of event.notes || []) noteContext.set(String(note.id), { note, absoluteBeat });
+      const positionKey = `${String(measure.id)}|${fractionKey(event.at)}`;
+      const contexts = notesByPosition.get(positionKey) || [];
+      for (const note of event.notes || []) {
+        const context = {
+          note,
+          event,
+          absoluteBeat,
+          endBeat: absoluteBeat + eventDuration(event)
+        };
+        noteContext.set(String(note.id), context);
+        contexts.push(context);
+      }
+      notesByPosition.set(positionKey, contexts);
     }
     measureStartBeat += measureDurationInBeats(measure);
   }
 
   const effects = new Map();
   for (const relation of document.relations || []) {
-    if (relation?.type !== 'slide' || !relation.fromNoteId || !relation.toNoteId) continue;
+    const relationId = String(relation?.id || '');
+    if (relation?.type === 'slide' && relation.fromNoteId && relation.toNoteId) {
+      const from = noteContext.get(String(relation.fromNoteId));
+      const to = noteContext.get(String(relation.toNoteId));
+      if (!from || !to || Number(from.note.string) !== Number(to.note.string)) continue;
+      const durationBeats = to.absoluteBeat - from.absoluteBeat;
+      if (!(durationBeats > 0)) continue;
+      const fromEffect = effects.get(String(from.note.id)) || {};
+      fromEffect.slide = {
+        relationId,
+        toFret: noteSoundingFret(to.note),
+        durationBeats
+      };
+      effects.set(String(from.note.id), fromEffect);
+      const toEffect = effects.get(String(to.note.id)) || {};
+      toEffect.slideArrivalRelationId = relationId;
+      effects.set(String(to.note.id), toEffect);
+      continue;
+    }
+
+    if (relation?.type !== 'arc' || !relation.fromNoteId || !relation.toPosition?.measureId || !relation.toPosition?.at) continue;
     const from = noteContext.get(String(relation.fromNoteId));
-    const to = noteContext.get(String(relation.toNoteId));
-    if (!from || !to || Number(from.note.string) !== Number(to.note.string)) continue;
-    const durationBeats = to.absoluteBeat - from.absoluteBeat;
-    if (!(durationBeats > 0)) continue;
-    const relationId = String(relation.id || '');
+    if (!from) continue;
+    const targetPositionKey = `${String(relation.toPosition.measureId)}|${fractionKey(relation.toPosition.at)}`;
+    const sourcePitch = notePitchSemitone(from.note);
+    if (sourcePitch == null) continue;
+    const candidates = (notesByPosition.get(targetPositionKey) || [])
+      .filter(context => notePitchSemitone(context.note) === sourcePitch && context.absoluteBeat > from.absoluteBeat);
+    const to = candidates.find(context => Number(context.note.string) === Number(from.note.string)) || candidates[0];
+    if (!to) continue;
+
     const fromEffect = effects.get(String(from.note.id)) || {};
-    fromEffect.slide = {
+    fromEffect.arcSustain = {
       relationId,
-      toFret: noteSoundingFret(to.note),
-      durationBeats
+      toNoteId: String(to.note.id),
+      durationBeats: Math.max(0, to.endBeat - from.absoluteBeat)
     };
     effects.set(String(from.note.id), fromEffect);
+
     const toEffect = effects.get(String(to.note.id)) || {};
-    toEffect.slideArrivalRelationId = relationId;
+    toEffect.arcArrivalRelationId = relationId;
     effects.set(String(to.note.id), toEffect);
   }
   return effects;
@@ -61,7 +108,9 @@ function playbackNotes(notes, effects) {
       ...cloneValue(note),
       fret: noteSoundingFret(note),
       ...(effect?.slide ? { slide: cloneValue(effect.slide) } : {}),
-      ...(effect?.slideArrivalRelationId ? { slideArrivalRelationId: effect.slideArrivalRelationId } : {})
+      ...(effect?.slideArrivalRelationId ? { slideArrivalRelationId: effect.slideArrivalRelationId } : {}),
+      ...(effect?.arcSustain ? { arcSustain: cloneValue(effect.arcSustain) } : {}),
+      ...(effect?.arcArrivalRelationId ? { arcArrivalRelationId: effect.arcArrivalRelationId } : {})
     };
   });
 }
@@ -83,7 +132,7 @@ function playbackEvent(event, slotStart, effects) {
 export function buildPlaybackIndex(documentModel) {
   const document = normalizeDocumentV3(documentModel);
   const locations = locationMap(document);
-  const effects = slideEffects(document);
+  const effects = relationEffects(document);
   const entries = [];
   let measureStartBeat = 0;
 

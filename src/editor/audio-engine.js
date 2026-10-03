@@ -168,6 +168,21 @@ export class GuitarAudioEngine {
     return Boolean(voice?.slideRelationId && String(voice.slideRelationId) === String(relationId || ''));
   }
 
+  hasActiveArc(relationId) {
+    const id = String(relationId || '');
+    return Boolean(id && this.activeVoices.some(voice => String(voice?.arcRelationId || '') === id));
+  }
+
+  continueArc(fromRelationId, toRelationId) {
+    const fromId = String(fromRelationId || '');
+    const toId = String(toRelationId || '');
+    if (!fromId || !toId) return false;
+    const voice = this.activeVoices.find(item => String(item?.arcRelationId || '') === fromId);
+    if (!voice) return false;
+    voice.arcRelationId = toId;
+    return true;
+  }
+
   playMetronomeClick({ accent = false } = {}) {
     if (!this.context || !this.masterGain) return;
     const now = this.context.currentTime;
@@ -189,6 +204,7 @@ export class GuitarAudioEngine {
     slideToFret = null,
     slideSeconds = 0,
     slideRelationId = '',
+    arcRelationId = '',
     nextSameStringSeconds = null,
     dampPrevious = true
   } = {}) {
@@ -240,6 +256,7 @@ export class GuitarAudioEngine {
     const voice = {
       gain,
       slideRelationId: pitch.sliding ? String(slideRelationId || '') : '',
+      arcRelationId: String(arcRelationId || ''),
       stop: () => {
         if (stopped) return;
         stopped = true;

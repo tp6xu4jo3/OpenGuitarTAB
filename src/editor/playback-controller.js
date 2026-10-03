@@ -338,22 +338,30 @@ function setMetronomeEnabled(enabled) {
 
 function buildNextStringDelayMap(playback, beatMs) {
   const delays = new Map();
-  const previousByString = new Map();
+  const notesByString = new Map();
   for (const entry of playback?.entries || []) {
     for (const event of entry.events || []) {
       const eventBaseMs = (Number(entry.absoluteBeat) + Number(event.offsetBeats || 0)) * beatMs;
       for (const { note, delayMs } of playbackNoteSchedule(event, beatMs)) {
         if (!note || /^x$/i.test(String(note.fret))) continue;
-        const pureSlideArrival = Boolean(note.slideArrivalRelationId && !note.slide?.relationId);
-        if (pureSlideArrival) continue;
         const string = Number(note.string);
         const noteId = String(note.id || '');
         if (!Number.isInteger(string) || !noteId) continue;
         const attackMs = eventBaseMs + Math.max(0, Number(delayMs) || 0);
-        const previous = previousByString.get(string);
-        if (previous) delays.set(previous.noteId, Math.max(0, attackMs - previous.attackMs));
-        previousByString.set(string, { noteId, attackMs });
+        const pureSlideArrival = Boolean(note.slideArrivalRelationId && !note.slide?.relationId);
+        const continuation = pureSlideArrival || Boolean(note.arcArrivalRelationId);
+        const items = notesByString.get(string) || [];
+        items.push({ noteId, attackMs, continuation });
+        notesByString.set(string, items);
       }
+    }
+  }
+
+  for (const items of notesByString.values()) {
+    for (let index = 0; index < items.length; index += 1) {
+      const current = items[index];
+      const nextAttack = items.slice(index + 1).find(item => !item.continuation);
+      if (nextAttack) delays.set(current.noteId, Math.max(0, nextAttack.attackMs - current.attackMs));
     }
   }
   return delays;
@@ -365,6 +373,11 @@ function playNote(note, beatMs) {
   if (!audio) return;
   const string = Number(note.string);
   const slide = note.slide || null;
+  const arc = note.arcSustain || null;
+  if (note.arcArrivalRelationId && audio.hasActiveArc(note.arcArrivalRelationId)) {
+    if (arc?.relationId) audio.continueArc(note.arcArrivalRelationId, arc.relationId);
+    return;
+  }
   const hasOutgoingSlide = Boolean(slide?.relationId && slide?.toFret != null);
   if (note.slideArrivalRelationId && !hasOutgoingSlide && audio.hasActiveSlide(string, note.slideArrivalRelationId)) return;
   const harmonic = (note.techniques || []).some(technique => technique?.type === 'harmonic');
@@ -373,6 +386,7 @@ function playNote(note, beatMs) {
     slideToFret: slide?.toFret ?? null,
     slideSeconds: slide ? Math.max(0.015, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
     slideRelationId: slide?.relationId || '',
+    arcRelationId: arc?.relationId || '',
     nextSameStringSeconds: (state.nextStringDelayMs.get(String(note.id || '')) ?? Number.NaN) / 1000,
     dampPrevious: false
   });
