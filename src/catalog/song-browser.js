@@ -92,6 +92,9 @@ export class SongBrowser {
     this.expandedWorkId = null;
     this.songsExpanded = false;
     this.artistsExpanded = false;
+    this.workCards = new Map();
+    this.artistButtons = new Map();
+    this.emptyState = createElement('p', 'empty-state');
 
     this.container.classList.remove('song-card-grid');
     this.container.classList.add('song-browser-rail');
@@ -102,9 +105,7 @@ export class SongBrowser {
     this.showAllButton = createElement('button', 'song-browser-show-all', '顯示所有曲譜');
     this.showAllButton.type = 'button';
     this.showAllButton.addEventListener('click', () => {
-      this.songsExpanded = true;
-      this.activeArtist = '';
-      if (this.searchInput) this.searchInput.value = '';
+      this.songsExpanded = !this.songsExpanded;
       this.render();
     });
     if (this.countElement) headingActions.appendChild(this.countElement);
@@ -124,7 +125,7 @@ export class SongBrowser {
     this.showAllArtistsButton = createElement('button', 'song-browser-show-all', '顯示所有作者');
     this.showAllArtistsButton.type = 'button';
     this.showAllArtistsButton.addEventListener('click', () => {
-      this.artistsExpanded = true;
+      this.artistsExpanded = !this.artistsExpanded;
       this.render();
     });
     artistHeadingActions.appendChild(this.showAllArtistsButton);
@@ -155,6 +156,7 @@ export class SongBrowser {
     this.errorText = '';
     if (this.activeArtist && !collectArtists(this.works).includes(this.activeArtist)) this.activeArtist = '';
     if (this.expandedWorkId && !this.works.some(work => work.workId === this.expandedWorkId)) this.expandedWorkId = null;
+    this.rebuildDataNodes();
     this.render();
   }
 
@@ -163,8 +165,10 @@ export class SongBrowser {
     this.errorText = String(message || '曲譜載入失敗。');
     this.activeArtist = '';
     this.expandedWorkId = null;
-    this.songsExpanded = false;
-    this.artistsExpanded = false;
+    this.workCards.clear();
+    this.artistButtons.clear();
+    this.container.innerHTML = '';
+    this.artistRail.innerHTML = '';
     this.render();
   }
 
@@ -198,9 +202,6 @@ export class SongBrowser {
     button.append(avatar, createElement('span', 'artist-filter-label', '全部作者'));
     button.addEventListener('click', () => {
       this.activeArtist = '';
-      this.songsExpanded = false;
-      this.artistsExpanded = false;
-      if (this.searchInput) this.searchInput.value = '';
       this.render();
     });
     return button;
@@ -226,32 +227,33 @@ export class SongBrowser {
     return avatar;
   }
 
-  renderArtistRail() {
+  rebuildArtistNodes() {
     this.artistRail.innerHTML = '';
-    this.artistHeading.hidden = Boolean(this.errorText);
-    this.artistShell.hidden = Boolean(this.errorText);
-    if (this.errorText) return;
+    this.artistButtons.clear();
+    for (const artist of collectArtists(this.works)) {
+      const button = createElement('button', 'artist-filter-button');
+      button.type = 'button';
+      button.append(this.createArtistAvatar(artist), createElement('span', 'artist-filter-label', artist));
+      button.addEventListener('click', () => {
+        this.activeArtist = this.activeArtist === artist ? '' : artist;
+        this.render();
+      });
+      this.artistButtons.set(artist, button);
+      this.artistRail.appendChild(button);
+    }
+  }
 
+  updateArtistSelection() {
     const allActive = !this.activeArtist;
     this.allArtistsButton.classList.toggle('active', allActive);
     this.allArtistsButton.setAttribute('aria-pressed', String(allActive));
     this.allArtistsButton.setAttribute('aria-label', allActive ? '目前顯示全部作者' : '顯示全部作者');
 
-    for (const artist of collectArtists(this.works)) {
-      const button = createElement('button', 'artist-filter-button');
-      button.type = 'button';
+    for (const [artist, button] of this.artistButtons) {
       const active = this.activeArtist === artist;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', String(active));
       button.setAttribute('aria-label', active ? `取消 ${artist} 篩選` : `只看 ${artist}`);
-      button.append(this.createArtistAvatar(artist), createElement('span', 'artist-filter-label', artist));
-      button.addEventListener('click', () => {
-        this.activeArtist = this.activeArtist === artist ? '' : artist;
-        this.songsExpanded = false;
-        this.artistsExpanded = false;
-        this.render();
-      });
-      this.artistRail.appendChild(button);
     }
   }
 
@@ -351,6 +353,21 @@ export class SongBrowser {
     return card;
   }
 
+  rebuildDataNodes() {
+    this.container.innerHTML = '';
+    this.workCards.clear();
+    for (const work of this.works) {
+      const card = this.createWorkCard(work);
+      this.workCards.set(String(work.workId || ''), card);
+      this.container.appendChild(card);
+    }
+    this.emptyState.textContent = this.emptyText;
+    this.emptyState.className = 'empty-state';
+    this.emptyState.hidden = true;
+    this.container.appendChild(this.emptyState);
+    this.rebuildArtistNodes();
+  }
+
   updateRailButtons(rail, prev, next) {
     const hasOverflow = rail.scrollWidth - rail.clientWidth > 2;
     const items = [...rail.children].filter(item => item instanceof HTMLElement && !item.hidden);
@@ -385,26 +402,39 @@ export class SongBrowser {
   }
 
   render() {
-    this.renderArtistRail();
-    this.container.innerHTML = '';
     this.songHeading.hidden = false;
     this.songShell.hidden = false;
+    this.artistHeading.hidden = Boolean(this.errorText);
+    this.artistShell.hidden = Boolean(this.errorText);
     this.container.classList.toggle('is-expanded', this.songsExpanded);
     this.songShell.classList.toggle('is-expanded', this.songsExpanded);
     this.artistRail.classList.toggle('is-expanded', this.artistsExpanded);
     this.artistShell.classList.toggle('is-expanded', this.artistsExpanded);
+    this.showAllButton.textContent = this.songsExpanded ? '顯示部分曲譜' : '顯示所有曲譜';
     this.showAllButton.setAttribute('aria-expanded', String(this.songsExpanded));
+    this.showAllArtistsButton.textContent = this.artistsExpanded ? '顯示部分作者' : '顯示所有作者';
     this.showAllArtistsButton.setAttribute('aria-expanded', String(this.artistsExpanded));
+
     if (this.errorText) {
-      this.container.appendChild(createElement('p', 'empty-state song-browser-error', this.errorText));
+      this.emptyState.textContent = this.errorText;
+      this.emptyState.className = 'empty-state song-browser-error';
+      this.emptyState.hidden = false;
+      if (!this.emptyState.isConnected) this.container.appendChild(this.emptyState);
       if (this.countElement) this.countElement.textContent = '';
       this.syncRailControls();
       return;
     }
-    const works = this.selectedWorks();
-    works.forEach(work => this.container.appendChild(this.createWorkCard(work)));
-    if (!works.length) this.container.appendChild(createElement('p', 'empty-state', this.emptyText));
-    if (this.countElement) this.countElement.textContent = `${works.length} 首`;
+
+    this.updateArtistSelection();
+    const visibleIds = new Set(this.selectedWorks().map(work => String(work.workId || '')));
+    for (const [workId, card] of this.workCards) {
+      card.hidden = !visibleIds.has(workId);
+    }
+    this.emptyState.textContent = this.emptyText;
+    this.emptyState.className = 'empty-state';
+    this.emptyState.hidden = visibleIds.size > 0;
+    if (!this.emptyState.isConnected) this.container.appendChild(this.emptyState);
+    if (this.countElement) this.countElement.textContent = `${visibleIds.size} 首`;
     this.syncRailControls();
   }
 }
