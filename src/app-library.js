@@ -97,7 +97,7 @@ function renderSongList() {
     if (songWasPublished(song) && !songIsPublic(song)) {
       const badge = document.createElement('span');
       badge.className = 'song-hidden-badge';
-      badge.textContent = '已下架';
+      badge.textContent = '未上架';
       item.appendChild(badge);
     }
 
