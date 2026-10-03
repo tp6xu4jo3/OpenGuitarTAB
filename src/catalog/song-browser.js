@@ -102,11 +102,9 @@ export class SongBrowser {
     this.showAllButton = createElement('button', 'song-browser-show-all', '顯示所有曲譜');
     this.showAllButton.type = 'button';
     this.showAllButton.addEventListener('click', () => {
-      this.songsExpanded = !this.songsExpanded;
-      if (this.songsExpanded) {
-        this.activeArtist = '';
-        if (this.searchInput) this.searchInput.value = '';
-      }
+      this.songsExpanded = true;
+      this.activeArtist = '';
+      if (this.searchInput) this.searchInput.value = '';
       this.render();
     });
     if (this.countElement) headingActions.appendChild(this.countElement);
@@ -126,7 +124,7 @@ export class SongBrowser {
     this.showAllArtistsButton = createElement('button', 'song-browser-show-all', '顯示所有作者');
     this.showAllArtistsButton.type = 'button';
     this.showAllArtistsButton.addEventListener('click', () => {
-      this.artistsExpanded = !this.artistsExpanded;
+      this.artistsExpanded = true;
       this.render();
     });
     artistHeadingActions.appendChild(this.showAllArtistsButton);
@@ -395,9 +393,7 @@ export class SongBrowser {
     this.songShell.classList.toggle('is-expanded', this.songsExpanded);
     this.artistRail.classList.toggle('is-expanded', this.artistsExpanded);
     this.artistShell.classList.toggle('is-expanded', this.artistsExpanded);
-    this.showAllButton.textContent = this.songsExpanded ? '收合曲譜' : '顯示所有曲譜';
     this.showAllButton.setAttribute('aria-expanded', String(this.songsExpanded));
-    this.showAllArtistsButton.textContent = this.artistsExpanded ? '收合作者' : '顯示所有作者';
     this.showAllArtistsButton.setAttribute('aria-expanded', String(this.artistsExpanded));
     if (this.errorText) {
       this.container.appendChild(createElement('p', 'empty-state song-browser-error', this.errorText));
