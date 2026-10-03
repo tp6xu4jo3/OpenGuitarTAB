@@ -6,6 +6,7 @@ const browser=await readFile(new URL('../src/catalog/song-browser.js',import.met
 const runtime=await readFile(new URL('../src/app-runtime.js',import.meta.url),'utf8');
 const catalogCss=await readFile(new URL('../styles/catalog.css',import.meta.url),'utf8');
 const mainCss=await readFile(new URL('../styles/main.css',import.meta.url),'utf8');
+const library=await readFile(new URL('../src/app-library.js',import.meta.url),'utf8');
 assert.match(runtime,/let catalogWorks = \[\]/);
 assert.doesNotMatch(runtime,/catalogSongs/);
 assert.match(app,/Array\.isArray\(result\.works\) \? result\.works : \[\]/);
@@ -22,6 +23,9 @@ assert.match(app,/createArrangementMenu/,'edit and visibility actions must share
 assert.match(app,/'編輯'/);
 assert.match(app,/'下架'/);
 assert.match(app,/'＋ 加入'/);
+assert.match(library,/badge\.textContent = '未上架';/,'unlisted personal scores must use the 未上架 label');
+assert.doesNotMatch(library,/badge\.textContent = '已下架';/,'the old 已下架 badge label must not remain');
+assert.match(catalogCss,/\.song-hidden-badge\{[^}]*width:max-content[^}]*max-width:max-content[^}]*flex:0 0 auto[^}]*white-space:nowrap/s,'the unlisted badge must shrink to its content instead of stretching across the sidebar');
 const libraryActions=app.slice(app.indexOf('function renderLibraryArrangementActions'),app.indexOf('function ensureLibrarySearchInput'));
 assert.match(libraryActions,/work-card-action primary work-card-action-icon work-card-edit-icon/,'library edit must use the shared green circular icon button');
 assert.match(libraryActions,/createArrangementMenu\(menuItems\)/,'library visibility and delete actions must use the shared ellipsis menu');
