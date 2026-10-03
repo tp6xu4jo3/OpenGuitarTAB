@@ -94,11 +94,13 @@ function renderSongList() {
     loadButton.title = song.name || '未命名曲譜';
     loadButton.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`));
 
+    const titleRow = makeDiv('song-title-row');
+    titleRow.appendChild(loadButton);
     if (songWasPublished(song) && !songIsPublic(song)) {
       const badge = document.createElement('span');
       badge.className = 'song-hidden-badge';
       badge.textContent = '未上架';
-      item.appendChild(badge);
+      titleRow.appendChild(badge);
     }
 
     const permissions = libraryActionsFor(song);
@@ -147,7 +149,7 @@ function renderSongList() {
       del.addEventListener('click', event => { event.stopPropagation(); requestDeleteSong(song.id); });
       menu.appendChild(del);
     }
-    item.append(loadButton, moreButton, menu);
+    item.append(titleRow, moreButton, menu);
     songList.appendChild(item);
   });
 
