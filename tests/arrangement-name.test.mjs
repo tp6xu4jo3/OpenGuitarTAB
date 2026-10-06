@@ -13,8 +13,9 @@ const [html, runtime, library, importer, catalog, songActions, api, workModel, s
   readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8')
 ]);
 
-assert.match(html, /id="newSongNameInput"[^>]*placeholder="例如：晴る"[^>]*required/,'new blank/import flow must collect the immutable song title');
-assert.match(html, /id="newSongArrangementNameInput"[^>]*placeholder="例如：晴る 指彈版"[^>]*required/,'new blank/import flow must collect the editable score name');
+assert.match(html, /id="blankSongIdentity"[^>]*hidden/,'blank-song identity fields must stay hidden until blank creation is selected');
+assert.match(html, /id="newSongNameInput"[^>]*placeholder="例如：晴る"[^>]*required/,'blank creation must collect the immutable song title');
+assert.match(html, /id="newSongArrangementNameInput"[^>]*placeholder="例如：晴る 指彈版"[^>]*required/,'blank creation must collect the editable score name');
 assert.match(html, /曲名建立後固定；之後「重新命名」只會修改譜名。/);
 assert.equal((html.match(/搜尋曲名、譜名或作者/g) || []).length, 2, 'catalog and library search hints must include score names');
 assert.match(html, /id="renameModalTitle">重新命名譜名</,'sidebar rename UI must make its arrangement-only meaning explicit');
@@ -23,7 +24,7 @@ assert.match(runtime, /name: String\(song\?\.name \|\| song\?\.title \|\| '未�
 assert.match(runtime, /arrangementName: String\(song\?\.arrangementName \|\| song\?\.name \|\| song\?\.title \|\| '未命名曲譜'\)/,'legacy scores must display their old title as arrangementName without a bulk migration');
 
 assert.match(library, /function arrangementDisplayName\(song\)[\s\S]*song\?\.arrangementName \|\| song\?\.name/);
-assert.match(library, /function readNewSongIdentity[\s\S]*請填寫曲名[\s\S]*請填寫譜名/s,'both identities must be mandatory before blank creation or JSON import');
+assert.match(library, /function readNewSongIdentity[\s\S]*請填寫曲名[\s\S]*請填寫譜名/s,'both identities must be mandatory before blank creation');
 assert.match(library, /const scoreName = arrangementDisplayName\(song\)[\s\S]*loadButton\.textContent = scoreName/s,'sidebar text must be the arrangement name');
 assert.match(library, /item\.addEventListener\('click',[\s\S]*event\.target\.closest\('\.song-more-button,\.song-menu'\)[\s\S]*#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}/s,'the full sidebar row must open the score while menu interactions stay isolated');
 assert.doesNotMatch(library, /loadButton\.addEventListener\('click'/,'opening a sidebar score must no longer depend on clicking only its text button');
@@ -32,10 +33,15 @@ assert.match(library, /song\.arrangementName = cleanName/,'rename must mutate ar
 const renameBlock = library.slice(library.indexOf('async function confirmRenameSong()'), library.indexOf('function requestDeleteSong('));
 assert.doesNotMatch(renameBlock, /song\.name\s*=/,'rename must never mutate the immutable song title');
 assert.match(library, /const identity = readNewSongIdentity\(\)[\s\S]*name: identity\.name,[\s\S]*arrangementName: identity\.arrangementName/s,'blank creation must persist both names');
-assert.match(library, /uploadJsonButton\.addEventListener[\s\S]*if \(!readNewSongIdentity\(\)\) return;[\s\S]*uploadJsonInput\.click\(\)/s,'JSON upload must require both names before opening the picker');
+assert.match(library, /function setBlankSongFormVisible\(visible\)[\s\S]*blankSongIdentity[\s\S]*blankSongOptions/s,'blank identity and meter controls must share one visibility state');
+assert.match(library, /blankSongChoice'\)\?\.addEventListener[\s\S]*setBlankSongFormVisible\(true\)[\s\S]*newSongNameInput\?\.focus/s,'blank creation must reveal identity fields before collecting meter');
+assert.match(library, /uploadJsonButton\.addEventListener[\s\S]*setBlankSongFormVisible\(false\)[\s\S]*uploadJsonInput\.click\(\)/s,'JSON upload must open directly without showing blank-song identity fields');
+assert.doesNotMatch(library, /uploadJsonButton\.addEventListener[\s\S]*readNewSongIdentity/s,'JSON upload must not depend on blank-song identity input');
 
-assert.match(importer, /const identity = window\.readNewSongIdentity\?\.\(\)/);
-assert.match(importer, /delete imported\.workId;[\s\S]*delete imported\.arrangementId;[\s\S]*imported\.name = identity\.name;[\s\S]*imported\.arrangementName = identity\.arrangementName;/s,'import must derive a fresh Work from the entered song title and use the entered score name');
+assert.doesNotMatch(importer, /readNewSongIdentity/,'JSON import must not read blank-song identity fields');
+assert.match(importer, /const importedName = String\(imported\?\.name \|\| imported\?\.title \|\| ''\)\.trim\(\)/);
+assert.match(importer, /const importedArrangementName = String\(imported\?\.arrangementName \|\| importedName\)\.trim\(\)/,'legacy JSON may fall back to its song title for arrangementName');
+assert.match(importer, /delete imported\.workId;[\s\S]*delete imported\.arrangementId;[\s\S]*imported\.name = importedName;[\s\S]*imported\.arrangementName = importedArrangementName;/s,'import must keep JSON-provided names while deriving fresh Work and Arrangement identities');
 
 assert.match(workModel, /function deriveLegacyWorkId\(song\)[\s\S]*song\?\.name/,'Work identity must remain song-title-derived');
 assert.match(workModel, /arrangementName: String\(source\.arrangementName \|\| source\.name \|\| '未命名曲譜'\)/,'Arrangement metadata must own the editable score name');
