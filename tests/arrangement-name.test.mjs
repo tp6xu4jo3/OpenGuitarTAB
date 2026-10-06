@@ -36,10 +36,12 @@ assert.match(library, /const scoreName = window\.formatArrangementDisplayName\?\
 assert.match(library, /item\.addEventListener\('click',[\s\S]*event\.target\.closest\('\.song-more-button,\.song-menu'\)[\s\S]*#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}/s,'the full sidebar row must open the score while menu interactions stay isolated');
 assert.doesNotMatch(library, /loadButton\.addEventListener\('click'/,'opening a sidebar score must no longer depend on clicking only its text button');
 assert.match(library, /renameInput\.value = arrangementDisplayName\(song\)/);
+assert.match(library, /function hydrateSong\(raw\)[\s\S]*const hasScoreBody = Boolean[\s\S]*if \(!hasScoreBody\)[\s\S]*return \{/s,'metadata-only library records must stay metadata-only instead of gaining a blank document');
 assert.match(library, /editorTitle\.textContent = window\.formatArrangementDisplayName\?\.\(saved, '吉他 TAB 譜製作器'\)/,'renaming the score must refresh the combined editor title');
-assert.match(library, /song\.arrangementName = cleanName/,'rename must mutate arrangementName');
 const renameBlock = library.slice(library.indexOf('async function confirmRenameSong()'), library.indexOf('function requestDeleteSong('));
-assert.doesNotMatch(renameBlock, /song\.name\s*=/,'rename must never mutate the immutable song title');
+assert.match(renameBlock, /dataSource\.renameSong\(song\._driveFileId, cleanName\)/,'sidebar rename must use the metadata-safe server rename path');
+assert.doesNotMatch(renameBlock, /persistSong\(/,'sidebar rename must never persist a metadata-only library record as a full score');
+assert.doesNotMatch(renameBlock, /song\.name\s*=/,'rename must never mutate the song title');
 assert.match(library, /const identity = readNewSongIdentity\(\)[\s\S]*name: identity\.name,[\s\S]*arrangementName: identity\.arrangementName/s,'blank creation must persist both names');
 assert.match(library, /function setBlankSongFormVisible\(visible\)[\s\S]*blankSongIdentity[\s\S]*blankSongOptions/s,'blank identity and meter controls must share one visibility state');
 assert.match(library, /blankSongChoice'\)\?\.addEventListener[\s\S]*setBlankSongFormVisible\(true\)[\s\S]*newSongNameInput\?\.focus/s,'blank creation must reveal identity fields before collecting meter');
@@ -55,6 +57,8 @@ assert.match(workModel, /function deriveLegacyWorkId\(song\)[\s\S]*song\?\.name/
 assert.match(workModel, /arrangementName: String\(source\.arrangementName \|\| source\.name \|\| '未命名曲譜'\)/,'Arrangement metadata must own the editable score name');
 assert.match(api, /'arrangementName'[\s\S]*'name'/,'persisted song JSON must keep arrangementName separate from name');
 assert.match(api, /async function updateSongFile\(fileId, song, permission, previousSong = null\)[\s\S]*const persisted = cleanSongForWrite\(song\)/s,'the low-level Drive update must persist the metadata selected by the owning operation');
+assert.match(api, /export function songFileName\(song\)[\s\S]*\$\{workName\}_\$\{arrangementName\}_\$\{arrangementId\}\.json/s,'Drive filename must be 曲名_譜名_arrangementId.json');
+assert.match(api, /async function renameSongArrangement\(session, fileId, arrangementName\)[\s\S]*const entry = await readManagedEntry\(id\)[\s\S]*\{ \.\.\.entry\.song, arrangementName: nextArrangementName, updatedAt: Date\.now\(\) \}/s,'rename must read the authoritative Drive score before rewriting metadata so the document cannot be blanked');
 assert.match(api, /async function saveUserSong\(session, song\)[\s\S]*updateSongFile\(fileId, \{ \.\.\.song, name: entry\.song\.name \}/s,'ordinary save must keep the existing song title');
 assert.match(api, /async function publishSong\(session, song\)[\s\S]*const name = String\(song\?\.name[\s\S]*updateSongFile\(fileId, \{ \.\.\.song, name, arrangementName, artist \}/s,'publish must be the explicit path that can change the song title and therefore Work identity');
 assert.match(api, /arrangementName: song\.arrangementName/,'index v3 Arrangement records must cache the score name');
