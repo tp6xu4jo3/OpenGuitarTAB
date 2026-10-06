@@ -301,16 +301,22 @@ async function toggleSongPublic(song) {
   }
 }
 
+function setBlankSongFormVisible(visible) {
+  const identity = document.getElementById('blankSongIdentity');
+  const options = document.getElementById('blankSongOptions');
+  if (identity) identity.hidden = !visible;
+  if (options) options.hidden = !visible;
+}
+
 function openNewSongModal() {
   if (!currentAuthUser()) { openLoginModal('#/library'); return; }
-  const blankOptions = document.getElementById('blankSongOptions');
-  if (blankOptions) blankOptions.hidden = true;
+  setBlankSongFormVisible(false);
   if (newSongNameInput) newSongNameInput.value = '';
   if (newSongArrangementNameInput) newSongArrangementNameInput.value = '';
   if (uploadJsonInput) uploadJsonInput.value = '';
   newSongModal.classList.add('open');
   newSongModal.setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(() => newSongNameInput?.focus());
+  requestAnimationFrame(() => document.getElementById('blankSongChoice')?.focus());
 }
 
 function closeNewSongModal() {
@@ -392,12 +398,11 @@ publishArtistInput.addEventListener('keydown', event => { if (event.key === 'Ent
 publishModal.addEventListener('click', event => { if (event.target === publishModal) closePublishModal(); });
 newSongButton.addEventListener('click', openNewSongModal);
 document.getElementById('blankSongChoice')?.addEventListener('click', () => {
-  const blankOptions = document.getElementById('blankSongOptions');
-  if (blankOptions) blankOptions.hidden = false;
-  newSongFourBeats.focus();
+  setBlankSongFormVisible(true);
+  requestAnimationFrame(() => newSongNameInput?.focus());
 });
 uploadJsonButton.addEventListener('click', () => {
-  if (!readNewSongIdentity()) return;
+  setBlankSongFormVisible(false);
   uploadJsonInput.click();
 });
 uploadJsonInput.addEventListener('change', () => importSongFile(uploadJsonInput.files?.[0]));
