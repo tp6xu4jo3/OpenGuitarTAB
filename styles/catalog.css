@@ -97,9 +97,16 @@
 .work-card-action-menu-shell{position:relative;flex:0 0 auto}
 .work-card-action-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:80;display:none;min-width:92px;padding:5px;border:1px solid #444;border-radius:10px;background:#181818;box-shadow:0 12px 28px rgba(0,0,0,.4)}
 .work-card-action-menu.open{display:block}
+.work-card-action-menu.with-info{box-sizing:border-box;width:176px;height:148px;min-width:176px;overflow:hidden}
+.work-card-action-menu.with-info.open{display:flex;flex-direction:column}
 .work-card-action-menu-item{width:100%;min-height:30px;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:#fff;font:inherit;font-size:11px;font-weight:800;text-align:left;cursor:pointer}
 .work-card-action-menu-item:hover,.work-card-action-menu-item:focus-visible{background:#303030;outline:none}
 .work-card-action-menu-item.danger{color:#ff9f9f}
+.work-card-action-menu-info{min-height:0;margin-top:auto;padding:7px 8px 4px;border-top:1px solid #333;overflow:auto;color:#bcbcbc;font-size:10px;line-height:1.35;scrollbar-width:thin;scrollbar-color:#555 transparent}
+.work-card-action-menu-info-title{display:block;margin-bottom:4px;color:#fff;font-size:10px;font-weight:900}
+.work-card-action-menu-info-row{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;gap:2px;min-width:0}
+.work-card-action-menu-info-label{white-space:nowrap;color:#8f8f8f}
+.work-card-action-menu-info-value{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 @keyframes catalog-added-pop{0%{transform:scale(.72)}60%{transform:scale(1.14)}100%{transform:scale(1)}}
 
 .primary-action,.back-button,.add-preview-button{border:0;cursor:pointer;font-weight:800}
