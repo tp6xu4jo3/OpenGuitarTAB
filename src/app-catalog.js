@@ -115,7 +115,49 @@ function closeArrangementMenus(except = null) {
   });
 }
 
-function createArrangementMenu(items) {
+function arrangementDifficultyText(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1 && number <= 5 ? `☆${Math.round(number)}` : '☆-';
+}
+
+function arrangementPlayStyleText(value) {
+  if (value === 'fingerstyle') return '指彈';
+  if (value === 'chord') return '和弦';
+  return '未設定';
+}
+
+function appendArrangementMenuInfo(menu, arrangement) {
+  if (!arrangement) return;
+  menu.classList.add('with-info');
+  const info = document.createElement('div');
+  info.className = 'work-card-action-menu-info';
+
+  const title = document.createElement('strong');
+  title.className = 'work-card-action-menu-info-title';
+  title.textContent = '資訊';
+  info.appendChild(title);
+
+  [
+    ['難度', arrangementDifficultyText(arrangement.difficulty)],
+    ['類型', arrangementPlayStyleText(arrangement.playStyle)],
+    ['來源', String(arrangement.source || '-')]
+  ].forEach(([labelText, valueText]) => {
+    const row = document.createElement('div');
+    row.className = 'work-card-action-menu-info-row';
+    const label = document.createElement('span');
+    label.className = 'work-card-action-menu-info-label';
+    label.textContent = `${labelText}：`;
+    const value = document.createElement('span');
+    value.className = 'work-card-action-menu-info-value';
+    value.textContent = valueText;
+    row.append(label, value);
+    info.appendChild(row);
+  });
+
+  menu.appendChild(info);
+}
+
+function createArrangementMenu(items, arrangement = null) {
   const shell = document.createElement('div');
   shell.className = 'work-card-action-menu-shell';
   const trigger = iconButton(
@@ -139,6 +181,7 @@ function createArrangementMenu(items) {
     });
     menu.appendChild(button);
   });
+  appendArrangementMenuInfo(menu, arrangement);
   trigger.addEventListener('click', event => {
     event.stopPropagation();
     const opening = !menu.classList.contains('open');
@@ -248,7 +291,7 @@ function renderCatalogArrangementActions({ arrangement, container }) {
     if (dataSource.capabilities?.visibility && arrangement.public === true) {
       menuItems.push({ label: '下架', danger: true, run: () => unlistCatalogArrangement(arrangement) });
     }
-    container.appendChild(createArrangementMenu(menuItems));
+    container.appendChild(createArrangementMenu(menuItems, arrangement));
     return;
   }
 
