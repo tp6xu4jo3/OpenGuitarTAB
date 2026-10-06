@@ -123,6 +123,12 @@ export class ServerDataSource {
     return result;
   }
 
+  async renameSong(fileId, arrangementName) {
+    const result = await this.driveRequest('rename', { method: 'POST', body: { fileId, arrangementName } }, '重新命名曲譜…');
+    this.clearCatalogCache();
+    return result;
+  }
+
   async setPublic(fileId, isPublic) {
     const result = await this.driveRequest('visibility', { method: 'POST', body: { fileId, public: Boolean(isPublic) } }, '更新曲譜狀態…');
     this.clearCatalogCache();
