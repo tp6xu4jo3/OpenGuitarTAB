@@ -31,11 +31,12 @@ assert.match(runtime, /arrangementName: String\(song\?\.arrangementName \|\| son
 
 assert.match(library, /function arrangementDisplayName\(song\)[\s\S]*song\?\.arrangementName \|\| song\?\.name/);
 assert.match(library, /function readNewSongIdentity[\s\S]*請填寫曲名[\s\S]*請填寫譜名/s,'both identities must be mandatory before blank creation');
-assert.match(library, /function libraryDisplayName\(song\)[\s\S]*arrangementName === workName[\s\S]*\$\{arrangementName\} - \$\{workName\}/s,'sidebar naming must show score name - song title and suppress duplicate names');
-assert.match(library, /const scoreName = libraryDisplayName\(song\)[\s\S]*loadButton\.textContent = scoreName/s,'sidebar text must use the combined score/song display name');
+assert.match(workModel, /function formatArrangementDisplayName\(song, fallback = '未命名曲譜'\)[\s\S]*arrangementName === workName[\s\S]*\$\{arrangementName\} - \$\{workName\}/s,'one shared formatter must define score name - song title and suppress duplicates');
+assert.match(library, /const scoreName = window\.formatArrangementDisplayName\?\.\(song\) \|\| arrangementDisplayName\(song\)[\s\S]*loadButton\.textContent = scoreName/s,'sidebar text must use the shared score/song display name');
 assert.match(library, /item\.addEventListener\('click',[\s\S]*event\.target\.closest\('\.song-more-button,\.song-menu'\)[\s\S]*#\/editor\/\$\{encodeURIComponent\(song\.arrangementId\)\}/s,'the full sidebar row must open the score while menu interactions stay isolated');
 assert.doesNotMatch(library, /loadButton\.addEventListener\('click'/,'opening a sidebar score must no longer depend on clicking only its text button');
 assert.match(library, /renameInput\.value = arrangementDisplayName\(song\)/);
+assert.match(library, /editorTitle\.textContent = window\.formatArrangementDisplayName\?\.\(saved, '吉他 TAB 譜製作器'\)/,'renaming the score must refresh the combined editor title');
 assert.match(library, /song\.arrangementName = cleanName/,'rename must mutate arrangementName');
 const renameBlock = library.slice(library.indexOf('async function confirmRenameSong()'), library.indexOf('function requestDeleteSong('));
 assert.doesNotMatch(renameBlock, /song\.name\s*=/,'rename must never mutate the immutable song title');
@@ -57,9 +58,10 @@ assert.match(api, /async function updateSongFile\(fileId, song, permission, prev
 assert.match(api, /async function saveUserSong\(session, song\)[\s\S]*updateSongFile\(fileId, \{ \.\.\.song, name: entry\.song\.name \}/s,'ordinary save must keep the existing song title');
 assert.match(api, /async function publishSong\(session, song\)[\s\S]*const name = String\(song\?\.name[\s\S]*updateSongFile\(fileId, \{ \.\.\.song, name, arrangementName, artist \}/s,'publish must be the explicit path that can change the song title and therefore Work identity');
 assert.match(api, /arrangementName: song\.arrangementName/,'index v3 Arrangement records must cache the score name');
-assert.match(catalog, /editorTitle\.textContent = loaded\.arrangementName \|\| loaded\.name/,'local editor header must display the score name');
-assert.match(catalog, /editorTitle\.textContent = previewSong\.arrangementName \|\| previewSong\.name/,'preview header must display the score name');
-assert.match(songActions, /title\.textContent = saved\?\.arrangementName \|\| saved\?\.name/,'saving must not switch the editor header back to the immutable song title');
+assert.match(catalog, /editorTitle\.textContent = window\.formatArrangementDisplayName\?\.\(loaded, '吉他 TAB 譜製作器'\)/,'local editor header must display score name - song title');
+assert.match(catalog, /editorTitle\.textContent = window\.formatArrangementDisplayName\?\.\(previewSong, '曲譜'\)/,'preview header must display score name - song title');
+assert.match(songActions, /title\.textContent = window\.formatArrangementDisplayName\?\.\(saved, '吉他 TAB 譜製作器'\)/,'saving must preserve the combined editor title');
+assert.match(songActions, /title\.textContent = window\.formatArrangementDisplayName\?\.\(updated, '吉他 TAB 譜製作器'\)/,'publishing must refresh the combined editor title');
 assert.match(songActions, /openPublishModal\(\)[\s\S]*publishMetadataUi\?\.fill\?\.\(song\)/s,'publish modal must populate the complete current metadata set');
 assert.match(songActions, /confirmPublishSong\(\)[\s\S]*const metadata = window\.publishMetadataUi\?\.read\?\.\(\)[\s\S]*請輸入曲名。[\s\S]*請輸入譜名。[\s\S]*請輸入作者（歌手）。[\s\S]*const publishSong = \{[\s\S]*\.\.\.prepared,[\s\S]*\.\.\.metadata/s,'publishing must validate and submit the edited song and score metadata together');
 assert.match(library, /publishModal\.querySelectorAll\('input\[type="text"\]'\)[\s\S]*confirmPublishSong/s,'all text metadata fields must support keyboard submission');
