@@ -817,6 +817,7 @@ function catalogIndexFromSongs(sourceFiles, songs, omittedDriveFileIds = []) {
       songId: String(song.songId || ''),
       workId: String(song.workId || ''),
       arrangementId: String(song.arrangementId || ''),
+      arrangementName: String(song.arrangementName || song.name || ''),
       name: String(song.name || ''),
       artist: String(song.artist || ''),
       album: String(song.album || ''),
