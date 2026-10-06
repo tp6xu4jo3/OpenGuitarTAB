@@ -83,46 +83,63 @@ export function openPublishModal() {
   const song = prepareCurrentSong();
   if (!song || !currentUser()) { window.openLoginModal?.('#/library'); return; }
   const modal = document.getElementById('publishModal');
-  const arrangementNameInput = document.getElementById('publishArrangementNameInput');
-  const artist = document.getElementById('publishArtistInput');
   const uploader = document.getElementById('publishUploader');
   const error = document.getElementById('publishError');
-  if (arrangementNameInput) arrangementNameInput.value = String(song.arrangementName || song.name || '');
-  if (artist) artist.value = String(song.artist || '');
+  window.publishMetadataUi?.fill?.(song);
   if (uploader) uploader.textContent = currentUser()?.username || '';
   if (error) error.textContent = '';
   modal?.classList.add('open');
   modal?.setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(() => { arrangementNameInput?.focus(); arrangementNameInput?.select(); });
+  requestAnimationFrame(() => {
+    const nameInput = document.getElementById('publishNameInput');
+    nameInput?.focus();
+    nameInput?.select();
+  });
 }
 
 export async function confirmPublishSong() {
   if (publishInProgress) return;
   const song = currentSongSafe();
-  const arrangementNameInput = document.getElementById('publishArrangementNameInput');
-  const artistInput = document.getElementById('publishArtistInput');
   const error = document.getElementById('publishError');
   const confirm = document.getElementById('publishConfirm');
   const cancel = document.getElementById('publishCancel');
-  const arrangementName = arrangementNameInput?.value.trim() || '';
-  const artist = artistInput?.value.trim() || '';
+  const metadata = window.publishMetadataUi?.read?.() || {};
   if (!song || !currentUser()) { closePublishModal(); window.openLoginModal?.('#/library'); return; }
   if (!window.dataSource?.capabilities?.publish) { closePublishModal(); window.showToast?.('GitHub Test不提供發布'); return; }
-  if (!arrangementName) { if (error) error.textContent = '請輸入譜名。'; arrangementNameInput?.focus(); return; }
-  if (!artist) { if (error) error.textContent = '請輸入作者（歌手）。'; artistInput?.focus(); return; }
-  prepareCurrentSong();
-  song.arrangementName = arrangementName;
-  song.artist = artist;
-  song._opentab = { ...(song._opentab || {}), uploadedBy: currentUser().username };
+  if (!metadata.name) {
+    if (error) error.textContent = '請輸入曲名。';
+    window.publishMetadataUi?.focus?.('name');
+    return;
+  }
+  if (!metadata.arrangementName) {
+    if (error) error.textContent = '請輸入譜名。';
+    window.publishMetadataUi?.focus?.('arrangementName');
+    return;
+  }
+  if (!metadata.artist) {
+    if (error) error.textContent = '請輸入作者（歌手）。';
+    window.publishMetadataUi?.focus?.('artist');
+    return;
+  }
+  const prepared = prepareCurrentSong();
+  const publishSong = {
+    ...prepared,
+    ...metadata,
+    _opentab: { ...(prepared?._opentab || {}), uploadedBy: currentUser().username }
+  };
   publishInProgress = true;
   setBusy(confirm, true, '上傳中');
   if (cancel) cancel.disabled = true;
   try {
-    const payload = typeof window.compactSong === 'function' ? window.compactSong(song) : song;
+    const payload = typeof window.compactSong === 'function' ? window.compactSong(publishSong) : publishSong;
     const result = await window.dataSource.publishSong(payload);
     const admin = typeof window.isAdminUser === 'function' && window.isAdminUser();
     const updated = admin ? result.song : result.privateSong;
-    if (updated) window.replaceSongRecord?.(updated);
+    if (updated) {
+      window.replaceSongRecord?.(updated);
+      const title = document.getElementById('editorTitle');
+      if (title) title.textContent = updated.arrangementName || updated.name || '吉他 TAB 譜製作器';
+    }
     if (typeof window.loadCatalog === 'function') await window.loadCatalog();
     refreshLibraryViews();
     const modal = document.getElementById('publishModal');
