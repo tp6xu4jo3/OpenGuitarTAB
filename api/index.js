@@ -594,9 +594,10 @@ function driveFileNamePart(value, fallback, maxLength) {
 }
 
 export function songFileName(song) {
-  const title = driveFileNamePart(song?.arrangementName || song?.name, '未命名曲譜', 60);
+  const workName = driveFileNamePart(song?.name, '未命名曲目', 60);
+  const arrangementName = driveFileNamePart(song?.arrangementName || song?.name, '未命名曲譜', 60);
   const arrangementId = driveFileNamePart(song?.arrangementId || song?.id, 'arrangement', 80).replace(/\s+/g, '-');
-  return `${title}__${arrangementId}.json`;
+  return `${workName}_${arrangementName}_${arrangementId}.json`;
 }
 
 async function entriesFromFiles(folderId, files, permissions) {
@@ -1116,6 +1117,21 @@ async function saveUserSong(session, song) {
   return updateSongFile(fileId, { ...song, name: entry.song.name }, entry.song._opentab, entry.song);
 }
 
+async function renameSongArrangement(session, fileId, arrangementName) {
+  const id = String(fileId || '').trim();
+  const nextArrangementName = String(arrangementName || '').trim();
+  if (!id) throw new Error('FILE_ID_REQUIRED');
+  if (!nextArrangementName) throw new Error('ARRANGEMENT_NAME_REQUIRED');
+  const entry = await readManagedEntry(id);
+  if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
+  return updateSongFile(
+    id,
+    { ...entry.song, arrangementName: nextArrangementName, updatedAt: Date.now() },
+    entry.song._opentab,
+    entry.song
+  );
+}
+
 async function publishSong(session, song) {
   const name = String(song?.name || '').trim();
   const arrangementName = String(song?.arrangementName || '').trim();
@@ -1245,6 +1261,12 @@ export default async function handler(req, res) {
       if (!body.fileId) return json(res, 400, { error: 'FILE_ID_REQUIRED' });
       await deleteUserSong(session, body.fileId);
       return json(res, 200, { ok: true });
+    }
+
+    if (action === 'rename' && req.method === 'POST') {
+      const body = await readBody(req);
+      const saved = await renameSongArrangement(session, body.fileId, body.arrangementName);
+      return json(res, 200, { song: enrichSongMedia(saved, await readArtistMedia()) });
     }
 
     if (action === 'visibility' && req.method === 'POST') {
