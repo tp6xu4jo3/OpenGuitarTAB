@@ -71,6 +71,9 @@ assert.equal(saved.song._driveFileId, 'pages-a', 'saving a fixture must keep the
 const storedAlpha = JSON.parse(storage.getItem(LOCAL_TEST_STORAGE_KEY)).records['pages-a'];
 assert.equal(storedAlpha.name, 'Alpha', 'saving an existing arrangement must preserve its work title');
 assert.equal(storedAlpha.arrangementName, 'Alpha 抒情', 'the arrangement display name must remain freely editable');
+const renamedAlpha = await local.renameSong('pages-a', 'Alpha AI編譜');
+assert.equal(renamedAlpha.song.arrangementName, 'Alpha AI編譜');
+assert.ok(renamedAlpha.song.rows || renamedAlpha.song.document, 'local rename must keep the full score body');
 assert.equal(Object.hasOwn(storedAlpha, 'cover'), false, 'catalog media must never be persisted back into local song data');
 assert.equal(Object.hasOwn(storedAlpha, 'artistImage'), false, 'artist images must never be persisted back into local song data');
 assert.equal(fetchCalls.slice(fetchCountBeforeSave).some(url => url.endsWith('/songs/pages-b.json')), false, 'saving one fixture must not load unrelated full scores');
@@ -78,7 +81,7 @@ assert.equal(fetchCalls.slice(fetchCountBeforeSave).some(url => url.endsWith('/s
 const reopened = new LocalTestDataSource({ fetchImpl, storage, baseHref, now });
 library = await reopened.library();
 assert.equal(library.songs.find(song => song.id === 'song-a').name, 'Alpha', 'work title must remain immutable across a new data source instance');
-assert.equal(library.songs.find(song => song.id === 'song-a').arrangementName, 'Alpha 抒情', 'arrangement-name edits must survive a new data source instance');
+assert.equal(library.songs.find(song => song.id === 'song-a').arrangementName, 'Alpha AI編譜', 'metadata-safe arrangement rename must survive a new data source instance');
 await reopened.deleteSong('pages-a');
 assert.equal((await reopened.library()).songs.some(song => song.id === 'song-a'), false);
 await reopened.reset();
@@ -215,6 +218,9 @@ const server = new ServerDataSource({
 await server.saveSong({ id: 'server-song' });
 assert.match(serverCalls[0].url, /^https:\/\/openguitartab\.vercel\.app\/api\?action=save$/);
 assert.equal(serverCalls[0].options.method, 'POST');
+await server.renameSong('drive-file', 'AI編譜');
+assert.match(serverCalls[1].url, /^https:\/\/openguitartab\.vercel\.app\/api\?action=rename$/);
+assert.equal(JSON.parse(serverCalls[1].options.body).arrangementName, 'AI編譜');
 
 {
   const activityStates = [];
@@ -237,6 +243,7 @@ assert.equal(serverCalls[0].options.method, 'POST');
     ['library', '載入個人曲譜…', () => source.library()],
     ['loadSong', '讀取曲譜…', () => source.loadSong('drive-file')],
     ['saveSong', '儲存曲譜…', () => source.saveSong({ id: 'drive-song' })],
+    ['renameSong', '重新命名曲譜…', () => source.renameSong('drive-file', 'AI編譜')],
     ['deleteSong', '刪除曲譜…', () => source.deleteSong('drive-file')],
     ['setPublic', '更新曲譜狀態…', () => source.setPublic('drive-file', true)],
     ['publishSong', '上傳曲譜…', () => source.publishSong({ id: 'drive-song' })],

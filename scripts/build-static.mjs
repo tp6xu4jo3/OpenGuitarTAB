@@ -26,6 +26,15 @@ if (process.env.RUN_ARRANGEMENT_NAME_BACKFILL === '1') {
   console.log(`Drive arrangement-name migration: ${migration.updated.length} updated, ${migration.unchanged.length} unchanged`);
 }
 
+if (process.env.RUN_PUBLIC_SCORE_REPAIR === '1') {
+  const { repairPublicScores } = await import('./repair-public-scores.mjs');
+  const repair = await repairPublicScores();
+  console.log(`Public score repair: ${JSON.stringify(repair)}`);
+  if (repair.validationErrors.length) {
+    throw new Error(`Public score repair validation failed: ${JSON.stringify(repair.validationErrors)}`);
+  }
+}
+
 async function bundleLocalCss(filePath, stack = new Set()) {
   const normalizedPath = path.resolve(filePath);
   if (stack.has(normalizedPath)) {
