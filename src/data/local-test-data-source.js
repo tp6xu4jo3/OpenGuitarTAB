@@ -275,6 +275,13 @@ export class LocalTestDataSource {
     return { ok: true, localTest: true };
   }
 
+  async renameSong(fileId, arrangementName) {
+    const nextArrangementName = String(arrangementName || '').trim();
+    if (!nextArrangementName) throw new Error('ARRANGEMENT_NAME_REQUIRED');
+    const loaded = await this.loadSong(fileId);
+    return this.saveSong({ ...loaded.song, arrangementName: nextArrangementName });
+  }
+
   async catalog() {
     const [fixtureMetadata, media] = await Promise.all([this.fixtureMetadata(), this.fixtureMedia()]);
     const state = this.readState();
