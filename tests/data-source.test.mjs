@@ -81,7 +81,7 @@ assert.equal(fetchCalls.slice(fetchCountBeforeSave).some(url => url.endsWith('/s
 const reopened = new LocalTestDataSource({ fetchImpl, storage, baseHref, now });
 library = await reopened.library();
 assert.equal(library.songs.find(song => song.id === 'song-a').name, 'Alpha', 'work title must remain immutable across a new data source instance');
-assert.equal(library.songs.find(song => song.id === 'song-a').arrangementName, 'Alpha 抒情', 'arrangement-name edits must survive a new data source instance');
+assert.equal(library.songs.find(song => song.id === 'song-a').arrangementName, 'Alpha AI編譜', 'metadata-safe arrangement rename must survive a new data source instance');
 await reopened.deleteSong('pages-a');
 assert.equal((await reopened.library()).songs.some(song => song.id === 'song-a'), false);
 await reopened.reset();
