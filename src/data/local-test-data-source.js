@@ -140,6 +140,7 @@ export class LocalTestDataSource {
         ...withoutCatalogMedia(raw),
         workId: meta.workId || raw.workId,
         arrangementId: meta.arrangementId || raw.arrangementId,
+        arrangementName: raw.arrangementName || meta.arrangementName || raw.name || meta.name || '未命名曲譜',
         name: raw.name || meta.name,
         artist: raw.artist || meta.artist,
         album: raw.album || meta.album,
