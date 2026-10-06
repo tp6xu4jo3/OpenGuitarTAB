@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cleanSongForWrite } from '../api/index.js';
+import { cleanSongForWrite, songFileName } from '../api/index.js';
 
 const legacySong = {
   id: 'song-test',
@@ -52,6 +52,17 @@ const document = {
   assert.equal(Object.hasOwn(serialized, 'difficulty'), false);
   assert.equal(Object.hasOwn(serialized, '_opentab'), false);
   assert.ok(serialized.document, 'V3 document must remain the only persisted score representation');
+}
+
+{
+  const persisted = cleanSongForWrite({
+    ...legacySong,
+    name: '春泥棒',
+    arrangementName: 'AI編譜',
+    arrangementId: 'arr-test-123',
+    document
+  });
+  assert.equal(songFileName(persisted), '春泥棒_AI編譜_arr-test-123.json', 'Drive filenames must follow 曲名_譜名_arrangementId.json');
 }
 
 console.log('song persistence tests passed');
