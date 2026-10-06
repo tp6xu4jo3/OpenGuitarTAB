@@ -116,6 +116,7 @@
   ensurePublishControls();
   downloadSongButton?.addEventListener('click', fillPublishFields);
   publishConfirm?.addEventListener('click', applyPublishFields, true);
+  document.getElementById('publishArrangementNameInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') applyPublishFields(); }, true);
   publishArtistInput?.addEventListener('keydown', event => { if (event.key === 'Enter') applyPublishFields(); }, true);
   document.getElementById(SOURCE_INPUT_ID)?.addEventListener('keydown', event => {
     if (event.key !== 'Enter') return;

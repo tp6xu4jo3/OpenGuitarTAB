@@ -14,6 +14,18 @@ if (buildTarget !== 'production') {
   throw new Error(`Unknown build target: ${buildTarget}`);
 }
 
+if (process.env.RUN_ARRANGEMENT_NAME_BACKFILL === '1') {
+  const { backfillDriveArrangementNames } = await import('./backfill-drive-arrangement-names.mjs');
+  const migration = await backfillDriveArrangementNames();
+  if (migration.unresolved.length || migration.errors.length) {
+    throw new Error(`Drive arrangement-name migration incomplete: ${JSON.stringify({
+      unresolved: migration.unresolved,
+      errors: migration.errors
+    })}`);
+  }
+  console.log(`Drive arrangement-name migration: ${migration.updated.length} updated, ${migration.unchanged.length} unchanged`);
+}
+
 async function bundleLocalCss(filePath, stack = new Set()) {
   const normalizedPath = path.resolve(filePath);
   if (stack.has(normalizedPath)) {

@@ -83,29 +83,35 @@ export function openPublishModal() {
   const song = prepareCurrentSong();
   if (!song || !currentUser()) { window.openLoginModal?.('#/library'); return; }
   const modal = document.getElementById('publishModal');
+  const arrangementNameInput = document.getElementById('publishArrangementNameInput');
   const artist = document.getElementById('publishArtistInput');
   const uploader = document.getElementById('publishUploader');
   const error = document.getElementById('publishError');
+  if (arrangementNameInput) arrangementNameInput.value = String(song.arrangementName || song.name || '');
   if (artist) artist.value = String(song.artist || '');
   if (uploader) uploader.textContent = currentUser()?.username || '';
   if (error) error.textContent = '';
   modal?.classList.add('open');
   modal?.setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(() => { artist?.focus(); artist?.select(); });
+  requestAnimationFrame(() => { arrangementNameInput?.focus(); arrangementNameInput?.select(); });
 }
 
 export async function confirmPublishSong() {
   if (publishInProgress) return;
   const song = currentSongSafe();
+  const arrangementNameInput = document.getElementById('publishArrangementNameInput');
   const artistInput = document.getElementById('publishArtistInput');
   const error = document.getElementById('publishError');
   const confirm = document.getElementById('publishConfirm');
   const cancel = document.getElementById('publishCancel');
+  const arrangementName = arrangementNameInput?.value.trim() || '';
   const artist = artistInput?.value.trim() || '';
   if (!song || !currentUser()) { closePublishModal(); window.openLoginModal?.('#/library'); return; }
   if (!window.dataSource?.capabilities?.publish) { closePublishModal(); window.showToast?.('GitHub Test不提供發布'); return; }
+  if (!arrangementName) { if (error) error.textContent = '請輸入譜名。'; arrangementNameInput?.focus(); return; }
   if (!artist) { if (error) error.textContent = '請輸入作者（歌手）。'; artistInput?.focus(); return; }
   prepareCurrentSong();
+  song.arrangementName = arrangementName;
   song.artist = artist;
   song._opentab = { ...(song._opentab || {}), uploadedBy: currentUser().username };
   publishInProgress = true;

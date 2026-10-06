@@ -43,6 +43,7 @@
     const editorTitle = document.getElementById('editorTitle');
     const addPreviewSongButton = document.getElementById('addPreviewSongButton');
     const publishModal = document.getElementById('publishModal');
+    const publishArrangementNameInput = document.getElementById('publishArrangementNameInput');
     const publishArtistInput = document.getElementById('publishArtistInput');
     const publishUploader = document.getElementById('publishUploader');
     const publishError = document.getElementById('publishError');

@@ -394,6 +394,7 @@ saveSongButton.addEventListener('click', saveCurrentSong);
 downloadSongButton.addEventListener('click', openPublishModal);
 publishCancel.addEventListener('click', closePublishModal);
 publishConfirm.addEventListener('click', confirmPublishSong);
+publishArrangementNameInput.addEventListener('keydown', event => { if (event.key === 'Enter') confirmPublishSong(); if (event.key === 'Escape') closePublishModal(); });
 publishArtistInput.addEventListener('keydown', event => { if (event.key === 'Enter') confirmPublishSong(); if (event.key === 'Escape') closePublishModal(); });
 publishModal.addEventListener('click', event => { if (event.target === publishModal) closePublishModal(); });
 newSongButton.addEventListener('click', openNewSongModal);
