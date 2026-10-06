@@ -11,17 +11,18 @@ export async function importSongFile(file) {
     return;
   }
   try {
-    const identity = window.readNewSongIdentity?.();
-    if (!identity) return;
     const raw = typeof window.deserializeSong === 'function' ? window.deserializeSong(await file.text()) : JSON.parse(await file.text());
     const imported = typeof window.normalizeSongRecord === 'function' ? window.normalizeSongRecord(raw) : raw;
+    const importedName = String(imported?.name || imported?.title || '').trim();
+    const importedArrangementName = String(imported?.arrangementName || importedName).trim();
+    if (!importedName) throw new Error('JSON缺少曲名');
     delete imported._driveFileId;
     delete imported._driveFileName;
     delete imported._driveModifiedTime;
     delete imported.workId;
     delete imported.arrangementId;
-    imported.name = identity.name;
-    imported.arrangementName = identity.arrangementName;
+    imported.name = importedName;
+    imported.arrangementName = importedArrangementName;
     imported._opentab = {};
     const records = typeof window.getSongRecords === 'function' ? window.getSongRecords() : [];
     if (!imported.id || records.some(song => song.id === imported.id)) imported.id = typeof window.uid === 'function' ? window.uid() : `song-${Date.now().toString(36)}`;
