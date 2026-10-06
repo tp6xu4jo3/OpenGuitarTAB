@@ -53,7 +53,7 @@ export async function saveCurrentSong() {
   try {
     const saved = await window.persistSong(song);
     const title = document.getElementById('editorTitle');
-    if (title) title.textContent = saved?.name || '吉他 TAB 譜製作器';
+    if (title) title.textContent = saved?.arrangementName || saved?.name || '吉他 TAB 譜製作器';
     refreshLibraryViews();
     await refreshCatalogIfNeeded();
     window.showToast?.(window.dataSource?.isLocalTest ? '已儲存到瀏覽器測試資料' : '已儲存到Google Drive');
