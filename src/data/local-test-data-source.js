@@ -37,6 +37,7 @@ function catalogMetaFromSong(song) {
     id: String(song?.songId || song?.id || fileId),
     workId: String(song?.workId || ''),
     arrangementId: String(song?.arrangementId || ''),
+    arrangementName: String(song?.arrangementName || song?.name || ''),
     name: String(song?.name || ''),
     artist: String(song?.artist || ''),
     album: String(song?.album || ''),
@@ -238,9 +239,12 @@ export class LocalTestDataSource {
       || safeFileId(existing?._driveFileId)
       || `local-${safeFileId(incoming.id) || createCatalogId('song')}`;
     const timestamp = this.now().toISOString();
+    const immutableName = String(existing?.name || incoming.name || '').trim();
     const song = ensureArrangementIdentity({
       ...(existing || {}),
       ...incoming,
+      ...(immutableName ? { name: immutableName } : {}),
+      arrangementName: String(incoming.arrangementName || existing?.arrangementName || immutableName || '未命名曲譜'),
       _driveFileId: fileId,
       _driveFileName: incoming._driveFileName || `${fileId}.json`,
       _driveModifiedTime: timestamp,
