@@ -26,6 +26,7 @@ const works = aggregateCatalogWorks([
     id: 'song-a2',
     workId: 'work-stale-a',
     arrangementId: 'arr-a2',
+    arrangementName: '同一首歌 簡單版',
     name: '同一首歌',
     artist: '同一位作者',
     album: 'Album',
@@ -41,6 +42,7 @@ const works = aggregateCatalogWorks([
     id: 'song-a1',
     workId: 'work-stale-b',
     arrangementId: 'arr-a1',
+    arrangementName: '同一首歌 指彈版',
     name: ' 同一首歌 ',
     artist: '同一位作者',
     album: 'Album',
@@ -56,6 +58,7 @@ const works = aggregateCatalogWorks([
     id: 'song-b1',
     workId: 'work-other',
     arrangementId: 'arr-b1',
+    arrangementName: '另一首歌 標準版',
     name: '另一首歌',
     artist: '另一位作者',
     playStyle: 'fingerstyle',
@@ -74,6 +77,7 @@ assert.equal(shared.album, 'Album');
 assert.equal(shared.cover, 'cover.jpg');
 assert.equal(shared.artistImage, 'artist.jpg');
 assert.deepEqual(shared.arrangements.map(item => item.arrangementId), ['arr-a1', 'arr-a2']);
+assert.deepEqual(shared.arrangements.map(item => item.arrangementName), ['同一首歌 指彈版', '同一首歌 簡單版'], 'arrangements of the same work must keep independent editable score names');
 assert.equal(Object.hasOwn(shared, 'difficulty'), false, 'difficulty belongs to Arrangement, not Work');
 assert.equal(Object.hasOwn(shared, 'playStyle'), false, 'playStyle belongs to Arrangement, not Work');
 assert.equal(Object.hasOwn(shared.arrangements[0], 'artist'), false, 'artist belongs to Work, not Arrangement');
@@ -83,6 +87,7 @@ assert.equal(shared.arrangements[0].playStyle, 'fingerstyle');
 const persisted = cleanSongForWrite({
   id: 'song-persist',
   name: 'Persisted Work',
+  arrangementName: 'Persisted Work 指彈',
   artist: 'Artist',
   album: 'Album',
   cover: 'must-not-persist.jpg',
@@ -91,13 +96,19 @@ const persisted = cleanSongForWrite({
 }, { owner: 'test', public: false });
 assert.match(persisted.workId, /^work-/);
 assert.match(persisted.arrangementId, /^arr-/);
+assert.equal(persisted.arrangementName, 'Persisted Work 指彈');
+assert.equal(persisted.name, 'Persisted Work');
 assert.equal(Object.hasOwn(persisted, 'cover'), false, 'album covers belong to artists.json, never a persisted song JSON');
 assert.equal(Object.hasOwn(persisted, 'artistImage'), false, 'artist images belong to artists.json, never a persisted song JSON');
 const persistedAgain = cleanSongForWrite(persisted, { owner: 'test', public: false });
 assert.equal(persistedAgain.workId, persisted.workId);
 assert.equal(persistedAgain.arrangementId, persisted.arrangementId);
-const renamedPersisted = cleanSongForWrite({ ...persisted, name: 'Renamed Work' }, { owner: 'test', public: false });
-assert.notEqual(renamedPersisted.workId, persisted.workId, 'renaming changes the canonical work identity so a matching title can merge automatically');
+const renamedArrangement = cleanSongForWrite({ ...persisted, arrangementName: 'Persisted Work 抒情版' }, { owner: 'test', public: false });
+assert.equal(renamedArrangement.workId, persisted.workId, 'renaming an arrangement must not change its Work identity');
+assert.equal(renamedArrangement.name, persisted.name, 'arrangement rename must not mutate the song title');
+assert.equal(renamedArrangement.arrangementName, 'Persisted Work 抒情版');
+const differentWork = cleanSongForWrite({ ...persisted, name: 'Different Work' }, { owner: 'test', public: false });
+assert.notEqual(differentWork.workId, persisted.workId, 'a different title supplied at creation/migration still derives a different canonical Work identity');
 
 const media = normalizeArtistMedia({
   version: 2,
@@ -120,6 +131,8 @@ assert.match(apiSource, /works:\s*aggregateCatalogWorks\(songs\)/);
 assert.match(apiSource, /readCatalogIndex\(PUBLIC_FOLDER_ID[\s\S]*readCatalogIndex\(TEST_FOLDER_ID[\s\S]*readArtistMedia\(\)/, 'catalog must use metadata indexes plus centralized media');
 assert.doesNotMatch(apiSource, /PUBLIC_CATALOG_CACHE_TTL_MS|publicCatalogCache/,'catalog consistency must not depend on warm-instance memory caches');
 assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must keep the same title-derived work and create a new arrangementId');
-assert.match(apiSource, /'workId'[\s\S]*'arrangementId'/, 'Drive JSON persistence must include both catalog identities');
+assert.match(apiSource, /'workId'[\s\S]*'arrangementId'[\s\S]*'arrangementName'/, 'Drive JSON persistence must include both catalog identities and the editable arrangement name');
+const updateBlock = apiSource.slice(apiSource.indexOf('async function updateSongFile('), apiSource.indexOf('async function readManagedEntry('));
+assert.match(updateBlock, /const immutableWorkName = String\(previousSong\?\.name \|\| song\?\.name \|\| ''\)\.trim\(\)[\s\S]*\.\.\.\(immutableWorkName \? \{ name: immutableWorkName \} : \{\}\)/s, 'existing Drive scores must preserve their original song title on every update');
 
 console.log('catalog work model tests passed');
