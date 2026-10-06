@@ -48,6 +48,7 @@ function arrangementFromCatalogMeta(meta) {
     arrangementId: source.arrangementId,
     workId: source.workId,
     songId: String(source.id || ''),
+    arrangementName: String(source.arrangementName || source.name || '未命名曲譜'),
     source: String(source.source || ''),
     playStyle: source.playStyle === 'chord' ? 'chord' : source.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
     difficulty: Number.isFinite(Number(source.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(source.difficulty)))) : null,
