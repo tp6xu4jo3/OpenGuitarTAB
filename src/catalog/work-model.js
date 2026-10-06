@@ -32,6 +32,13 @@ export function deriveLegacyWorkId(song) {
   return `work-${stableHash(name)}`;
 }
 
+export function formatArrangementDisplayName(song, fallback = '未命名曲譜') {
+  const arrangementName = String(song?.arrangementName || song?.name || fallback).trim();
+  const workName = String(song?.name || '').trim();
+  if (!workName || arrangementName === workName) return arrangementName || workName || fallback;
+  return `${arrangementName} - ${workName}`;
+}
+
 export function ensureArrangementIdentity(song, { fileId = '', idFactory = createCatalogId } = {}) {
   const source = song && typeof song === 'object' && !Array.isArray(song) ? cloneValue(song) : {};
   source.workId = deriveLegacyWorkId(source);

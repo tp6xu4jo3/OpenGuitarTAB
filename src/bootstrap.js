@@ -1,4 +1,5 @@
 import { SongBrowser, worksFromSongs } from './catalog/song-browser.js';
+import { formatArrangementDisplayName } from './catalog/work-model.js';
 import { compactSong, deserializeSong } from './core/song-codec.js';
 import {
   songOwner,
@@ -34,6 +35,7 @@ Object.assign(window, {
   dataSource,
   SongBrowser,
   worksFromSongs,
+  formatArrangementDisplayName,
   APP_CONFIG,
   createBlankDocumentV3,
   ensureSongDocumentV3

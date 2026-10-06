@@ -7,7 +7,8 @@ import { enrichSongMedia, normalizeArtistMedia } from '../src/catalog/media.js';
 import {
   aggregateCatalogWorks,
   deriveLegacyWorkId,
-  ensureArrangementIdentity
+  ensureArrangementIdentity,
+  formatArrangementDisplayName
 } from '../src/catalog/work-model.js';
 
 const summerA = { name: 'Summer', artist: '久石讓' };
@@ -15,6 +16,10 @@ const summerB = { name: '  summer ', artist: '久石讓', difficulty: 5, playSty
 assert.equal(deriveLegacyWorkId(summerA), deriveLegacyWorkId(summerB), 'work identity must normalize title whitespace and case');
 assert.equal(deriveLegacyWorkId(summerA), deriveLegacyWorkId({ name: 'Ｓｕｍｍｅｒ', artist: '其他作者' }), 'same normalized title must share one work regardless of arrangement metadata or artist');
 assert.notEqual(deriveLegacyWorkId(summerA), deriveLegacyWorkId({ name: 'Summer Night', artist: '久石讓' }));
+
+assert.equal(formatArrangementDisplayName({ name: '晴る', arrangementName: '晴る 指彈版' }), '晴る 指彈版 - 晴る');
+assert.equal(formatArrangementDisplayName({ name: '晴る', arrangementName: '晴る' }), '晴る', 'identical score/song names must not be duplicated');
+assert.equal(formatArrangementDisplayName({ name: '晴る' }), '晴る', 'legacy scores without arrangementName must still have one clean title');
 
 const legacyIdentity = ensureArrangementIdentity({ ...summerA, workId: 'work-stale' }, { fileId: 'drive-file-a' });
 assert.match(legacyIdentity.workId, /^work-/);

@@ -454,7 +454,7 @@ async function openCatalogPreview(id) {
     tempoInput.value = clamp(Number(previewSong.tempo) || 120, 30, 300);
     capoInput.value = clamp(Math.round(Number(previewSong.capo) || 0), 0, 12);
     meterBadge.textContent = `每小節 ${activeBeatsPerMeasure} 拍`;
-    editorTitle.textContent = previewSong.arrangementName || previewSong.name || '曲譜';
+    editorTitle.textContent = window.formatArrangementDisplayName?.(previewSong, '曲譜') || previewSong.arrangementName || previewSong.name || '曲譜';
     setPreviewActive(true);
     saveSongButton.hidden = true;
     downloadSongButton.hidden = true;
@@ -485,7 +485,7 @@ async function openLocalEditor(arrangementId) {
     setScoreViewEnabled(false);
     showPage('editor');
     loadSong(loaded.id);
-    editorTitle.textContent = loaded.arrangementName || loaded.name || '吉他 TAB 譜製作器';
+    editorTitle.textContent = window.formatArrangementDisplayName?.(loaded, '吉他 TAB 譜製作器') || loaded.arrangementName || loaded.name || '吉他 TAB 譜製作器';
   } catch (error) {
     if (location.hash !== requestedHash) return;
     console.error(error);

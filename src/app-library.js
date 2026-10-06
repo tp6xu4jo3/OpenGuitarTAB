@@ -45,13 +45,6 @@ function arrangementDisplayName(song) {
   return String(song?.arrangementName || song?.name || '未命名曲譜');
 }
 
-function libraryDisplayName(song) {
-  const arrangementName = arrangementDisplayName(song).trim();
-  const workName = String(song?.name || '未命名曲目').trim();
-  if (!workName || arrangementName === workName) return arrangementName || workName || '未命名曲譜';
-  return `${arrangementName} - ${workName}`;
-}
-
 function readNewSongIdentity({ focusInvalid = true } = {}) {
   const name = String(newSongNameInput?.value || '').trim();
   const arrangementName = String(newSongArrangementNameInput?.value || '').trim();
@@ -114,7 +107,7 @@ function renderSongList() {
   songs.forEach(song => {
     const item = makeDiv('song-item');
     if (song.id === currentSongId) item.classList.add('active');
-    const scoreName = libraryDisplayName(song);
+    const scoreName = window.formatArrangementDisplayName?.(song) || arrangementDisplayName(song);
     const loadButton = document.createElement('button');
     loadButton.type = 'button';
     loadButton.className = 'song-load-button';
@@ -236,7 +229,7 @@ async function confirmRenameSong() {
   song.updatedAt = Date.now();
   try {
     const saved = await persistSong(song);
-    if (currentSongId === saved.id) editorTitle.textContent = arrangementDisplayName(saved);
+    if (currentSongId === saved.id) editorTitle.textContent = window.formatArrangementDisplayName?.(saved, '吉他 TAB 譜製作器') || arrangementDisplayName(saved);
     renderSongList();
     renderLibraryGrid();
     closeRenameModal();
