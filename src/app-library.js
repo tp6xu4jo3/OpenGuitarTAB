@@ -41,6 +41,26 @@ async function persistSong(song) {
   return replaceSongRecord(result.song);
 }
 
+function arrangementDisplayName(song) {
+  return String(song?.arrangementName || song?.name || '未命名曲譜');
+}
+
+function readNewSongIdentity({ focusInvalid = true } = {}) {
+  const name = String(newSongNameInput?.value || '').trim();
+  const arrangementName = String(newSongArrangementNameInput?.value || '').trim();
+  if (!name) {
+    showToast('請填寫曲名');
+    if (focusInvalid) newSongNameInput?.focus();
+    return null;
+  }
+  if (!arrangementName) {
+    showToast('請填寫譜名');
+    if (focusInvalid) newSongArrangementNameInput?.focus();
+    return null;
+  }
+  return { name, arrangementName };
+}
+
 function libraryActionsFor(song) {
   const user = currentAuthUser();
   return {
@@ -87,12 +107,16 @@ function renderSongList() {
   songs.forEach(song => {
     const item = makeDiv('song-item');
     if (song.id === currentSongId) item.classList.add('active');
+    const scoreName = arrangementDisplayName(song);
     const loadButton = document.createElement('button');
     loadButton.type = 'button';
     loadButton.className = 'song-load-button';
-    loadButton.textContent = song.name || '未命名曲譜';
-    loadButton.title = song.name || '未命名曲譜';
-    loadButton.addEventListener('click', () => setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`));
+    loadButton.textContent = scoreName;
+    loadButton.title = `${scoreName} · 曲名：${song.name || '未命名曲目'}`;
+    item.addEventListener('click', event => {
+      if (event.target.closest('.song-more-button,.song-menu')) return;
+      setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`);
+    });
 
     const titleRow = makeDiv('song-title-row');
     titleRow.appendChild(loadButton);
@@ -110,7 +134,7 @@ function renderSongList() {
     moreButton.className = 'song-more-button';
     moreButton.textContent = '⋯';
     moreButton.hidden = !hasMenu;
-    moreButton.setAttribute('aria-label', `${song.name || '曲譜'} 設定選單`);
+    moreButton.setAttribute('aria-label', `${scoreName} 設定選單`);
     moreButton.classList.toggle('open', menuOpenFor === song.id);
     moreButton.addEventListener('click', event => {
       event.stopPropagation();
@@ -183,7 +207,7 @@ function renameSong(id) {
   menuOpenFor = null;
   menuPosition = null;
   renderSongList();
-  renameInput.value = song.name || '未命名曲譜';
+  renameInput.value = arrangementDisplayName(song);
   renameModal.classList.add('open');
   renameModal.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => { renameInput.focus(); renameInput.select(); });
@@ -199,20 +223,21 @@ async function confirmRenameSong() {
   const song = songs.find(item => item.id === renameTargetId);
   if (!song || !canEditSong(currentAuthUser(), song)) { closeRenameModal(); return; }
   const cleanName = renameInput.value.trim();
-  if (!cleanName) { showToast('名稱不能空白'); renameInput.focus(); return; }
-  const previousName = song.name;
-  song.name = cleanName;
+  if (!cleanName) { showToast('譜名不能空白'); renameInput.focus(); return; }
+  const previousArrangementName = song.arrangementName;
+  song.arrangementName = cleanName;
   song.updatedAt = Date.now();
   try {
-    await persistSong(song);
+    const saved = await persistSong(song);
+    if (currentSongId === saved.id) editorTitle.textContent = arrangementDisplayName(saved);
     renderSongList();
     renderLibraryGrid();
     closeRenameModal();
     if (typeof loadCatalog === 'function') await loadCatalog();
-    showToast('已重新命名');
+    showToast('已重新命名譜名');
   } catch (error) {
     console.error(error);
-    song.name = previousName;
+    song.arrangementName = previousArrangementName;
     showToast('重新命名失敗');
   }
 }
@@ -224,7 +249,7 @@ function requestDeleteSong(id) {
   menuOpenFor = null;
   menuPosition = null;
   renderSongList();
-  deleteSongName.textContent = `「${song.name || '未命名曲譜'}」`;
+  deleteSongName.textContent = `「${arrangementDisplayName(song)}」`;
   deleteModal.classList.add('open');
   deleteModal.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => deleteConfirm.focus());
@@ -280,9 +305,12 @@ function openNewSongModal() {
   if (!currentAuthUser()) { openLoginModal('#/library'); return; }
   const blankOptions = document.getElementById('blankSongOptions');
   if (blankOptions) blankOptions.hidden = true;
+  if (newSongNameInput) newSongNameInput.value = '';
+  if (newSongArrangementNameInput) newSongArrangementNameInput.value = '';
+  if (uploadJsonInput) uploadJsonInput.value = '';
   newSongModal.classList.add('open');
   newSongModal.setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(() => document.getElementById('blankSongChoice')?.focus());
+  requestAnimationFrame(() => newSongNameInput?.focus());
 }
 
 function closeNewSongModal() {
@@ -292,15 +320,13 @@ function closeNewSongModal() {
 
 async function createNewSong(beatsPerMeasure) {
   if (!currentAuthUser()) { openLoginModal('#/library'); return; }
+  const identity = readNewSongIdentity();
+  if (!identity) return;
   const beats = normalizeBeatsPerMeasure(beatsPerMeasure);
-  const baseName = '未命名曲譜';
-  let index = 1;
-  let name = `${baseName} ${index}`;
-  const existingNames = new Set(songs.map(song => song.name));
-  while (existingNames.has(name)) { index += 1; name = `${baseName} ${index}`; }
   const song = {
     id: uid(),
-    name,
+    name: identity.name,
+    arrangementName: identity.arrangementName,
     tempo: 120,
     capo: 0,
     beatsPerMeasure: beats,
@@ -370,7 +396,10 @@ document.getElementById('blankSongChoice')?.addEventListener('click', () => {
   if (blankOptions) blankOptions.hidden = false;
   newSongFourBeats.focus();
 });
-uploadJsonButton.addEventListener('click', () => uploadJsonInput.click());
+uploadJsonButton.addEventListener('click', () => {
+  if (!readNewSongIdentity()) return;
+  uploadJsonInput.click();
+});
 uploadJsonInput.addEventListener('change', () => importSongFile(uploadJsonInput.files?.[0]));
 newSongCancel.addEventListener('click', closeNewSongModal);
 newSongThreeBeats.addEventListener('click', () => createNewSong(3));
@@ -393,5 +422,7 @@ Object.assign(window, {
   toggleSongPublic,
   openNewSongModal,
   closeNewSongModal,
-  showToast
+  showToast,
+  arrangementDisplayName,
+  readNewSongIdentity
 });
