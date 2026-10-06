@@ -31,8 +31,9 @@ import {
   });
 }
 
-assert.equal(songFileName({ name: '簡單愛', arrangementId: 'arr-123' }), '簡單愛__arr-123.json');
-assert.equal(songFileName({ name: 'A/B\\C', arrangementId: 'arr 123' }), 'A-B-C__arr-123.json');
+assert.equal(songFileName({ name: '簡單愛', arrangementId: 'arr-123' }), '簡單愛__arr-123.json', 'legacy scores without arrangementName must keep a stable filename fallback');
+assert.equal(songFileName({ name: '簡單愛', arrangementName: '簡單愛 指彈版', arrangementId: 'arr-123' }), '簡單愛 指彈版__arr-123.json');
+assert.equal(songFileName({ name: 'A/B\\C', arrangementName: '簡單/A版', arrangementId: 'arr 123' }), '簡單-A版__arr-123.json');
 
 const driveFiles = [
   { id: 'file-a', name: '歌曲A__arr-a.json', modifiedTime: '2026-09-30T01:00:00.000Z' },
@@ -56,6 +57,7 @@ const index = normalizeCatalogIndex({
     songId: `song-${indexPosition}`,
     workId: 'work-shared',
     arrangementId: `arr-${indexPosition}`,
+    arrangementName: `Arrangement ${indexPosition}`,
     name: 'must-not-persist-here',
     artist: 'must-not-persist-here',
     album: 'must-not-persist-here',
@@ -79,7 +81,8 @@ assert.equal(index.version, 3);
 assert.equal(index.works.length, 1, 'same-work arrangements must share one persisted work metadata record');
 assert.deepEqual(index.works[0], { workId: 'work-shared', name: 'Song A', artist: 'Artist', album: 'Album' });
 assert.equal(index.arrangements.length, 2);
-for (const arrangement of index.arrangements) {
+for (const [indexPosition, arrangement] of index.arrangements.entries()) {
+  assert.equal(arrangement.arrangementName, `Arrangement ${indexPosition}`, 'arrangement-specific display names belong in the arrangement cache');
   assert.equal(Object.hasOwn(arrangement, 'name'), false, 'arrangements must not duplicate work title');
   assert.equal(Object.hasOwn(arrangement, 'artist'), false, 'arrangements must not duplicate work artist');
   assert.equal(Object.hasOwn(arrangement, 'album'), false, 'arrangements must not duplicate work album');
@@ -91,6 +94,7 @@ for (const arrangement of index.arrangements) {
 }
 assert.equal(index.songs.length, 2, 'runtime may expose joined transient metadata for existing catalog consumers');
 assert.equal(index.songs[0].name, 'Song A');
+assert.equal(index.songs[0].arrangementName, 'Arrangement 0');
 assert.equal(index.songs[0].artist, 'Artist');
 assert.equal(index.songs[0].album, 'Album');
 const persistedIndex = JSON.parse(JSON.stringify(index));
@@ -154,7 +158,8 @@ assert.equal(normalizeCatalogIndex({ version: 2, manifest: [], songs: [] }), nul
   assert.doesNotMatch(source, /migrateLegacyPermissions|materializeLegacyPermissions|normalizeLegacyPermission/, 'production runtime must not carry a legacy permission migration path');
 
   const arrangementPersistence = source.slice(source.indexOf('const arrangements = normalizedSongs'), source.indexOf('const index = {', source.indexOf('const arrangements = normalizedSongs')));
-  assert.doesNotMatch(arrangementPersistence, /name:|artist:|album:|cover:|artistImage:/, 'persisted arrangement cache must contain only arrangement-specific metadata');
+  assert.match(arrangementPersistence, /arrangementName: song\.arrangementName/, 'editable score names must persist at the Arrangement layer');
+  assert.doesNotMatch(arrangementPersistence, /(?:^|\s)name:|artist:|album:|cover:|artistImage:/m, 'persisted arrangement cache must not duplicate Work-level title/media metadata');
   assert.match(source, /version: 3[\s\S]*works,[\s\S]*arrangements/s, 'catalog index v3 must persist shared work metadata separately from arrangements');
   assert.match(source, /Object\.defineProperty\(index, 'songs'[\s\S]*enumerable: false/s, 'flattened catalog metadata may exist only as a non-persisted runtime projection');
   assert.match(source, /function catalogApiSongs\([\s\S]*index\?\.manifest[\s\S]*index\?\.songs[\s\S]*catalogApiMeta/s, 'catalog API metadata must join work metadata and manifest metadata at runtime');

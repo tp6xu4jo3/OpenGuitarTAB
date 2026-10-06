@@ -22,6 +22,8 @@
     const deleteCancel = document.getElementById('deleteCancel');
     const deleteConfirm = document.getElementById('deleteConfirm');
     const newSongModal = document.getElementById('newSongModal');
+    const newSongNameInput = document.getElementById('newSongNameInput');
+    const newSongArrangementNameInput = document.getElementById('newSongArrangementNameInput');
     const newSongThreeBeats = document.getElementById('newSongThreeBeats');
     const newSongFourBeats = document.getElementById('newSongFourBeats');
     const newSongCancel = document.getElementById('newSongCancel');
@@ -84,7 +86,8 @@
     function seedSongs() {
       return [{
         id: 'seed-blank-song-v3',
-        name: '空白曲譜',
+        name: '空白曲目',
+        arrangementName: '空白曲譜',
         tempo: 120,
         capo: 0,
         beatsPerMeasure: 4,
@@ -115,6 +118,8 @@
       const beatsPerMeasure = normalizeBeatsPerMeasure(song?.beatsPerMeasure);
       const normalized = {
         ...song,
+        name: String(song?.name || song?.title || '未命名曲目'),
+        arrangementName: String(song?.arrangementName || song?.name || song?.title || '未命名曲譜'),
         tempo: clamp(Number(song?.tempo) || 120, 30, 300),
         capo: clamp(Math.round(Number(song?.capo) || 0), 0, 12),
         beatsPerMeasure

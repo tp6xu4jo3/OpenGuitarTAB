@@ -17,7 +17,7 @@ const baseHref = 'https://tp6xu4jo3.github.io/OpenGuitarTAB/';
 const alphaWorkId = deriveLegacyWorkId({ name: 'Alpha' });
 const catalog = {
   works: [
-    { id: 'work-a', workId: 'work-a', name: 'Alpha', artist: 'Artist A', album: 'One', arrangements: [{ id: 'arr-drive-pages-a', arrangementId: 'arr-drive-pages-a', workId: 'work-a', songId: 'song-a', source: 'fixture', playStyle: 'fingerstyle', difficulty: 2, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 90, capo: 1, beatsPerMeasure: 4, _driveFileId: 'pages-a', _driveFileName: 'pages-a.json', _driveModifiedTime: 'fixture-a' }] },
+    { id: 'work-a', workId: 'work-a', name: 'Alpha', artist: 'Artist A', album: 'One', arrangements: [{ id: 'arr-drive-pages-a', arrangementId: 'arr-drive-pages-a', arrangementName: 'Alpha 指彈', workId: 'work-a', songId: 'song-a', source: 'fixture', playStyle: 'fingerstyle', difficulty: 2, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 90, capo: 1, beatsPerMeasure: 4, _driveFileId: 'pages-a', _driveFileName: 'pages-a.json', _driveModifiedTime: 'fixture-a' }] },
     { id: 'work-b', workId: 'work-b', name: 'Beta', artist: 'Artist B', album: 'Two', arrangements: [{ id: 'arr-drive-pages-b', arrangementId: 'arr-drive-pages-b', workId: 'work-b', songId: 'song-b', source: 'fixture', playStyle: 'chord', difficulty: 3, owner: 'admin', uploadedBy: 'admin', public: true, tempo: 100, capo: 0, beatsPerMeasure: 4, _driveFileId: 'pages-b', _driveFileName: 'pages-b.json', _driveModifiedTime: 'fixture-b' }] }
   ]
 };
@@ -62,19 +62,23 @@ assert.equal(alpha._driveFileId, 'pages-a');
 assert.equal(alpha.cover, 'alpha-cover.jpg', 'library media must be projected from artists.json instead of the song fixture');
 assert.equal(alpha.artistImage, 'artist-a.jpg');
 
-alpha.name = 'Alpha edited';
+assert.equal(alpha.arrangementName, 'Alpha 指彈');
+alpha.name = 'Alpha should stay immutable';
+alpha.arrangementName = 'Alpha 抒情';
 const fetchCountBeforeSave = fetchCalls.length;
 const saved = await local.saveSong(alpha);
 assert.equal(saved.song._driveFileId, 'pages-a', 'saving a fixture must keep the same local fixture identity');
 const storedAlpha = JSON.parse(storage.getItem(LOCAL_TEST_STORAGE_KEY)).records['pages-a'];
-assert.equal(storedAlpha.name, 'Alpha edited');
+assert.equal(storedAlpha.name, 'Alpha', 'saving an existing arrangement must preserve its work title');
+assert.equal(storedAlpha.arrangementName, 'Alpha 抒情', 'the arrangement display name must remain freely editable');
 assert.equal(Object.hasOwn(storedAlpha, 'cover'), false, 'catalog media must never be persisted back into local song data');
 assert.equal(Object.hasOwn(storedAlpha, 'artistImage'), false, 'artist images must never be persisted back into local song data');
 assert.equal(fetchCalls.slice(fetchCountBeforeSave).some(url => url.endsWith('/songs/pages-b.json')), false, 'saving one fixture must not load unrelated full scores');
 
 const reopened = new LocalTestDataSource({ fetchImpl, storage, baseHref, now });
 library = await reopened.library();
-assert.equal(library.songs.find(song => song.id === 'song-a').name, 'Alpha edited', 'browser-local edits must survive a new data source instance');
+assert.equal(library.songs.find(song => song.id === 'song-a').name, 'Alpha', 'work title must remain immutable across a new data source instance');
+assert.equal(library.songs.find(song => song.id === 'song-a').arrangementName, 'Alpha 抒情', 'arrangement-name edits must survive a new data source instance');
 await reopened.deleteSong('pages-a');
 assert.equal((await reopened.library()).songs.some(song => song.id === 'song-a'), false);
 await reopened.reset();

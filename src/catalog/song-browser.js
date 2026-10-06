@@ -16,7 +16,7 @@ export function filterWorks(works = [], { query = '', artist = '' } = {}) {
     if (selectedArtist && String(work?.artist || '').trim() !== selectedArtist) return false;
     if (!q) return true;
     const arrangementText = (work?.arrangements || [])
-      .map(item => [item.source, item.uploadedBy, item.playStyle].filter(Boolean).join(' '))
+      .map(item => [item.arrangementName, item.source, item.uploadedBy, item.playStyle].filter(Boolean).join(' '))
       .join(' ');
     return normalizeText([work?.name, work?.artist, work?.album, arrangementText].filter(Boolean).join(' ')).includes(q);
   });
@@ -289,11 +289,11 @@ export class SongBrowser {
     row.dataset.arrangementId = arrangement.arrangementId || '';
     const info = createElement('div', 'work-card-arrangement-info');
     const primary = createElement('div', 'work-card-arrangement-primary');
-    const title = createElement('strong', 'work-card-arrangement-title', playStyleLabel(arrangement.playStyle));
+    const title = createElement('strong', 'work-card-arrangement-title', arrangement.arrangementName || work.name || '未命名曲譜');
     const difficulty = createElement('span', 'work-card-arrangement-difficulty', difficultyLabel(arrangement.difficulty));
     primary.append(title, difficulty);
-    const source = createElement('div', 'work-card-arrangement-meta', `來源 ${arrangement.source || '-'}`);
-    info.append(primary, source);
+    const meta = createElement('div', 'work-card-arrangement-meta', `${playStyleLabel(arrangement.playStyle)} · 來源 ${arrangement.source || '-'}`);
+    info.append(primary, meta);
     const actions = createElement('div', 'work-card-arrangement-actions');
     this.renderArrangementActions?.({ work, arrangement, container: actions });
     row.append(info, actions);

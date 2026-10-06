@@ -11,16 +11,20 @@ export async function importSongFile(file) {
     return;
   }
   try {
+    const identity = window.readNewSongIdentity?.();
+    if (!identity) return;
     const raw = typeof window.deserializeSong === 'function' ? window.deserializeSong(await file.text()) : JSON.parse(await file.text());
     const imported = typeof window.normalizeSongRecord === 'function' ? window.normalizeSongRecord(raw) : raw;
     delete imported._driveFileId;
     delete imported._driveFileName;
     delete imported._driveModifiedTime;
+    delete imported.workId;
     delete imported.arrangementId;
+    imported.name = identity.name;
+    imported.arrangementName = identity.arrangementName;
     imported._opentab = {};
     const records = typeof window.getSongRecords === 'function' ? window.getSongRecords() : [];
     if (!imported.id || records.some(song => song.id === imported.id)) imported.id = typeof window.uid === 'function' ? window.uid() : `song-${Date.now().toString(36)}`;
-    if (!imported.name) imported.name = file.name.replace(/\.json$/i, '') || '匯入曲譜';
     imported.createdAt = Number(imported.createdAt) || Date.now();
     imported.updatedAt = Date.now();
     const saved = await window.persistSong(imported);
@@ -30,7 +34,7 @@ export async function importSongFile(file) {
     window.renderLibraryGrid?.();
     if (typeof window.loadCatalog === 'function') await window.loadCatalog();
     window.setRoute?.(`#/editor/${encodeURIComponent(saved.arrangementId)}`);
-    window.showToast?.(`已匯入 ${saved.name}`);
+    window.showToast?.(`已匯入 ${saved.arrangementName || saved.name}`);
   } catch (error) {
     console.error(error);
     window.showToast?.(error?.message || 'JSON 匯入失敗');

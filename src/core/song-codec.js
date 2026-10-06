@@ -95,6 +95,9 @@ export function validateSongObject(song) {
   if (song.name != null && typeof song.name !== 'string') {
     throw new Error('name 欄位必須是文字');
   }
+  if (song.arrangementName != null && typeof song.arrangementName !== 'string') {
+    throw new Error('arrangementName 欄位必須是文字');
+  }
   return true;
 }
 

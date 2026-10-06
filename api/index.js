@@ -37,6 +37,7 @@ const SONG_FIELD_ORDER = [
   'id',
   'workId',
   'arrangementId',
+  'arrangementName',
   'name',
   'tempo',
   'capo',
@@ -490,6 +491,7 @@ function catalogIndexSong(song, file) {
     songId: String(enriched.id || file.id),
     workId: enriched.workId,
     arrangementId: enriched.arrangementId,
+    arrangementName: String(enriched.arrangementName || enriched.name || file.name.replace(/\.json$/i, '')),
     name: enriched.name || file.name.replace(/\.json$/i, ''),
     artist: String(enriched.artist || ''),
     album: String(enriched.album || ''),
@@ -515,6 +517,7 @@ function catalogApiMeta(record, file) {
     id: String(normalized.id || ''),
     workId: String(normalized.workId || ''),
     arrangementId: String(normalized.arrangementId || ''),
+    arrangementName: String(normalized.arrangementName || normalized.name || '未命名曲譜'),
     name: String(normalized.name || ''),
     artist: String(normalized.artist || ''),
     album: String(normalized.album || ''),
@@ -555,7 +558,8 @@ export function cleanSongForWrite(song) {
     id: String(input.id || `song-${Date.now().toString(36)}`),
     workId: input.workId,
     arrangementId: input.arrangementId,
-    name: String(input.name || '未命名曲譜'),
+    arrangementName: String(input.arrangementName || input.name || '未命名曲譜'),
+    name: String(input.name || '未命名曲目'),
     tempo: Number(input.tempo) || 120,
     capo: Number.isFinite(Number(input.capo)) ? Number(input.capo) : 0,
     beatsPerMeasure,
@@ -590,7 +594,7 @@ function driveFileNamePart(value, fallback, maxLength) {
 }
 
 export function songFileName(song) {
-  const title = driveFileNamePart(song?.name, '未命名曲譜', 60);
+  const title = driveFileNamePart(song?.arrangementName || song?.name, '未命名曲譜', 60);
   const arrangementId = driveFileNamePart(song?.arrangementId || song?.id, 'arrangement', 80).replace(/\s+/g, '-');
   return `${title}__${arrangementId}.json`;
 }
@@ -650,6 +654,7 @@ function normalizeCatalogArrangement(item) {
     songId: String(item.songId || ''),
     workId: String(item.workId || ''),
     arrangementId: String(item.arrangementId || ''),
+    arrangementName: String(item.arrangementName || ''),
     source: String(item.source || ''),
     playStyle: item.playStyle === 'chord' ? 'chord' : item.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
     difficulty: Number.isFinite(Number(item.difficulty)) ? Math.min(5, Math.max(1, Math.round(Number(item.difficulty)))) : null,
@@ -812,6 +817,7 @@ function catalogIndexFromSongs(sourceFiles, songs, omittedDriveFileIds = []) {
       songId: String(song.songId || ''),
       workId: String(song.workId || ''),
       arrangementId: String(song.arrangementId || ''),
+      arrangementName: String(song.arrangementName || song.name || ''),
       name: String(song.name || ''),
       artist: String(song.artist || ''),
       album: String(song.album || ''),
@@ -843,6 +849,7 @@ function catalogIndexFromSongs(sourceFiles, songs, omittedDriveFileIds = []) {
       songId: song.songId,
       workId: song.workId,
       arrangementId: song.arrangementId,
+      arrangementName: song.arrangementName,
       source: song.source,
       playStyle: song.playStyle,
       difficulty: song.difficulty,
@@ -1006,10 +1013,14 @@ async function createSongFile(folderId, song, permission) {
   return attachFileMeta(authoritativeSong(persisted, file, normalizedPermission), file);
 }
 
-async function updateSongFile(fileId, song, permission, previousArtistName = '', previousAlbumName = '') {
-  const persisted = cleanSongForWrite(song);
-  const previousArtist = String(previousArtistName || '').trim();
-  const previousAlbum = String(previousAlbumName || '').trim();
+async function updateSongFile(fileId, song, permission, previousSong = null) {
+  const immutableWorkName = String(previousSong?.name || song?.name || '').trim();
+  const persisted = cleanSongForWrite({
+    ...song,
+    ...(immutableWorkName ? { name: immutableWorkName } : {})
+  });
+  const previousArtist = String(previousSong?.artist || '').trim();
+  const previousAlbum = String(previousSong?.album || '').trim();
   const nextArtist = persisted.artist.trim();
   const nextAlbum = persisted.album.trim();
 
@@ -1106,7 +1117,7 @@ async function saveUserSong(session, song) {
 
   const entry = await readManagedEntry(fileId);
   if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
-  return updateSongFile(fileId, song, entry.song._opentab, entry.song.artist, entry.song.album);
+  return updateSongFile(fileId, song, entry.song._opentab, entry.song);
 }
 
 async function publishSong(session, song) {
@@ -1120,7 +1131,7 @@ async function publishSong(session, song) {
     public: true,
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
-  const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song.artist, entry.song.album);
+  const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song);
   await writePermissionRecord(fileId, permission);
   return saved;
 }

@@ -15,6 +15,7 @@ assert.match(browser,/createWorkCard\(work\)/);
 assert.match(browser,/createArrangementRow\(work, arrangement\)/);
 assert.match(browser,/work-card-style-badges/);
 assert.match(browser,/difficultyLabel\(arrangement\.difficulty\)/);
+assert.match(browser,/arrangement\.arrangementName \|\| work\.name \|\| '未命名曲譜'/,'each Work may expose a distinct editable score name for every arrangement');
 assert.doesNotMatch(app,/catalog-card-more|catalog-card-menu|catalogMenuOpenFor/);
 assert.doesNotMatch(mainCss,/catalog-management\.css/);
 const cardSource=browser.slice(browser.indexOf('createWorkCard(work)'),browser.indexOf('updateRailButtons'));
@@ -28,7 +29,7 @@ assert.match(library,/badge\.textContent = '未上架';/,'unlisted personal scor
 assert.doesNotMatch(library,/badge\.textContent = '已下架';/,'the old 已下架 badge label must not remain');
 assert.match(catalogCss,/\.song-hidden-badge\{[^}]*width:max-content[^}]*max-width:max-content[^}]*flex:0 0 auto[^}]*margin:0[^}]*white-space:nowrap/s,'the unlisted badge must shrink to its content and not push the title away');
 assert.match(library,/const titleRow = makeDiv\('song-title-row'\);[\s\S]*titleRow\.appendChild\(loadButton\)[\s\S]*titleRow\.appendChild\(badge\)[\s\S]*item\.append\(titleRow, moreButton, menu\)/s,'the title must stay first with 未上架 immediately to its right and the menu in the final column');
-assert.match(sidebarCss,/\.song-item \{[^}]*grid-template-columns: minmax\(0, 1fr\) 32px/s,'the sidebar row must reserve only the trailing menu column');
+assert.match(sidebarCss,/\.song-item \{[^}]*grid-template-columns: minmax\(0, 1fr\) 32px[^}]*cursor:pointer/s,'the entire sidebar score row must be a clickable target while reserving the trailing menu column');
 assert.match(sidebarCss,/\.song-title-row \{[^}]*display:flex[^}]*gap:4px[^}]*overflow:hidden/s,'title and 未上架 badge must share one left-aligned row');
 const libraryActions=app.slice(app.indexOf('function renderLibraryArrangementActions'),app.indexOf('function ensureLibrarySearchInput'));
 assert.match(libraryActions,/work-card-action primary work-card-action-icon work-card-edit-icon/,'library edit must use the shared green circular icon button');
