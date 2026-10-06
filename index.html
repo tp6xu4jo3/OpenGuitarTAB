@@ -118,11 +118,24 @@
   <div class="modal-backdrop" id="publishModal" aria-hidden="true">
     <div class="rename-dialog publish-dialog" role="dialog" aria-modal="true" aria-labelledby="publishModalTitle">
       <h2 id="publishModalTitle">上傳到公共曲譜</h2>
-      <p class="publish-description">請確認譜名與作者（歌手）。上傳後會顯示你的帳號名稱。</p>
+      <p class="publish-description">上傳前可修改曲目與曲譜資訊。側邊欄「重新命名」仍只修改譜名。</p>
+      <label class="publish-field" for="publishNameInput">曲名</label>
+      <input class="rename-input" id="publishNameInput" type="text" maxlength="80" autocomplete="off" required />
       <label class="publish-field" for="publishArrangementNameInput">譜名</label>
       <input class="rename-input" id="publishArrangementNameInput" type="text" maxlength="80" autocomplete="off" required />
       <label class="publish-field" for="publishArtistInput">作者（歌手）</label>
       <input class="rename-input" id="publishArtistInput" type="text" maxlength="80" autocomplete="off" required />
+      <label class="publish-field" for="publishAlbumInput">專輯</label>
+      <input class="rename-input" id="publishAlbumInput" type="text" maxlength="120" autocomplete="off" />
+      <label class="publish-field" for="publishSourceInput">來源</label>
+      <input class="rename-input" id="publishSourceInput" type="text" maxlength="120" autocomplete="off" placeholder="例如：17jita" />
+      <div class="publish-field publish-extra-label">類型</div>
+      <div id="publishPlayStyleToggle" class="publish-style-toggle" role="radiogroup" aria-label="曲譜類型" data-value="fingerstyle">
+        <button type="button" class="publish-style-option" data-value="fingerstyle" role="radio" aria-checked="true">指彈</button>
+        <button type="button" class="publish-style-option" data-value="chord" role="radio" aria-checked="false">和弦</button>
+      </div>
+      <div class="publish-field publish-difficulty-label">難度 <span id="publishDifficultyValue" class="publish-difficulty-value">3</span></div>
+      <input id="publishDifficultyInput" class="publish-difficulty-range" type="range" min="1" max="5" step="1" value="3" aria-label="難度 1 到 5" />
       <p class="publish-uploader">上傳者：<strong id="publishUploader"></strong></p>
       <p class="publish-error" id="publishError" role="alert"></p>
       <div class="rename-actions"><button class="modal-button cancel" id="publishCancel" type="button">取消</button><button class="modal-button confirm" id="publishConfirm" type="button">上傳</button></div>
