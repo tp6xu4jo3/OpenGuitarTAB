@@ -8,6 +8,22 @@ function isAdminUser() {
 
 function hydrateSong(raw) {
   if (!raw || typeof raw !== 'object') return raw;
+  const hasScoreBody = Boolean(
+    raw.document
+    || Array.isArray(raw.rows)
+    || Array.isArray(raw.rhythmRows)
+    || Array.isArray(raw.rowMeasureCounts)
+  );
+  if (!hasScoreBody) {
+    return {
+      ...raw,
+      name: String(raw.name || raw.title || '未命名曲目'),
+      arrangementName: String(raw.arrangementName || raw.name || raw.title || '未命名曲譜'),
+      tempo: clamp(Number(raw.tempo) || 120, 30, 300),
+      capo: clamp(Math.round(Number(raw.capo) || 0), 0, 12),
+      beatsPerMeasure: normalizeBeatsPerMeasure(raw.beatsPerMeasure)
+    };
+  }
   const transient = {
     workId: raw.workId,
     arrangementId: raw.arrangementId,
@@ -224,11 +240,10 @@ async function confirmRenameSong() {
   if (!song || !canEditSong(currentAuthUser(), song)) { closeRenameModal(); return; }
   const cleanName = renameInput.value.trim();
   if (!cleanName) { showToast('譜名不能空白'); renameInput.focus(); return; }
-  const previousArrangementName = song.arrangementName;
-  song.arrangementName = cleanName;
-  song.updatedAt = Date.now();
+  if (!song._driveFileId) { showToast('請先儲存曲譜'); return; }
   try {
-    const saved = await persistSong(song);
+    const result = await dataSource.renameSong(song._driveFileId, cleanName);
+    const saved = replaceSongRecord(result.song);
     if (currentSongId === saved.id) editorTitle.textContent = window.formatArrangementDisplayName?.(saved, '吉他 TAB 譜製作器') || arrangementDisplayName(saved);
     renderSongList();
     renderLibraryGrid();
@@ -237,7 +252,6 @@ async function confirmRenameSong() {
     showToast('已重新命名譜名');
   } catch (error) {
     console.error(error);
-    song.arrangementName = previousArrangementName;
     showToast('重新命名失敗');
   }
 }
