@@ -31,9 +31,9 @@ import {
   });
 }
 
-assert.equal(songFileName({ name: '簡單愛', arrangementId: 'arr-123' }), '簡單愛__arr-123.json', 'legacy scores without arrangementName must keep a stable filename fallback');
-assert.equal(songFileName({ name: '簡單愛', arrangementName: '簡單愛 指彈版', arrangementId: 'arr-123' }), '簡單愛 指彈版__arr-123.json');
-assert.equal(songFileName({ name: 'A/B\\C', arrangementName: '簡單/A版', arrangementId: 'arr 123' }), '簡單-A版__arr-123.json');
+assert.equal(songFileName({ name: '簡單愛', arrangementId: 'arr-123' }), '簡單愛_簡單愛_arr-123.json', 'legacy scores without arrangementName must use the song title as the score-name filename fallback');
+assert.equal(songFileName({ name: '簡單愛', arrangementName: '簡單愛 指彈版', arrangementId: 'arr-123' }), '簡單愛_簡單愛 指彈版_arr-123.json');
+assert.equal(songFileName({ name: 'A/B\\C', arrangementName: '簡單/A版', arrangementId: 'arr 123' }), 'A-B-C_簡單-A版_arr-123.json');
 
 const driveFiles = [
   { id: 'file-a', name: '歌曲A__arr-a.json', modifiedTime: '2026-09-30T01:00:00.000Z' },
