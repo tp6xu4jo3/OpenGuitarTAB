@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [html, runtime, library, importer, catalog, songActions, api, workModel, sidebarCss] = await Promise.all([
+const [html, runtime, library, importer, catalog, songActions, api, workModel, sidebarCss, modalsCss] = await Promise.all([
   readFile(new URL('../index.html', import.meta.url), 'utf8'),
   readFile(new URL('../src/app-runtime.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/app-library.js', import.meta.url), 'utf8'),
@@ -10,10 +10,12 @@ const [html, runtime, library, importer, catalog, songActions, api, workModel, s
   readFile(new URL('../src/editor/song-actions.js', import.meta.url), 'utf8'),
   readFile(new URL('../api/index.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/catalog/work-model.js', import.meta.url), 'utf8'),
-  readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8')
+  readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8'),
+  readFile(new URL('../styles/modals.css', import.meta.url), 'utf8')
 ]);
 
 assert.match(html, /id="blankSongIdentity"[^>]*hidden/,'blank-song identity fields must stay hidden until blank creation is selected');
+assert.match(modalsCss, /\.new-song-identity\[hidden\]\{display:none\}/,'blank-song identity styling must not override its hidden state');
 assert.match(html, /id="newSongNameInput"[^>]*placeholder="例如：晴る"[^>]*required/,'blank creation must collect the immutable song title');
 assert.match(html, /id="newSongArrangementNameInput"[^>]*placeholder="例如：晴る 指彈版"[^>]*required/,'blank creation must collect the editable score name');
 assert.match(html, /曲名建立後固定；之後「重新命名」只會修改譜名。/);
