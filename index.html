@@ -113,7 +113,7 @@
     </div>
   </div>
 
-  <div class="modal-backdrop" id="renameModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle"><h2 id="renameModalTitle">重新命名曲譜</h2><input class="rename-input" id="renameInput" type="text" maxlength="60" autocomplete="off" /><div class="rename-actions"><button class="modal-button cancel" id="renameCancel" type="button">取消</button><button class="modal-button confirm" id="renameConfirm" type="button">確定</button></div></div></div>
+  <div class="modal-backdrop" id="renameModal" aria-hidden="true"><div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle"><h2 id="renameModalTitle">重新命名譜名</h2><label class="publish-field" for="renameInput">譜名</label><input class="rename-input" id="renameInput" type="text" maxlength="60" autocomplete="off" /><div class="rename-actions"><button class="modal-button cancel" id="renameCancel" type="button">取消</button><button class="modal-button confirm" id="renameConfirm" type="button">確定</button></div></div></div>
 
   <div class="modal-backdrop" id="publishModal" aria-hidden="true">
     <div class="rename-dialog publish-dialog" role="dialog" aria-modal="true" aria-labelledby="publishModalTitle">
@@ -130,6 +130,13 @@
   <div class="modal-backdrop" id="newSongModal" aria-hidden="true">
     <div class="rename-dialog new-song-dialog" role="dialog" aria-modal="true" aria-labelledby="newSongModalTitle">
       <h2 id="newSongModalTitle">新增曲譜</h2>
+      <div class="new-song-identity">
+        <label class="publish-field" for="newSongNameInput">曲名</label>
+        <input class="rename-input" id="newSongNameInput" type="text" maxlength="80" autocomplete="off" placeholder="例如：晴る" required />
+        <label class="publish-field" for="newSongArrangementNameInput">譜名</label>
+        <input class="rename-input" id="newSongArrangementNameInput" type="text" maxlength="80" autocomplete="off" placeholder="例如：晴る 指彈版" required />
+        <p class="new-song-name-note">曲名建立後固定；之後「重新命名」只會修改譜名。</p>
+      </div>
       <div class="new-song-choice-grid">
         <button class="new-song-choice" id="blankSongChoice" type="button"><strong>空白曲譜</strong><span>建立新的TAB</span></button>
         <button class="new-song-choice" id="uploadJsonButton" type="button"><strong>上傳</strong><span>匯入JSON曲譜</span></button>
