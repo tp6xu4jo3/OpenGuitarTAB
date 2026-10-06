@@ -3,20 +3,22 @@ import { readFile } from 'node:fs/promises';
 import { collectArtists, filterWorks, worksFromSongs } from '../src/catalog/song-browser.js';
 
 const works=[
-  {workId:'w1',name:'Alpha Song',artist:'Artist A',album:'One',arrangements:[{source:'source-a',playStyle:'fingerstyle'}]},
-  {workId:'w2',name:'Beta Song',artist:'Artist B',album:'Two',arrangements:[{source:'source-b',playStyle:'chord'}]},
-  {workId:'w3',name:'Another Alpha',artist:'Artist A',album:'Three',arrangements:[{source:'special-source',playStyle:'chord'}]}
+  {workId:'w1',name:'Alpha Song',artist:'Artist A',album:'One',arrangements:[{arrangementName:'Alpha 簡單版',source:'source-a',playStyle:'fingerstyle'}]},
+  {workId:'w2',name:'Beta Song',artist:'Artist B',album:'Two',arrangements:[{arrangementName:'Beta 抒情版',source:'source-b',playStyle:'chord'}]},
+  {workId:'w3',name:'Another Alpha',artist:'Artist A',album:'Three',arrangements:[{arrangementName:'Another Alpha 指彈版',source:'special-source',playStyle:'chord'}]}
 ];
 assert.deepEqual(collectArtists(works),['Artist A','Artist B']);
 assert.deepEqual(filterWorks(works,{artist:'Artist A'}).map(work=>work.workId),['w1','w3']);
 assert.deepEqual(filterWorks(works,{query:'beta'}).map(work=>work.workId),['w2']);
 assert.deepEqual(filterWorks(works,{query:'special-source',artist:'Artist A'}).map(work=>work.workId),['w3']);
+assert.deepEqual(filterWorks(works,{query:'抒情版'}).map(work=>work.workId),['w2'],'search must include editable arrangement names');
 const grouped=worksFromSongs([
-  {id:'s1',workId:'same-work',arrangementId:'a1',name:'Same',artist:'Artist',playStyle:'fingerstyle',difficulty:2,_driveFileId:'f1',_opentab:{owner:'admin',public:false}},
-  {id:'s2',workId:'same-work',arrangementId:'a2',name:'Same',artist:'Artist',playStyle:'chord',difficulty:4,_driveFileId:'f2',_opentab:{owner:'admin',public:false}}
+  {id:'s1',workId:'same-work',arrangementId:'a1',arrangementName:'Same 簡單版',name:'Same',artist:'Artist',playStyle:'fingerstyle',difficulty:2,_driveFileId:'f1',_opentab:{owner:'admin',public:false}},
+  {id:'s2',workId:'same-work',arrangementId:'a2',arrangementName:'Same 指彈版',name:'Same',artist:'Artist',playStyle:'chord',difficulty:4,_driveFileId:'f2',_opentab:{owner:'admin',public:false}}
 ]);
 assert.equal(grouped.length,1);
 assert.equal(grouped[0].arrangements.length,2);
+assert.deepEqual(new Set(grouped[0].arrangements.map(item=>item.arrangementName)),new Set(['Same 簡單版','Same 指彈版']));
 
 const browserSource=await readFile(new URL('../src/catalog/song-browser.js',import.meta.url),'utf8');
 const appSource=await readFile(new URL('../src/app-catalog.js',import.meta.url),'utf8');
@@ -46,7 +48,7 @@ assert.match(browserSource,/createRailButton\('next', '向右瀏覽更多曲譜'
 assert.match(browserSource,/createRailButton\('prev', '向左瀏覽作者'/);
 assert.match(browserSource,/createRailButton\('next', '向右瀏覽更多作者'/);
 assert.match(browserSource,/`☆\$\{Math\.round\(number\)\}` : '☆-'/,'difficulty label must use the compact star notation');
-assert.match(browserSource,/const primary = createElement\('div', 'work-card-arrangement-primary'\)[\s\S]*primary\.append\(title, difficulty\)[\s\S]*來源 \$\{arrangement\.source \|\| '-'\}/s,'card back must keep play style and difficulty on one row, then source below');
+assert.match(browserSource,/const primary = createElement\('div', 'work-card-arrangement-primary'\)[\s\S]*arrangement\.arrangementName \|\| work\.name[\s\S]*primary\.append\(title, difficulty\)[\s\S]*playStyleLabel\(arrangement\.playStyle\).*來源 \$\{arrangement\.source \|\| '-'\}/s,'card back must show arrangement name with difficulty, then play style/source metadata below');
 assert.match(css,/\.work-card-arrangement-primary\{[^}]*display:flex[^}]*align-items:center/s,'arrangement primary row must be inline');
 assert.match(css,/\.work-card-arrangement-difficulty\{[^}]*display:inline-flex[^}]*padding:1px 6px[^}]*border-radius:999px[^}]*background:#3a3a3a[^}]*line-height:1/s,'difficulty badge must stay shorter than the adjacent style text');
 assert.match(browserSource,/const firstRect = items\[0\]\.getBoundingClientRect\(\)[\s\S]*const lastRect = items\.at\(-1\)\.getBoundingClientRect\(\)/,'arrow visibility must follow the visual first/last card boundaries');
