@@ -1014,11 +1014,7 @@ async function createSongFile(folderId, song, permission) {
 }
 
 async function updateSongFile(fileId, song, permission, previousSong = null) {
-  const immutableWorkName = String(previousSong?.name || song?.name || '').trim();
-  const persisted = cleanSongForWrite({
-    ...song,
-    ...(immutableWorkName ? { name: immutableWorkName } : {})
-  });
+  const persisted = cleanSongForWrite(song);
   const previousArtist = String(previousSong?.artist || '').trim();
   const previousAlbum = String(previousSong?.album || '').trim();
   const nextArtist = persisted.artist.trim();
@@ -1117,11 +1113,15 @@ async function saveUserSong(session, song) {
 
   const entry = await readManagedEntry(fileId);
   if (!canEditSong(session, entry.song)) throw new Error('EDIT_FORBIDDEN');
-  return updateSongFile(fileId, song, entry.song._opentab, entry.song);
+  return updateSongFile(fileId, { ...song, name: entry.song.name }, entry.song._opentab, entry.song);
 }
 
 async function publishSong(session, song) {
+  const name = String(song?.name || '').trim();
+  const arrangementName = String(song?.arrangementName || '').trim();
   const artist = String(song?.artist || '').trim();
+  if (!name) throw new Error('NAME_REQUIRED');
+  if (!arrangementName) throw new Error('ARRANGEMENT_NAME_REQUIRED');
   if (!artist) throw new Error('ARTIST_REQUIRED');
   const fileId = String(song?._driveFileId || '').trim();
   if (!fileId) throw new Error('SAVE_BEFORE_PUBLISH');
@@ -1131,7 +1131,7 @@ async function publishSong(session, song) {
     public: true,
     publishedAt: entry.song?._opentab?.publishedAt || Date.now()
   });
-  const saved = await updateSongFile(fileId, { ...song, artist }, permission, entry.song);
+  const saved = await updateSongFile(fileId, { ...song, name, arrangementName, artist }, permission, entry.song);
   await writePermissionRecord(fileId, permission);
   return saved;
 }

@@ -133,6 +133,10 @@ assert.doesNotMatch(apiSource, /PUBLIC_CATALOG_CACHE_TTL_MS|publicCatalogCache/,
 assert.match(apiSource, /copy\.arrangementId\s*=\s*createCatalogId\('arr'\)/, 'cloning an arrangement must keep the same title-derived work and create a new arrangementId');
 assert.match(apiSource, /'workId'[\s\S]*'arrangementId'[\s\S]*'arrangementName'/, 'Drive JSON persistence must include both catalog identities and the editable arrangement name');
 const updateBlock = apiSource.slice(apiSource.indexOf('async function updateSongFile('), apiSource.indexOf('async function readManagedEntry('));
-assert.match(updateBlock, /const immutableWorkName = String\(previousSong\?\.name \|\| song\?\.name \|\| ''\)\.trim\(\)[\s\S]*\.\.\.\(immutableWorkName \? \{ name: immutableWorkName \} : \{\}\)/s, 'existing Drive scores must preserve their original song title on every update');
+assert.match(updateBlock, /const persisted = cleanSongForWrite\(song\)/, 'Drive update must derive canonical Work identity from the metadata supplied by its owning operation');
+const saveBlock = apiSource.slice(apiSource.indexOf('async function saveUserSong('), apiSource.indexOf('async function publishSong('));
+assert.match(saveBlock, /updateSongFile\(fileId, \{ \.\.\.song, name: entry\.song\.name \}/, 'ordinary saves must preserve the existing Work title');
+const publishBlock = apiSource.slice(apiSource.indexOf('async function publishSong('), apiSource.indexOf('async function setPublicState('));
+assert.match(publishBlock, /const name = String\(song\?\.name \|\| ''\)\.trim\(\)[\s\S]*updateSongFile\(fileId, \{ \.\.\.song, name, arrangementName, artist \}/s, 'publishing may change the title and rederive the arrangement Work identity');
 
 console.log('catalog work model tests passed');

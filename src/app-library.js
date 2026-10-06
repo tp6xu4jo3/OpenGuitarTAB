@@ -45,6 +45,13 @@ function arrangementDisplayName(song) {
   return String(song?.arrangementName || song?.name || '未命名曲譜');
 }
 
+function libraryDisplayName(song) {
+  const arrangementName = arrangementDisplayName(song).trim();
+  const workName = String(song?.name || '未命名曲目').trim();
+  if (!workName || arrangementName === workName) return arrangementName || workName || '未命名曲譜';
+  return `${arrangementName} - ${workName}`;
+}
+
 function readNewSongIdentity({ focusInvalid = true } = {}) {
   const name = String(newSongNameInput?.value || '').trim();
   const arrangementName = String(newSongArrangementNameInput?.value || '').trim();
@@ -107,12 +114,12 @@ function renderSongList() {
   songs.forEach(song => {
     const item = makeDiv('song-item');
     if (song.id === currentSongId) item.classList.add('active');
-    const scoreName = arrangementDisplayName(song);
+    const scoreName = libraryDisplayName(song);
     const loadButton = document.createElement('button');
     loadButton.type = 'button';
     loadButton.className = 'song-load-button';
     loadButton.textContent = scoreName;
-    loadButton.title = `${scoreName} · 曲名：${song.name || '未命名曲目'}`;
+    loadButton.title = scoreName;
     item.addEventListener('click', event => {
       if (event.target.closest('.song-more-button,.song-menu')) return;
       setRoute(`#/editor/${encodeURIComponent(song.arrangementId)}`);
@@ -394,8 +401,12 @@ saveSongButton.addEventListener('click', saveCurrentSong);
 downloadSongButton.addEventListener('click', openPublishModal);
 publishCancel.addEventListener('click', closePublishModal);
 publishConfirm.addEventListener('click', confirmPublishSong);
-publishArrangementNameInput.addEventListener('keydown', event => { if (event.key === 'Enter') confirmPublishSong(); if (event.key === 'Escape') closePublishModal(); });
-publishArtistInput.addEventListener('keydown', event => { if (event.key === 'Enter') confirmPublishSong(); if (event.key === 'Escape') closePublishModal(); });
+publishModal.querySelectorAll('input[type="text"]').forEach(input => {
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') confirmPublishSong();
+    if (event.key === 'Escape') closePublishModal();
+  });
+});
 publishModal.addEventListener('click', event => { if (event.target === publishModal) closePublishModal(); });
 newSongButton.addEventListener('click', openNewSongModal);
 document.getElementById('blankSongChoice')?.addEventListener('click', () => {

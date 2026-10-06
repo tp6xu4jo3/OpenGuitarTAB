@@ -1,3 +1,12 @@
+.publish-dialog {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.publish-dialog .rename-input + .publish-field {
+  margin-top: 12px;
+}
+
 .publish-description {
   margin: 0 0 16px;
   color: #555;
