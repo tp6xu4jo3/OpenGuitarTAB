@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [html, runtime, library, importer, catalog, api, workModel, sidebarCss] = await Promise.all([
+const [html, runtime, library, importer, catalog, songActions, api, workModel, sidebarCss] = await Promise.all([
   readFile(new URL('../index.html', import.meta.url), 'utf8'),
   readFile(new URL('../src/app-runtime.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/app-library.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/library/song-import.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/app-catalog.js', import.meta.url), 'utf8'),
+  readFile(new URL('../src/editor/song-actions.js', import.meta.url), 'utf8'),
   readFile(new URL('../api/index.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/catalog/work-model.js', import.meta.url), 'utf8'),
   readFile(new URL('../styles/sidebar.css', import.meta.url), 'utf8')
@@ -15,6 +16,7 @@ const [html, runtime, library, importer, catalog, api, workModel, sidebarCss] = 
 assert.match(html, /id="newSongNameInput"[^>]*placeholder="例如：晴る"[^>]*required/,'new blank/import flow must collect the immutable song title');
 assert.match(html, /id="newSongArrangementNameInput"[^>]*placeholder="例如：晴る 指彈版"[^>]*required/,'new blank/import flow must collect the editable score name');
 assert.match(html, /曲名建立後固定；之後「重新命名」只會修改譜名。/);
+assert.equal((html.match(/搜尋曲名、譜名或作者/g) || []).length, 2, 'catalog and library search hints must include score names');
 assert.match(html, /id="renameModalTitle">重新命名譜名</,'sidebar rename UI must make its arrangement-only meaning explicit');
 
 assert.match(runtime, /name: String\(song\?\.name \|\| song\?\.title \|\| '未命名曲目'\)/);
@@ -42,6 +44,7 @@ assert.match(api, /async function updateSongFile\(fileId, song, permission, prev
 assert.match(api, /arrangementName: song\.arrangementName/,'index v3 Arrangement records must cache the score name');
 assert.match(catalog, /editorTitle\.textContent = loaded\.arrangementName \|\| loaded\.name/,'local editor header must display the score name');
 assert.match(catalog, /editorTitle\.textContent = previewSong\.arrangementName \|\| previewSong\.name/,'preview header must display the score name');
+assert.match(songActions, /title\.textContent = saved\?\.arrangementName \|\| saved\?\.name/,'saving must not switch the editor header back to the immutable song title');
 assert.match(sidebarCss, /\.song-item \{[^}]*cursor:pointer/s,'sidebar row must advertise its full click target');
 
 console.log('Arrangement naming regression tests passed');
