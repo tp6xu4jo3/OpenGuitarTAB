@@ -20,6 +20,7 @@ import {
   removeArtistProfileData
 } from '../src/catalog/media.js';
 import { isDocumentV3, normalizeDocumentV3 } from '../src/editor/model.js';
+import { normalizeMelody } from '../src/editor/melody-midi.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -51,6 +52,7 @@ const SONG_FIELD_ORDER = [
   'updatedAt',
   'artist',
   'album',
+  'melody',
   'document'
 ];
 
@@ -574,6 +576,7 @@ export function cleanSongForWrite(song) {
     updatedAt: Number(input.updatedAt) || Date.now(),
     artist: String(input.artist || ''),
     album: String(input.album || ''),
+    melody: normalizeMelody(input.melody),
     document: normalizeDocumentV3(input.document)
   };
   const persisted = {};

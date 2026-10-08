@@ -137,6 +137,7 @@ export async function confirmPublishSong() {
     const updated = admin ? result.song : result.privateSong;
     if (updated) {
       window.replaceSongRecord?.(updated);
+      window.editorPlayback?.refreshSoundControls?.();
       const title = document.getElementById('editorTitle');
       if (title) title.textContent = window.formatArrangementDisplayName?.(updated, '吉他 TAB 譜製作器') || updated.arrangementName || updated.name || '吉他 TAB 譜製作器';
     }

@@ -90,6 +90,7 @@ export class GuitarAudioEngine {
     this.masterGain = null;
     this.activeVoices = Array(STRING_TUNING.length).fill(null);
     this.samples = new RecordedGuitarSampleBank();
+    this.melodyVoices = new Set();
   }
 
   setup() {
@@ -122,6 +123,58 @@ export class GuitarAudioEngine {
     const ready = await this.samples.decode(context);
     if (!ready) window.showToast?.('吉他錄音音源載入失敗，請重新整理後再試');
     return ready;
+  }
+
+  async ensureMelodyReady() {
+    const context = this.setup();
+    if (!context) return false;
+    if (context.state === 'suspended') await context.resume();
+    return true;
+  }
+
+  scheduleMelodyNote(note, atTime, secondsPerBeat) {
+    if (!this.context || !this.masterGain) return;
+    const pitch = Number(note?.pitch);
+    const length = Number(note?.duration) * secondsPerBeat;
+    if (!Number.isFinite(pitch) || pitch < 0 || pitch > 127 || !(length > 0)) return;
+    const start = Math.max(this.context.currentTime + 0.005, Number(atTime));
+    const duration = Math.min(8, Math.max(0.03, length));
+    const end = start + duration;
+    const velocity = clamp(Number(note?.velocity) || 80, 1, 127) / 127;
+    const oscillator = this.context.createOscillator();
+    const envelope = this.context.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(440 * 2 ** ((pitch - 69) / 12), start);
+    const attack = Math.min(0.012, duration * 0.2);
+    const release = Math.min(0.09, duration * 0.35);
+    const level = 0.14 * velocity;
+    envelope.gain.setValueAtTime(0.0001, start);
+    envelope.gain.linearRampToValueAtTime(level, start + attack);
+    envelope.gain.setValueAtTime(level, Math.max(start + attack, end - release));
+    envelope.gain.exponentialRampToValueAtTime(0.0001, end);
+    oscillator.connect(envelope);
+    envelope.connect(this.masterGain);
+    const voice = { oscillator, envelope };
+    this.melodyVoices.add(voice);
+    oscillator.onended = () => {
+      this.melodyVoices.delete(voice);
+      oscillator.disconnect();
+      envelope.disconnect();
+    };
+    oscillator.start(start);
+    oscillator.stop(end + 0.01);
+  }
+
+  stopMelody() {
+    const now = this.context?.currentTime || 0;
+    for (const voice of this.melodyVoices) {
+      const gain = voice.envelope.gain;
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+      gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+      try { voice.oscillator.stop(now + 0.02); } catch {}
+    }
+    this.melodyVoices.clear();
   }
 
   connectSample(plan, startTime, destination, slideSteps) {
