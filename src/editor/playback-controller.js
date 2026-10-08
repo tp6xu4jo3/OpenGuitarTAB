@@ -2,6 +2,7 @@ import { getAudioEngine } from './audio-engine.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
 import { playbackNoteSchedule } from './playback-articulation.js';
 import { buildPlaybackIndex } from './playback-index.js';
+import { readMidiTracks, melodyFromMidiTrack } from './melody-midi.js';
 
 const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
 const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
@@ -22,7 +23,12 @@ const state = {
   beatBar: null,
   lastCenteredKey: null,
   musicEnabled: true,
-  metronomeEnabled: false
+  metronomeEnabled: false,
+  melodyEnabled: false,
+  melodySongId: null,
+  melodyTimer: null,
+  melodyCursor: 0,
+  playbackClock: null
 };
 
 function clamp(value, min, max) {
@@ -212,9 +218,11 @@ function applyProgressIndex(playback, index, updateSlider = true, highlight = tr
 
 function setProgressIndex(index, updateSlider = true, highlight = true) {
   applyProgressIndex(ensureIndex(), index, updateSlider, highlight);
+  syncSoundControls();
 }
 
 function updateProgressRange() {
+  syncSoundControls();
   const playback = ensureIndex();
   syncProgressRangeFromIndex(playback);
   applyProgressIndex(playback, state.currentIndex, true, false);
@@ -280,6 +288,52 @@ function soundControlButton(kind, label, enabled) {
   return button;
 }
 
+function currentIsChordScore() {
+  return currentSongSafe()?.playStyle === 'chord';
+}
+
+function hasMelody(song = currentSongSafe()) {
+  return Array.isArray(song?.melody?.notes) && song.melody.notes.length > 0;
+}
+
+async function importMelodyMidi(file) {
+  const song = currentSongSafe();
+  if (!song || song.playStyle !== 'chord' || document.getElementById('saveSongButton')?.hidden) return;
+  if (state.playing || state.preparing) {
+    window.showToast?.('請先停止播放，再匯入旋律');
+    return;
+  }
+  try {
+    const tracks = readMidiTracks(await file.arrayBuffer());
+    if (!tracks.length) throw new Error('MIDI內沒有旋律音符');
+    let track = tracks[0];
+    if (tracks.length > 1) {
+      const choices = tracks.map((item, index) => `${index + 1}. ${item.name}（${item.notes.length}音）`).join('\n');
+      const selected = window.prompt(`請選擇主旋律軌道編號：\n${choices}`, '1');
+      if (selected === null) return;
+      const index = Number(selected) - 1;
+      if (!Number.isInteger(index) || index < 0 || index >= tracks.length) throw new Error('請選擇有效的旋律軌道');
+      track = tracks[index];
+    }
+    const melody = melodyFromMidiTrack(track, file.name);
+    const originalMelody = song.melody;
+    song.melody = melody;
+    try {
+      if (typeof window.persistSong !== 'function') throw new Error('目前無法儲存旋律');
+      await window.persistSong(song);
+    } catch (error) {
+      song.melody = originalMelody;
+      throw error;
+    }
+    state.melodyEnabled = false;
+    syncSoundControls(true);
+    window.showToast?.(`已匯入並儲存 ${melody.notes.length} 個旋律音符；播放旋律預設關閉`);
+  } catch (error) {
+    console.error('Melody MIDI import failed', error);
+    window.showToast?.(error?.message || '旋律 MIDI 匯入失敗');
+  }
+}
+
 function ensureSoundControls() {
   let controls = document.getElementById('playbackSoundControls');
   if (controls) return controls;
@@ -291,32 +345,94 @@ function ensureSoundControls() {
   controls.className = 'playback-sound-controls';
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', '播放聲音');
-  controls.append(
-    soundControlButton('music', '音樂', state.musicEnabled),
-    soundControlButton('metronome', '節拍器', state.metronomeEnabled)
-  );
   controls.addEventListener('click', event => {
+    const importButton = event.target.closest?.('[data-melody-upload]');
+    if (importButton) {
+      event.preventDefault();
+      controls.querySelector('#melodyMidiInput')?.click();
+      return;
+    }
     const button = event.target.closest?.('[data-playback-sound]');
     if (!button) return;
     event.preventDefault();
     const kind = button.dataset.playbackSound;
     if (kind === 'music') setMusicEnabled(!state.musicEnabled);
     if (kind === 'metronome') setMetronomeEnabled(!state.metronomeEnabled);
+    if (kind === 'melody') setMelodyEnabled(!state.melodyEnabled);
+  });
+  controls.addEventListener('change', event => {
+    if (event.target?.id !== 'melodyMidiInput') return;
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void importMelodyMidi(file);
   });
   progress.before(controls);
   return controls;
 }
 
-function syncSoundControls() {
+function syncSoundControls(force = false) {
   const controls = ensureSoundControls();
   if (!controls) return;
+  const song = currentSongSafe();
+  const songId = String(song?.arrangementId || song?.id || '');
+  if (state.melodySongId !== songId) {
+    state.melodyEnabled = false;
+    getAudioEngine()?.stopMelody();
+    state.melodySongId = songId;
+    force = true;
+  }
+  const chord = currentIsChordScore();
+  const editable = chord && !document.getElementById('saveSongButton')?.hidden;
+  const mode = chord ? (editable ? 'chord-edit' : 'chord-preview') : 'normal';
+  if (force || controls.dataset.mode !== mode) {
+    controls.dataset.mode = mode;
+    const buttons = [];
+    if (chord) buttons.push(soundControlButton('melody', '旋律', state.melodyEnabled));
+    buttons.push(soundControlButton('music', '模擬', state.musicEnabled));
+    buttons.push(soundControlButton('metronome', '節拍器', state.metronomeEnabled));
+    if (editable) {
+      const upload = document.createElement('button');
+      upload.type = 'button';
+      upload.className = 'playback-melody-upload';
+      upload.dataset.melodyUpload = 'true';
+      upload.textContent = hasMelody(song) ? '換MIDI' : '＋MIDI';
+      upload.title = '匯入單一主旋律 MIDI，音符與該份和弦譜一起儲存';
+      const input = document.createElement('input');
+      input.id = 'melodyMidiInput';
+      input.type = 'file';
+      input.accept = '.mid,.midi,audio/midi,audio/x-midi';
+      input.hidden = true;
+      buttons.push(upload, input);
+    }
+    controls.replaceChildren(...buttons);
+  }
   controls.querySelectorAll('[data-playback-sound]').forEach(button => {
-    const music = button.dataset.playbackSound === 'music';
-    const enabled = music ? state.musicEnabled : state.metronomeEnabled;
-    const label = music ? '音樂' : '節拍器';
+    const kind = button.dataset.playbackSound;
+    const enabled = kind === 'music' ? state.musicEnabled : kind === 'metronome' ? state.metronomeEnabled : state.melodyEnabled;
+    const label = kind === 'music' ? '模擬' : kind === 'metronome' ? '節拍器' : '旋律';
     button.setAttribute('aria-pressed', String(enabled));
     button.setAttribute('aria-label', `${label}${enabled ? '已開啟' : '已靜音'}`);
+    if (kind === 'melody') button.title = hasMelody(song) ? '播放匯入的旋律 MIDI' : '尚未匯入旋律 MIDI';
   });
+}
+
+function setMelodyEnabled(enabled) {
+  if (enabled && !hasMelody()) {
+    window.showToast?.('請先用＋MIDI匯入旋律');
+    return false;
+  }
+  state.melodyEnabled = Boolean(enabled && currentIsChordScore());
+  if (!state.melodyEnabled) {
+    getAudioEngine()?.stopMelody();
+    stopMelodyScheduler();
+  } else if (state.playing) {
+    const audio = getAudioEngine();
+    void audio?.ensureMelodyReady().then(ready => {
+      if (ready && state.playing && state.melodyEnabled) startMelodyScheduler();
+    });
+  }
+  syncSoundControls();
+  return state.melodyEnabled;
 }
 
 function setMusicEnabled(enabled) {
@@ -334,6 +450,43 @@ function setMetronomeEnabled(enabled) {
   if (state.metronomeEnabled && state.playing) void getAudioEngine()?.ensureReady();
   syncSoundControls();
   return state.metronomeEnabled;
+}
+
+function stopMelodyScheduler() {
+  if (state.melodyTimer !== null) {
+    clearInterval(state.melodyTimer);
+    state.melodyTimer = null;
+  }
+}
+
+function startMelodyScheduler() {
+  stopMelodyScheduler();
+  const clock = state.playbackClock;
+  const audio = getAudioEngine();
+  const notes = currentSongSafe()?.melody?.notes;
+  if (!state.playing || !state.melodyEnabled || !clock || !audio?.context || !Array.isArray(notes)) return;
+  const offset = clock.startBeat;
+  const secondsPerBeat = clock.secondsPerBeat;
+  const currentBeat = offset + Math.max(0, audio.context.currentTime - clock.audioStartTime) / secondsPerBeat;
+  state.melodyCursor = notes.findIndex(note => Number(note.beat) >= currentBeat - 0.01);
+  if (state.melodyCursor < 0) return;
+  const schedule = () => {
+    if (!state.playing || !state.melodyEnabled || state.playbackClock !== clock) return;
+    const currentTime = audio.context.currentTime;
+    const horizon = currentTime + 0.28;
+    while (state.melodyCursor < notes.length) {
+      const note = notes[state.melodyCursor];
+      const noteTime = clock.audioStartTime + (Number(note.beat) - offset) * secondsPerBeat;
+      if (noteTime > horizon) break;
+      state.melodyCursor += 1;
+      if (noteTime + 0.01 < currentTime) continue;
+      if (Number(note.beat) >= clock.endBeat) continue;
+      audio.scheduleMelodyNote(note, noteTime, secondsPerBeat);
+    }
+    if (state.melodyCursor >= notes.length) stopMelodyScheduler();
+  };
+  schedule();
+  if (state.melodyCursor < notes.length) state.melodyTimer = window.setInterval(schedule, 45);
 }
 
 function buildNextStringDelayMap(playback, beatMs) {
@@ -433,8 +586,10 @@ async function startPlayback() {
   try {
     await new Promise(resolve => requestAnimationFrame(resolve));
     const audio = getAudioEngine();
-    const needsAudio = state.musicEnabled || state.metronomeEnabled;
-    if (needsAudio && (!audio || !await audio.ensureReady())) return;
+    syncSoundControls();
+    const needsMelody = state.melodyEnabled && currentIsChordScore() && hasMelody();
+    const needsAudio = state.musicEnabled || state.metronomeEnabled || needsMelody;
+    if (needsAudio && (!audio || !(state.musicEnabled ? await audio.ensureReady() : await audio.ensureMelodyReady()))) return;
     if (!state.preparing) return;
 
     const playback = ensureIndex();
@@ -461,22 +616,35 @@ async function startPlayback() {
     const firstOffset = state.startOffsetBeats;
     state.startOffsetBeats = 0;
 
+    // Simulation, MIDI melody and metronome share the same absolute playback origin.
+    // Each visual tick is based on the origin, not accumulated setTimeout delays.
+    const startBeat = Number(playback.entries[firstIndex].absoluteBeat) + firstOffset;
+    const leadMs = needsAudio ? 70 : 0;
+    const wallStart = performance.now() + leadMs;
+    state.playbackClock = {
+      startBeat,
+      endBeat: playback.totalBeats,
+      secondsPerBeat: beatMs / 1000,
+      audioStartTime: (audio?.context?.currentTime || 0) + leadMs / 1000
+    };
+    if (needsMelody) startMelodyScheduler();
+
     const tick = index => {
       if (!state.playing) return;
       const entry = playback.entries[index];
-      if (!entry) {
-        stopPlayback();
-        return;
-      }
+      if (!entry) { stopPlayback(); return; }
       const fromOffset = index === firstIndex ? firstOffset : 0;
       playBeat(entry, beatMs, fromOffset);
-      const remaining = Math.max(0.001, (Number(entry.durationBeats) || 0.25) - fromOffset);
-      state.timer = window.setTimeout(() => {
-        if (index + 1 >= playback.entries.length) stopPlayback(true, false);
-        else tick(index + 1);
-      }, remaining * beatMs);
+      if (index + 1 >= playback.entries.length) {
+        const endAt = wallStart + (playback.totalBeats - startBeat) * beatMs;
+        state.timer = window.setTimeout(() => stopPlayback(true, false), Math.max(0, endAt - performance.now()));
+        return;
+      }
+      const nextBeat = Number(playback.entries[index + 1].absoluteBeat);
+      const nextAt = wallStart + (nextBeat - startBeat) * beatMs;
+      state.timer = window.setTimeout(() => tick(index + 1), Math.max(0, nextAt - performance.now()));
     };
-    tick(firstIndex);
+    state.timer = window.setTimeout(() => tick(firstIndex), leadMs);
   } catch (error) {
     console.error('Playback preparation failed.', error);
     window.showToast?.('播放準備失敗，請再試一次');
@@ -494,6 +662,9 @@ function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true)
     state.timer = null;
   }
   clearEventTimers();
+  stopMelodyScheduler();
+  getAudioEngine()?.stopMelody();
+  state.playbackClock = null;
   state.preparing = false;
   state.playing = false;
   state.lastCenteredKey = null;
@@ -532,13 +703,16 @@ export function installPlaybackController() {
     stop: stopPlayback,
     setMusicEnabled,
     setMetronomeEnabled,
+    setMelodyEnabled,
+    refreshSoundControls: () => syncSoundControls(true),
     getIndex: () => state.currentIndex,
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
     getPlaybackIndex: () => ensureIndex(),
     get isPlaying() { return state.playing; },
     get isPreparing() { return state.preparing; },
     get musicEnabled() { return state.musicEnabled; },
-    get metronomeEnabled() { return state.metronomeEnabled; }
+    get metronomeEnabled() { return state.metronomeEnabled; },
+    get melodyEnabled() { return state.melodyEnabled; }
   };
   window.editorPlayback = api;
   ensureSoundControls();
