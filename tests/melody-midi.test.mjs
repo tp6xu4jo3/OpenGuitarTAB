@@ -56,7 +56,7 @@ const audio=await readFile(new URL('../src/editor/audio-engine.js',import.meta.u
 assert.match(playback,/soundControlButton\('music', '模擬'/,'existing music toggle must be relabeled 模擬');
 assert.match(playback,/if \(chord\) buttons\.push\(soundControlButton\('melody', '旋律', state\.melodyEnabled\)\)/,'melody toggle must appear only for chord charts and to the left of simulation');
 assert.match(playback,/melodyEnabled: false/,'melody must be off by default');
-assert.match(playback,/const melody = melodyFromMidiTrack\(track, file\.name\)[\s\S]*song\.melody = melody[\s\S]*await window\.persistSong\(song\)/s,'MIDI import must be stored in the existing song persistence flow');
+assert.match(playback,/const melody = melodyFromMidiTrack\(selection, file\.name\)[\s\S]*song\.melody = melody[\s\S]*await window\.persistSong\(song\)/s,'MIDI import must be stored in the existing song persistence flow');
 assert.match(playback,/startMelodyScheduler\(\)[\s\S]*clock\.audioStartTime \+ \(Number\(note\.beat\) - offset\) \* secondsPerBeat/s,'melody must be scheduled against the shared playback origin');
 assert.match(playback,/const nextAt = wallStart \+ \(nextBeat - startBeat\) \* beatMs/,'score ticks must be corrected against a single origin instead of accumulating setTimeout delay');
 assert.match(audio,/scheduleMelodyNote\(note, atTime, secondsPerBeat\)/,'melody must use sample-accurate WebAudio start times');
