@@ -22,6 +22,10 @@ const cardSource=browser.slice(browser.indexOf('createWorkCard(work)'),browser.i
 assert.doesNotMatch(cardSource,/difficultyLabel|難度/,'outer WorkCard summary must not own difficulty');
 assert.match(app,/work-card-preview-icon/,'preview action must be an eye icon button');
 assert.match(app,/createArrangementMenu/,'edit and visibility actions must share the compact ellipsis menu');
+assert.match(app,/function openArrangementMenu\(trigger, menu\)[\s\S]*document\.body\.appendChild\(menu\)[\s\S]*positionArrangementMenu\(trigger, menu\)/s,'ellipsis menu must portal to document.body instead of staying inside the clipped card');
+assert.match(app,/function positionArrangementMenu\(trigger, menu\)[\s\S]*getBoundingClientRect\(\)[\s\S]*fitsBelow[\s\S]*fitsAbove/s,'portal menu must position from the trigger and flip at viewport edges');
+assert.match(app,/window\.addEventListener\('resize', closeArrangementMenus\)/,'portal menu must close on resize');
+assert.match(app,/window\.addEventListener\('scroll', closeArrangementMenus, true\)/,'portal menu must close on scrolling containers');
 assert.match(app,/function appendArrangementMenuInfo\(menu, arrangement\)[\s\S]*'難度'[\s\S]*'類型'[\s\S]*'來源'/s,'catalog ellipsis menu must include difficulty, play style, and source information');
 assert.match(app,/createArrangementMenu\(menuItems, arrangement\)/,'public catalog management menu must receive arrangement metadata');
 assert.match(app,/'編輯'/);
@@ -44,6 +48,7 @@ assert.doesNotMatch(catalogCss,/\.work-card\.is-expanded\s*\{[^}]*grid-row|grid-
 assert.match(catalogCss,/\.work-card\.is-expanded \.work-card-inner\s*\{[^}]*rotateY\(180deg\)/s);
 assert.match(catalogCss,/\.work-card\.is-expanded \.work-card-back\{pointer-events:auto\}/,'back-face actions must remain clickable after the 3D flip');
 assert.match(catalogCss,/\.work-card-arrangements\s*\{[^}]*overflow:auto/s,'fixed-size back face must scroll internally when needed');
+assert.match(catalogCss,/\.work-card-action-menu\{[^}]*position:fixed[^}]*z-index:3000/s,'ellipsis popup must live in the viewport layer above transformed/overflow-hidden cards');
 assert.match(catalogCss,/\.work-card-action-menu\.with-info\{[^}]*width:176px[^}]*height:148px[^}]*overflow:hidden/s,'catalog info menu must keep a fixed popup size');
 assert.match(catalogCss,/\.work-card-action-menu-info-value\{[^}]*white-space:normal[^}]*overflow-wrap:anywhere[^}]*word-break:break-word/s,'long catalog metadata must wrap instead of expanding the popup');
 assert.match(catalogCss,/\.work-card-front \.work-card-style-badges\s*\{[^}]*margin-bottom:12px/s,'style badge must have breathing room at the card bottom');
