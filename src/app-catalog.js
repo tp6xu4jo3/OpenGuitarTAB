@@ -13,6 +13,9 @@ let libraryLoadedUsername = '';
 let libraryLoadRequest = null;
 let libraryLoadRequestUsername = '';
 const librarySongLoadRequests = new Map();
+let activeArrangementMenu = null;
+const ARRANGEMENT_MENU_MARGIN = 8;
+const ARRANGEMENT_MENU_GAP = 6;
 
 function setMobileMenuOpen(open) {
   const next = Boolean(open && mobileQuery.matches);
@@ -109,10 +112,45 @@ function iconButton(className, label, svg) {
   return button;
 }
 
-function closeArrangementMenus(except = null) {
-  document.querySelectorAll('.work-card-action-menu.open').forEach(menu => {
-    if (menu !== except) menu.classList.remove('open');
-  });
+function closeArrangementMenus() {
+  if (!activeArrangementMenu) return;
+  const { menu, trigger } = activeArrangementMenu;
+  menu.classList.remove('open');
+  menu.style.left = '';
+  menu.style.top = '';
+  trigger.setAttribute('aria-expanded', 'false');
+  menu.remove();
+  activeArrangementMenu = null;
+}
+
+function positionArrangementMenu(trigger, menu) {
+  const triggerRect = trigger.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  const maxLeft = Math.max(ARRANGEMENT_MENU_MARGIN, window.innerWidth - width - ARRANGEMENT_MENU_MARGIN);
+  const maxTop = Math.max(ARRANGEMENT_MENU_MARGIN, window.innerHeight - height - ARRANGEMENT_MENU_MARGIN);
+  const preferredLeft = triggerRect.right - width;
+  const preferredBelow = triggerRect.bottom + ARRANGEMENT_MENU_GAP;
+  const preferredAbove = triggerRect.top - height - ARRANGEMENT_MENU_GAP;
+  const fitsBelow = preferredBelow + height <= window.innerHeight - ARRANGEMENT_MENU_MARGIN;
+  const fitsAbove = preferredAbove >= ARRANGEMENT_MENU_MARGIN;
+
+  const left = Math.min(Math.max(preferredLeft, ARRANGEMENT_MENU_MARGIN), maxLeft);
+  const top = fitsBelow || !fitsAbove
+    ? Math.min(Math.max(preferredBelow, ARRANGEMENT_MENU_MARGIN), maxTop)
+    : preferredAbove;
+
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+function openArrangementMenu(trigger, menu) {
+  closeArrangementMenus();
+  document.body.appendChild(menu);
+  menu.classList.add('open');
+  trigger.setAttribute('aria-expanded', 'true');
+  activeArrangementMenu = { menu, trigger };
+  positionArrangementMenu(trigger, menu);
 }
 
 function arrangementDifficultyText(value) {
@@ -167,6 +205,7 @@ function createArrangementMenu(items, arrangement = null) {
   );
   trigger.setAttribute('aria-haspopup', 'menu');
   trigger.setAttribute('aria-expanded', 'false');
+
   const menu = document.createElement('div');
   menu.className = 'work-card-action-menu';
   menu.setAttribute('role', 'menu');
@@ -175,21 +214,23 @@ function createArrangementMenu(items, arrangement = null) {
     button.setAttribute('role', 'menuitem');
     button.addEventListener('click', async event => {
       event.stopPropagation();
-      menu.classList.remove('open');
-      trigger.setAttribute('aria-expanded', 'false');
+      closeArrangementMenus();
       await item.run();
     });
     menu.appendChild(button);
   });
   appendArrangementMenuInfo(menu, arrangement);
+
   trigger.addEventListener('click', event => {
     event.stopPropagation();
-    const opening = !menu.classList.contains('open');
-    closeArrangementMenus(menu);
-    menu.classList.toggle('open', opening);
-    trigger.setAttribute('aria-expanded', String(opening));
+    if (activeArrangementMenu?.menu === menu) {
+      closeArrangementMenus();
+      return;
+    }
+    openArrangementMenu(trigger, menu);
   });
-  shell.append(trigger, menu);
+
+  shell.appendChild(trigger);
   return shell;
 }
 
@@ -367,12 +408,14 @@ function ensureSongBrowsers() {
 }
 
 function renderCatalog() {
+  closeArrangementMenus();
   ensureSongBrowsers();
   if (catalogLoadError) catalogBrowser.setError(catalogLoadError);
   else catalogBrowser.setWorks(catalogWorks);
 }
 
 function renderLibraryGrid() {
+  closeArrangementMenus();
   ensureSongBrowsers();
   if (!window.authState?.user) {
     libraryBrowser.setWorks([]);
@@ -610,13 +653,19 @@ addPreviewSongButton.addEventListener('click', () => {
   const found = findCatalogArrangement(fileId);
   if (found) addCatalogArrangement(found.arrangement);
 });
-document.addEventListener('click', event => { if (!event.target.closest('.work-card-action-menu-shell')) closeArrangementMenus(); });
+document.addEventListener('click', event => {
+  if (!event.target.closest('.work-card-action-menu-shell') && !event.target.closest('.work-card-action-menu')) {
+    closeArrangementMenus();
+  }
+});
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     closeMobileMenu();
     closeArrangementMenus();
   }
 });
+window.addEventListener('resize', closeArrangementMenus);
+window.addEventListener('scroll', closeArrangementMenus, true);
 mobileQuery.addEventListener('change', event => { if (!event.matches) closeMobileMenu(); });
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('opentab:auth-changed', async event => {
