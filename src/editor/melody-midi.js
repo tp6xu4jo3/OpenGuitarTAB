@@ -138,3 +138,24 @@ export function melodyFromMidiTrack(track, fileName = '') {
   if (!notes.length) midiError('MIDI沒有有效音符');
   return { version: 1, format: 'midi', sourceName: String(fileName).slice(0, 120), notes };
 }
+
+export function normalizeMelody(input) {
+  if (input == null) return undefined;
+  if (input?.version !== 1 || input?.format !== 'midi' || !Array.isArray(input.notes) || !input.notes.length || input.notes.length > MAX_MELODY_NOTES) {
+    midiError('旋律資料格式無效');
+  }
+  const notes = input.notes.map(note => {
+    const beat = Number(note?.beat);
+    const duration = Number(note?.duration);
+    const pitch = Number(note?.pitch);
+    const velocity = Number(note?.velocity);
+    if (!Number.isFinite(beat) || beat < 0 || beat > 100000 || !Number.isFinite(duration) || duration <= 0 || duration > 1000
+      || !Number.isInteger(pitch) || pitch < 0 || pitch > 127
+      || !Number.isInteger(velocity) || velocity < 1 || velocity > 127) {
+      midiError('旋律音符資料無效');
+    }
+    return { beat, duration, pitch, velocity };
+  });
+  notes.sort((a, b) => a.beat - b.beat || a.pitch - b.pitch);
+  return { version: 1, format: 'midi', sourceName: String(input.sourceName || '').slice(0, 120), notes };
+}
