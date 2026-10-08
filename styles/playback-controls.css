@@ -29,6 +29,8 @@
   .editor-view .capo-box{grid-column:10/13;grid-row:2}
   .editor-view .progress-box{grid-column:1/7;grid-row:3}
   .editor-view .playback-sound-controls{grid-column:7/11;grid-row:3}
+  .editor-view .playback-sound-controls[data-mode^="chord"]{grid-column:6/11}
+  .editor-view .play-panel:has(.playback-sound-controls[data-mode^="chord"]) .progress-box{grid-column:1/6}
   .editor-view .play-button{grid-column:11/13;grid-row:3}
   .editor-view #rhythmToggleButton,.editor-view #scoreDensityControl{box-sizing:border-box;min-width:0;width:100%;max-width:100%;overflow:hidden}
   .editor-view .mode-toggle-button{min-height:28px;height:28px;padding:1px 2px;font-size:10px;justify-content:center;gap:3px}
