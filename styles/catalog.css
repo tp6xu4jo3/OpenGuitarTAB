@@ -95,7 +95,7 @@
 .work-card-action-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .work-card-action-more svg{fill:currentColor;stroke:none}
 .work-card-action-menu-shell{position:relative;flex:0 0 auto}
-.work-card-action-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:80;display:none;min-width:92px;padding:5px;border:1px solid #444;border-radius:10px;background:#181818;box-shadow:0 12px 28px rgba(0,0,0,.4)}
+.work-card-action-menu{position:fixed;left:0;top:0;z-index:3000;display:none;min-width:92px;padding:5px;border:1px solid #444;border-radius:10px;background:#181818;box-shadow:0 12px 28px rgba(0,0,0,.4)}
 .work-card-action-menu.open{display:block}
 .work-card-action-menu.with-info{box-sizing:border-box;width:176px;height:148px;min-width:176px;overflow:hidden}
 .work-card-action-menu.with-info.open{display:flex;flex-direction:column}
