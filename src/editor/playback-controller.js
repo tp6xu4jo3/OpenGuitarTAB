@@ -306,16 +306,20 @@ async function importMelodyMidi(file) {
   try {
     const tracks = readMidiTracks(await file.arrayBuffer());
     if (!tracks.length) throw new Error('MIDI內沒有旋律音符');
-    let track = tracks[0];
-    if (tracks.length > 1) {
-      const choices = tracks.map((item, index) => `${index + 1}. ${item.name}（${item.notes.length}音）`).join('\n');
-      const selected = window.prompt(`請選擇主旋律軌道編號：\n${choices}`, '1');
+    const channels = tracks.flatMap(track => track.channels.map(channel => ({
+      label: `${track.name} · MIDI通道${channel + 1}`,
+      notes: track.notes.filter(note => note.channel === channel)
+    }))).filter(item => item.notes.length);
+    let selection = channels[0];
+    if (channels.length > 1) {
+      const choices = channels.map((item, index) => `${index + 1}. ${item.label}（${item.notes.length}音）`).join('\n');
+      const selected = window.prompt(`請選擇主旋律軌道／通道編號：\n${choices}`, '1');
       if (selected === null) return;
       const index = Number(selected) - 1;
-      if (!Number.isInteger(index) || index < 0 || index >= tracks.length) throw new Error('請選擇有效的旋律軌道');
-      track = tracks[index];
+      if (!Number.isInteger(index) || index < 0 || index >= channels.length) throw new Error('請選擇有效的旋律軌道');
+      selection = channels[index];
     }
-    const melody = melodyFromMidiTrack(track, file.name);
+    const melody = melodyFromMidiTrack(selection, file.name);
     const originalMelody = song.melody;
     song.melody = melody;
     try {
