@@ -376,6 +376,7 @@ function syncSoundControls(force = false) {
   const song = currentSongSafe();
   const songId = String(song?.arrangementId || song?.id || '');
   if (state.melodySongId !== songId) {
+    if (state.melodySongId !== null && (state.playing || state.preparing)) stopPlayback();
     state.melodyEnabled = false;
     getAudioEngine()?.stopMelody();
     state.melodySongId = songId;
@@ -428,7 +429,13 @@ function setMelodyEnabled(enabled) {
   } else if (state.playing) {
     const audio = getAudioEngine();
     void audio?.ensureMelodyReady().then(ready => {
-      if (ready && state.playing && state.melodyEnabled) startMelodyScheduler();
+      if (!ready || !state.playing || !state.melodyEnabled) return;
+      const clock = state.playbackClock;
+      if (clock && !clock.audioClockActive) {
+        clock.audioStartTime = audio.context.currentTime - (performance.now() - clock.wallStart) / 1000;
+        clock.audioClockActive = true;
+      }
+      startMelodyScheduler();
     });
   }
   syncSoundControls();
@@ -625,6 +632,8 @@ async function startPlayback() {
       startBeat,
       endBeat: playback.totalBeats,
       secondsPerBeat: beatMs / 1000,
+      wallStart,
+      audioClockActive: needsAudio,
       audioStartTime: (audio?.context?.currentTime || 0) + leadMs / 1000
     };
     if (needsMelody) startMelodyScheduler();
