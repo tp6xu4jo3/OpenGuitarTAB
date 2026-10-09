@@ -342,13 +342,16 @@ async function importMelodyMidi(file) {
     const melody = melodyFromMidiTrack(selection, file.name, beatScale);
     const originalMelody = song.melody;
     const originalBeatScale = song.midiBeatScale;
+    const originalTempo = song.tempo;
     song.melody = melody;
     song.midiBeatScale = beatScale;
+    song.tempo = scoreBpm;
     try {
       if (typeof window.persistSong !== 'function') throw new Error('目前無法儲存旋律');
       await window.persistSong(song);
     } catch (error) {
       song.melody = originalMelody;
+      song.tempo = originalTempo;
       if (originalBeatScale === undefined) delete song.midiBeatScale;
       else song.midiBeatScale = originalBeatScale;
       throw error;
