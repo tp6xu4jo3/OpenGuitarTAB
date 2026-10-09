@@ -117,31 +117,22 @@ for (const [i, osc] of nodes.filter(n => n.kind === 'oscillator').entries()) {
   assert.equal(osc.connections[0].connections[0], engine.melodyBus);
   assert.deepEqual(env.events.map(e => e[0]), ['set', 'linear', 'exponential', 'exponential']);
   assert.ok(Math.abs(env.events[1][2] - (start + 0.006)) < 1e-9);
-  assert.ok(Math.abs(env.events[2][1] - low.level * Math.exp(-1.6 * (0.5 - 0.006))) < 1e-9);
+  const expectedLevel = i === 1 ? high.level : low.level;
+  assert.ok(Math.abs(env.events[1][1] - expectedLevel) < 1e-12);
+  assert.ok(Math.abs(env.events[2][1] - expectedLevel * Math.exp(-1.6 * (0.5 - 0.006))) < 1e-9);
   assert.ok(Math.abs(env.events[3][2] - (start + 0.565)) < 1e-9);
 }
 assert.equal(engine.context.waves[0].options.disableNormalization, true);
 assert.ok(engine.context.waves[0].imag[2] > engine.context.waves[1].imag[2], 'low notes have clearer upper partials');
 
-engine.setMelodyTrimDb(6);
-assert.equal(engine.melodyTrimDb, 6);
-assert.ok(Math.abs(engine.melodyBus.gain.events.at(-1)[1] - 10 ** (6 / 20)) < 1e-9);
-assert.ok(Math.abs(engine.melodyBus.gain.events.at(-1)[2] - (10 + 0.02)) < 1e-9);
-engine.setMelodyTrimDb(-6);
-assert.equal(engine.melodyTrimDb, -6);
-engine.setMelodyTrimDb(50);
-assert.equal(engine.melodyTrimDb, 6, 'trim must never expose legacy 400% boost');
-engine.setMelodyTrimDb(-50);
-assert.equal(engine.melodyTrimDb, -6);
-
-engine.setGuitarDucking(true);
-assert.equal(engine.guitarDucked, true);
-assert.ok(Math.abs(engine.guitarBus.gain.events.at(-1)[1] - 10 ** (-5 / 20)) < 1e-9);
-assert.ok(Math.abs(engine.guitarBus.gain.events.at(-1)[2] - (10 + 0.03)) < 1e-9);
-engine.setGuitarDucking(false);
-assert.equal(engine.guitarBus.gain.events.at(-1)[1], 1, 'when melody turns off, guitar level returns to normal');
-assert.equal(engine.melodyBus.gain.events.at(-1)[1], 10 ** (-6 / 20), 'ducking does not change the independent melody trim');
+assert.equal(engine.guitarBus.gain.events.length, 0,
+  'guitar remains -10dB even if the melody starts/stops');
+assert.equal(engine.melodyBus.gain.events.length, 0,
+  'fixed +10dB melody gain is not user-adjustable');
+assert.equal(typeof engine.setGuitarDucking, 'undefined');
+assert.equal(typeof engine.setMelodyTrimDb, 'undefined');
+assert.equal(engine.guitarBus.gain.value, 10 ** (-10 / 20));
 engine.stopMelody();
 assert.equal(engine.melodyVoices.size, 0);
 assert.ok(nodes.filter(n => n.kind === 'oscillator').every(n => n.stoppedAt <= 10.02));
-console.log('melody-first auto mix and soft low-register harmonic tests passed');
+console.log('fixed melody gain and low-register mix tests passed');
