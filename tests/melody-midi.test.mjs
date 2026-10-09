@@ -61,4 +61,16 @@ assert.match(playback,/startMelodyScheduler\(\)[\s\S]*clock\.audioStartTime \+ \
 assert.match(playback,/const nextAt = wallStart \+ \(nextBeat - startBeat\) \* beatMs/,'score ticks must be corrected against a single origin instead of accumulating setTimeout delay');
 assert.match(audio,/scheduleMelodyNote\(note, atTime, secondsPerBeat\)/,'melody must use sample-accurate WebAudio start times');
 assert.match(audio,/stopMelody\(\)/,'melody must be able to stop independently of the guitar');
+const melodyControls = playback.slice(playback.indexOf('function syncSoundControls('), playback.indexOf('function setMelodyEnabled('));
+assert.ok(
+  melodyControls.indexOf('buttons.push(upload, input)') < melodyControls.indexOf("buttons.push(soundControlButton('melody', '旋律'"),
+  'the MIDI import control must be immediately before the chord melody toggle'
+);
+assert.match(melodyControls, /upload\.textContent = '\+';/, 'MIDI import and replacement must use only a plus sign');
+assert.match(melodyControls, /upload\.title = hasMelody\(song\) \? '替換主旋律 MIDI' : '匯入主旋律 MIDI'/, 'the plus button must describe whether it imports or replaces MIDI');
+assert.match(melodyControls, /upload\.setAttribute\('aria-label', upload\.title\)/, 'the icon-only control must have an accessible name');
+assert.match(playback, /controls\.querySelector\('#melodyMidiInput'\)\?\.click\(\)/, 'the plus button must still open the MIDI file picker');
+const playbackCss = await readFile(new URL('../styles/playback-controls.css', import.meta.url), 'utf8');
+assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*height:28px;/, 'desktop plus icon should stay compact');
+assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:24px;[^}]*height:25px;/, 'mobile plus icon should remain compact');
 console.log('MIDI melody and synchronized playback tests passed');
