@@ -120,14 +120,24 @@ assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playb
 const volumeControls = playback.slice(playback.indexOf('function syncSoundControls('), playback.indexOf('function setMelodyEnabled('));
 assert.match(volumeControls, /melodyGroup\.appendChild\(volumeButton\)/,
   'volume button belongs inside the existing melody pill, after the melody toggle');
-assert.match(volumeControls, /volumeButton\.setAttribute\('aria-label', '調整旋律音量'\)/,
+assert.match(volumeControls, /volumeButton\.setAttribute\('aria-label', '微調旋律音量'\)/,
   'compact icon-only volume button needs an accessible label');
-assert.match(playback, /range\.min = '0';[\s\S]*range\.max = '400';[\s\S]*range\.step = '1';/,
-  'popup must expose the full 0–400% range');
-assert.match(playback, /range\.addEventListener\('input', \(\) => setMelodyVolumePercent\(range\.value\)\)/,
+assert.match(playback, /range\.min = '-6';[\s\S]*range\.max = '6';[\s\S]*range\.step = '1';/,
+  'popup must expose the default-neutral -6 to +6dB range');
+assert.match(playback, /range\.addEventListener\('input', \(\) => setMelodyTrimDb\(range\.value\)\)/,
   'changing volume must update MIDI gain without reimporting notes');
-assert.match(playback, /state\.melodyVolumePercent = storedMelodyVolume\(\);[\s\S]*getAudioEngine\(\)\?\.setMelodyVolume\(state\.melodyVolumePercent\)/,
+assert.match(playback, /state\.melodyTrimDb = storedMelodyTrimDb\(\);[\s\S]*getAudioEngine\(\)\?\.setMelodyTrimDb\(state\.melodyTrimDb\)/,
   'saved melody volume must be restored during playback controller installation');
+assert.match(playback, /function syncGuitarMix\(\)[\s\S]*state\.playing && state\.musicEnabled && state\.melodyEnabled[\s\S]*currentIsChordScore\(\) && hasMelody\(\)/,
+  'ducking requires active chord melody with recorded-guitar simulation');
+assert.match(playback, /state\.playing = true;[\s\S]*syncGuitarMix\(\)/,
+  'playback must set accompaniment ducking before the first note');
+assert.match(playback, /state\.playing = false;[\s\S]*syncGuitarMix\(\)/,
+  'stopping playback restores full recorded-guitar level');
+assert.match(playback, /getAudioEngine\(\)\?\.stopMelody\(\);\s*stopMelodyScheduler\(\);\s*syncGuitarMix\(\);/,
+  'turning melody off restores accompaniment promptly');
+assert.match(playback, /if \(state\.musicEnabled && state\.playing\) void getAudioEngine\(\)\?\.ensureReady\(\);\s*syncGuitarMix\(\);/,
+  'simulation toggle recalculates the active melody mix');
 assert.match(playback, /const horizon = currentTime \+ 0\.2;/, 'Web Audio lookahead should be 200ms');
 assert.match(playback, /state\.melodyTimer = window\.setInterval\(schedule, 35\)/,
   'MIDI scheduler should run every 35ms while notes remain');
