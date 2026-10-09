@@ -15,42 +15,33 @@ const SLIDE_TARGET_HOLD_SECONDS = 0.045;
 const SLIDE_TRANSITION_LEVEL = 0.9;
 export const MASTER_OUTPUT_DB = -6;
 export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
-// Melody is intentionally mixed separately from the recorded guitar bank.
-// A brighter harmonic profile lets lower notes cut through chords without changing pitch.
-export const MELODY_BASE_LEVEL = 0.24;
-export const MELODY_LOW_LIFT_DB = 3;
-export const MELODY_PRESENCE_DB = 2.5;
-const MELODY_BUS_GAIN = 0.9;
-const MELODY_WAVEFORMS = {
-  low: { partials: 24, rolloff: 1.3 },
-  mid: { partials: 18, rolloff: 1.6 },
-  high: { partials: 12, rolloff: 1.9 }
-};
+// Four sine partials in one cached PeriodicWave are exactly equivalent to
+// four phase-aligned sine oscillators, with one audio-rate voice per MIDI note.
+export const MELODY_PARTIALS = Object.freeze([1, 0.25, 0.1, 0.04]);
+export const MELODY_BASE_LEVEL = 0.07;
+export const MELODY_ATTACK_SECONDS = 0.006;
+export const MELODY_DECAY_RATE = 1.6;
+export const MELODY_RELEASE_SECONDS = 0.065;
+export const MELODY_VOLUME_RAMP_SECONDS = 0.02;
+export const MELODY_DEFAULT_VOLUME_PERCENT = 100;
+export const MELODY_MAX_VOLUME_PERCENT = 400;
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 
 export function melodyVoiceProfile(pitch, velocity = 80) {
   const midiPitch = clamp(Number(pitch), 0, 127);
-  const midiVelocity = clamp(Number(velocity), 1, 127);
-  // Smooth register-dependent level, avoiding abrupt volume changes at octave boundaries.
-  const lowWeight = clamp((72 - midiPitch) / 24, 0, 1);
+  const midiVelocity = clamp(Number(velocity), 0, 127);
   return {
-    register: midiPitch < 60 ? 'low' : midiPitch < 76 ? 'mid' : 'high',
     frequency: 440 * 2 ** ((midiPitch - 69) / 12),
-    level: MELODY_BASE_LEVEL
-      * 10 ** ((MELODY_LOW_LIFT_DB * lowWeight) / 20)
-      * (midiVelocity / 127) ** 0.75
+    level: MELODY_BASE_LEVEL * midiVelocity / 127
   };
 }
 
-export function melodyHarmonics(register) {
-  const { partials, rolloff } = MELODY_WAVEFORMS[register];
-  const real = new Float32Array(partials + 1);
-  const imag = new Float32Array(partials + 1);
-  for (let harmonic = 1; harmonic <= partials; harmonic += 1) {
-    imag[harmonic] = (harmonic % 2 === 0 ? 0.8 : 1) / harmonic ** rolloff;
-  }
+export function melodyHarmonics() {
+  // Disable normalization to preserve the explicitly requested partial amplitudes.
+  const real = new Float32Array(5);
+  const imag = new Float32Array([0, ...MELODY_PARTIALS]);
   return { real, imag };
 }
 
@@ -124,7 +115,8 @@ export class GuitarAudioEngine {
     this.context = null;
     this.masterGain = null;
     this.melodyBus = null;
-    this.melodyWaves = null;
+    this.melodyWave = null;
+    this.melodyVolumePercent = MELODY_DEFAULT_VOLUME_PERCENT;
     this.activeVoices = Array(STRING_TUNING.length).fill(null);
     this.samples = new RecordedGuitarSampleBank();
     this.melodyVoices = new Set();
@@ -149,28 +141,19 @@ export class GuitarAudioEngine {
     masterGain.connect(compressor);
     compressor.connect(context.destination);
 
-    // Shared nodes are constructed once: each note needs only an oscillator and envelope.
     const melodyBus = context.createGain();
-    melodyBus.gain.value = MELODY_BUS_GAIN;
-    const melodyHighpass = context.createBiquadFilter();
-    melodyHighpass.type = 'highpass';
-    melodyHighpass.frequency.value = 58;
-    melodyHighpass.Q.value = 0.707;
-    const melodyPresence = context.createBiquadFilter();
-    melodyPresence.type = 'peaking';
-    melodyPresence.frequency.value = 1650;
-    melodyPresence.Q.value = 0.85;
-    melodyPresence.gain.value = MELODY_PRESENCE_DB;
-    melodyBus.connect(melodyHighpass);
-    melodyHighpass.connect(melodyPresence);
-    melodyPresence.connect(masterGain);
+    melodyBus.gain.value = this.melodyVolumePercent / 100;
+    const melodyCompressor = context.createDynamicsCompressor();
+    melodyCompressor.threshold.value = -4;
+    melodyCompressor.knee.value = 6;
+    melodyCompressor.ratio.value = 12;
+    melodyCompressor.attack.value = 0.003;
+    melodyCompressor.release.value = 0.1;
+    melodyBus.connect(melodyCompressor);
+    melodyCompressor.connect(masterGain);
 
-    this.melodyWaves = Object.fromEntries(
-      Object.keys(MELODY_WAVEFORMS).map(register => {
-        const { real, imag } = melodyHarmonics(register);
-        return [register, context.createPeriodicWave(real, imag)];
-      })
-    );
+    const { real, imag } = melodyHarmonics();
+    this.melodyWave = context.createPeriodicWave(real, imag, { disableNormalization: true });
     this.context = context;
     this.masterGain = masterGain;
     this.melodyBus = melodyBus;
@@ -193,6 +176,21 @@ export class GuitarAudioEngine {
     return true;
   }
 
+  setMelodyVolume(percent) {
+    const value = clamp(Number(percent) || 0, 0, MELODY_MAX_VOLUME_PERCENT);
+    this.melodyVolumePercent = value;
+    if (!this.context || !this.melodyBus) return value;
+    const now = this.context.currentTime;
+    const gain = this.melodyBus.gain;
+    if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+    else {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(gain.value, now);
+    }
+    gain.linearRampToValueAtTime(value / 100, now + MELODY_VOLUME_RAMP_SECONDS);
+    return value;
+  }
+
   scheduleMelodyNote(note, atTime, secondsPerBeat) {
     if (!this.context || !this.melodyBus) return;
     const pitch = Number(note?.pitch);
@@ -201,18 +199,19 @@ export class GuitarAudioEngine {
     const start = Math.max(this.context.currentTime + 0.005, Number(atTime));
     const duration = Math.min(8, Math.max(0.03, length));
     const end = start + duration;
-    const voiceProfile = melodyVoiceProfile(pitch, Number(note?.velocity) || 80);
+    const voiceProfile = melodyVoiceProfile(pitch, note?.velocity ?? 80);
+    if (voiceProfile.level <= 0) return;
     const oscillator = this.context.createOscillator();
     const envelope = this.context.createGain();
-    oscillator.setPeriodicWave(this.melodyWaves[voiceProfile.register]);
+    oscillator.setPeriodicWave(this.melodyWave);
     oscillator.frequency.setValueAtTime(voiceProfile.frequency, start);
-    const attack = Math.min(0.009, duration * 0.2);
-    const release = Math.min(0.085, duration * 0.35);
-    const level = voiceProfile.level;
-    envelope.gain.setValueAtTime(0.0001, start);
-    envelope.gain.linearRampToValueAtTime(level, start + attack);
-    envelope.gain.setValueAtTime(level, Math.max(start + attack, end - release));
-    envelope.gain.exponentialRampToValueAtTime(0.0001, end);
+    const attackEnd = start + Math.min(MELODY_ATTACK_SECONDS, duration);
+    const releaseEnd = end + MELODY_RELEASE_SECONDS;
+    const decayedLevel = voiceProfile.level * Math.exp(-MELODY_DECAY_RATE * (end - attackEnd));
+    envelope.gain.setValueAtTime(0, start);
+    envelope.gain.linearRampToValueAtTime(voiceProfile.level, attackEnd);
+    envelope.gain.exponentialRampToValueAtTime(Math.max(0.000001, decayedLevel), end);
+    envelope.gain.exponentialRampToValueAtTime(0.000001, releaseEnd);
     oscillator.connect(envelope);
     envelope.connect(this.melodyBus);
     const voice = { oscillator, envelope };
@@ -223,16 +222,19 @@ export class GuitarAudioEngine {
       envelope.disconnect();
     };
     oscillator.start(start);
-    oscillator.stop(end + 0.01);
+    oscillator.stop(releaseEnd + 0.005);
   }
 
   stopMelody() {
     const now = this.context?.currentTime || 0;
     for (const voice of this.melodyVoices) {
       const gain = voice.envelope.gain;
-      gain.cancelScheduledValues(now);
-      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
-      gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+      else {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(Math.max(0.000001, gain.value), now);
+      }
+      gain.linearRampToValueAtTime(0, now + 0.018);
       try { voice.oscillator.stop(now + 0.02); } catch {}
     }
     this.melodyVoices.clear();
