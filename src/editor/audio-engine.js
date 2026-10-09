@@ -189,19 +189,38 @@ export class GuitarAudioEngine {
     return true;
   }
 
-  setMelodyVolume(percent) {
-    const value = clamp(Number(percent) || 0, 0, MELODY_MAX_VOLUME_PERCENT);
-    this.melodyVolumePercent = value;
-    if (!this.context || !this.melodyBus) return value;
-    const now = this.context.currentTime;
-    const gain = this.melodyBus.gain;
-    if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-    else {
-      gain.cancelScheduledValues(now);
-      gain.setValueAtTime(gain.value, now);
+  setMelodyTrimDb(decibels) {
+    const value = clamp(Number(decibels) || 0, MELODY_TRIM_MIN_DB, MELODY_TRIM_MAX_DB);
+    this.melodyTrimDb = value;
+    if (this.context && this.melodyBus) {
+      const now = this.context.currentTime;
+      const gain = this.melodyBus.gain;
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+      else {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(gain.value, now);
+      }
+      gain.linearRampToValueAtTime(10 ** (value / 20), now + MELODY_VOLUME_RAMP_SECONDS);
     }
-    gain.linearRampToValueAtTime(value / 100, now + MELODY_VOLUME_RAMP_SECONDS);
     return value;
+  }
+
+  setGuitarDucking(enabled) {
+    this.guitarDucked = Boolean(enabled);
+    if (this.context && this.guitarBus) {
+      const now = this.context.currentTime;
+      const gain = this.guitarBus.gain;
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+      else {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(gain.value, now);
+      }
+      gain.linearRampToValueAtTime(
+        this.guitarDucked ? 10 ** (GUITAR_DUCK_DB / 20) : 1,
+        now + MIX_FADE_SECONDS
+      );
+    }
+    return this.guitarDucked;
   }
 
   scheduleMelodyNote(note, atTime, secondsPerBeat) {
