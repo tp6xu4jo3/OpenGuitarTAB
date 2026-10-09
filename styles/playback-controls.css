@@ -4,7 +4,7 @@
 .playback-sound-indicator{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#b9bec6;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
 .playback-sound-toggle[aria-pressed="true"]{color:#111}
 .playback-sound-toggle[aria-pressed="true"] .playback-sound-indicator{background:#22c55e}
-.playback-melody-upload{height:28px;padding:0 6px;border:1px solid #ddd;border-radius:999px;background:#f5f5f5;color:#333;font:inherit;font-size:10px;font-weight:800;white-space:nowrap;cursor:pointer}
+.playback-melody-upload{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid #ddd;border-radius:999px;background:#f5f5f5;color:#333;font:inherit;font-size:17px;font-weight:800;line-height:1;white-space:nowrap;cursor:pointer}
 .playback-melody-upload:hover,.playback-melody-upload:focus-visible{background:#e6e6e6;outline:none}
 #melodyMidiInput[hidden]{display:none!important}
 .editor-view #rhythmToggleButton,.editor-view #scoreDensityControl{box-sizing:border-box;min-width:max-content;width:max-content;max-width:none;flex:0 0 auto;flex-wrap:nowrap;overflow:visible;white-space:nowrap}
@@ -47,7 +47,7 @@
   .editor-view #progressLabel{display:none}
   .editor-view .playback-sound-controls{width:100%;height:30px;min-width:0;box-sizing:border-box;justify-content:center;overflow:hidden;padding:1px;gap:1px}
   .editor-view .playback-sound-toggle{min-width:0;flex:1 1 0;padding:0 1px;height:26px;font-size:9px;gap:2px}
-  .editor-view .playback-melody-upload{flex:0 0 auto;height:25px;padding:0 3px;font-size:8px}
+  .editor-view .playback-melody-upload{flex:0 0 24px;width:24px;height:25px;padding:0;font-size:15px}
   .editor-view .playback-sound-indicator{width:6px;height:6px;flex-basis:6px}
   .editor-view .play-button{width:100%;min-width:0;height:30px;font-size:12px;padding:0 4px}
 }

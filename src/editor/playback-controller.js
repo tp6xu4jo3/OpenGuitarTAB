@@ -392,16 +392,14 @@ function syncSoundControls(force = false) {
   if (force || controls.dataset.mode !== mode) {
     controls.dataset.mode = mode;
     const buttons = [];
-    if (chord) buttons.push(soundControlButton('melody', '旋律', state.melodyEnabled));
-    buttons.push(soundControlButton('music', '模擬', state.musicEnabled));
-    buttons.push(soundControlButton('metronome', '節拍器', state.metronomeEnabled));
     if (editable) {
       const upload = document.createElement('button');
       upload.type = 'button';
       upload.className = 'playback-melody-upload';
       upload.dataset.melodyUpload = 'true';
-      upload.textContent = hasMelody(song) ? '換MIDI' : '＋MIDI';
-      upload.title = '匯入單一主旋律 MIDI，音符與該份和弦譜一起儲存';
+      upload.textContent = '+';
+      upload.title = hasMelody(song) ? '替換主旋律 MIDI' : '匯入主旋律 MIDI';
+      upload.setAttribute('aria-label', upload.title);
       const input = document.createElement('input');
       input.id = 'melodyMidiInput';
       input.type = 'file';
@@ -409,6 +407,9 @@ function syncSoundControls(force = false) {
       input.hidden = true;
       buttons.push(upload, input);
     }
+    if (chord) buttons.push(soundControlButton('melody', '旋律', state.melodyEnabled));
+    buttons.push(soundControlButton('music', '模擬', state.musicEnabled));
+    buttons.push(soundControlButton('metronome', '節拍器', state.metronomeEnabled));
     controls.replaceChildren(...buttons);
   }
   controls.querySelectorAll('[data-playback-sound]').forEach(button => {
