@@ -19,18 +19,23 @@ export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
 // four phase-aligned sine oscillators, with one audio-rate voice per MIDI note.
 export const MELODY_PARTIALS = Object.freeze([1, 0.25, 0.1, 0.04]);
 export const MELODY_LOW_PARTIALS = Object.freeze([1, 0.4, 0.18, 0.05]);
-export const GUITAR_DUCK_DB = -5;
-export const MIX_FADE_SECONDS = 0.03;
-export const MELODY_TRIM_MIN_DB = -6;
-export const MELODY_TRIM_MAX_DB = 6;
+export const GUITAR_LEVEL_DB = -10;
+export const MELODY_GAIN_DB = 10;
+export const MELODY_LOW_BOOST_MAX_DB = 5;
 export const MELODY_BASE_LEVEL = 0.07;
 export const MELODY_ATTACK_SECONDS = 0.006;
 export const MELODY_DECAY_RATE = 1.6;
 export const MELODY_RELEASE_SECONDS = 0.065;
-export const MELODY_VOLUME_RAMP_SECONDS = 0.02;
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+
+export function melodyPitchBoostDb(pitch) {
+  const midiPitch = Number(pitch);
+  const fraction = clamp((72 - (Number.isFinite(midiPitch) ? midiPitch : 72)) / 24, 0, 1);
+  // Smoothstep prevents noticeable timbre/loudness jumps between adjacent semitones.
+  return MELODY_LOW_BOOST_MAX_DB * fraction * fraction * (3 - 2 * fraction);
+}
 
 export function melodyVoiceProfile(pitch, velocity = 80) {
   const midiPitch = clamp(Number(pitch), 0, 127);
@@ -38,6 +43,7 @@ export function melodyVoiceProfile(pitch, velocity = 80) {
   return {
     frequency: 440 * 2 ** ((midiPitch - 69) / 12),
     level: MELODY_BASE_LEVEL * midiVelocity / 127
+      * 10 ** (melodyPitchBoostDb(midiPitch) / 20)
   };
 }
 
@@ -122,10 +128,8 @@ export class GuitarAudioEngine {
     this.context = null;
     this.masterGain = null;
     this.guitarBus = null;
-    this.guitarDucked = false;
     this.melodyBus = null;
     this.melodyWaves = new Map();
-    this.melodyTrimDb = 0;
     this.activeVoices = Array(STRING_TUNING.length).fill(null);
     this.samples = new RecordedGuitarSampleBank();
     this.melodyVoices = new Set();
@@ -150,13 +154,14 @@ export class GuitarAudioEngine {
     masterGain.connect(compressor);
     compressor.connect(context.destination);
 
-    // Duck only the recorded guitar, keeping the metronome and master untouched.
+    // Guitar is always -10dB, regardless of whether MIDI melody is enabled.
+    // Neither metronome nor master output passes through this bus.
     const guitarBus = context.createGain();
-    guitarBus.gain.value = this.guitarDucked ? 10 ** (GUITAR_DUCK_DB / 20) : 1;
+    guitarBus.gain.value = 10 ** (GUITAR_LEVEL_DB / 20);
     guitarBus.connect(masterGain);
 
     const melodyBus = context.createGain();
-    melodyBus.gain.value = 10 ** (this.melodyTrimDb / 20);
+    melodyBus.gain.value = 10 ** (MELODY_GAIN_DB / 20);
     const melodyCompressor = context.createDynamicsCompressor();
     melodyCompressor.threshold.value = -4;
     melodyCompressor.knee.value = 6;
@@ -187,40 +192,6 @@ export class GuitarAudioEngine {
     if (!context) return false;
     if (context.state === 'suspended') await context.resume();
     return true;
-  }
-
-  setMelodyTrimDb(decibels) {
-    const value = clamp(Number(decibels) || 0, MELODY_TRIM_MIN_DB, MELODY_TRIM_MAX_DB);
-    this.melodyTrimDb = value;
-    if (this.context && this.melodyBus) {
-      const now = this.context.currentTime;
-      const gain = this.melodyBus.gain;
-      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-      else {
-        gain.cancelScheduledValues(now);
-        gain.setValueAtTime(gain.value, now);
-      }
-      gain.linearRampToValueAtTime(10 ** (value / 20), now + MELODY_VOLUME_RAMP_SECONDS);
-    }
-    return value;
-  }
-
-  setGuitarDucking(enabled) {
-    this.guitarDucked = Boolean(enabled);
-    if (this.context && this.guitarBus) {
-      const now = this.context.currentTime;
-      const gain = this.guitarBus.gain;
-      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-      else {
-        gain.cancelScheduledValues(now);
-        gain.setValueAtTime(gain.value, now);
-      }
-      gain.linearRampToValueAtTime(
-        this.guitarDucked ? 10 ** (GUITAR_DUCK_DB / 20) : 1,
-        now + MIX_FADE_SECONDS
-      );
-    }
-    return this.guitarDucked;
   }
 
   scheduleMelodyNote(note, atTime, secondsPerBeat) {
