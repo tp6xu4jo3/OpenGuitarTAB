@@ -117,33 +117,14 @@ const playbackCss = await readFile(new URL('../styles/playback-controls.css', im
 assert.match(playbackCss, /\.playback-melody-group\{[^}]*border:1px solid #ddd;[^}]*border-radius:999px;[^}]*overflow:hidden/, 'MIDI plus and melody toggle must share one pill outline');
 assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*border:0;border-right:1px solid #ddd;[^}]*background:transparent/, 'desktop plus must use an internal divider instead of a separate button outline');
 assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-group \.playback-sound-toggle\{[^}]*padding:0 3px;[^}]*height:26px;[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:20px;[^}]*height:26px;/, 'mobile melody group should keep both controls compact');
-const volumeControls = playback.slice(playback.indexOf('function syncSoundControls('), playback.indexOf('function setMelodyEnabled('));
-assert.match(volumeControls, /melodyGroup\.appendChild\(volumeButton\)/,
-  'volume button belongs inside the existing melody pill, after the melody toggle');
-assert.match(volumeControls, /volumeButton\.setAttribute\('aria-label', '微調旋律音量'\)/,
-  'compact icon-only volume button needs an accessible label');
-assert.match(playback, /range\.min = '-6';[\s\S]*range\.max = '6';[\s\S]*range\.step = '1';/,
-  'popup must expose the default-neutral -6 to +6dB range');
-assert.match(playback, /range\.addEventListener\('input', \(\) => setMelodyTrimDb\(range\.value\)\)/,
-  'changing volume must update MIDI gain without reimporting notes');
-assert.match(playback, /state\.melodyTrimDb = storedMelodyTrimDb\(\);[\s\S]*getAudioEngine\(\)\?\.setMelodyTrimDb\(state\.melodyTrimDb\)/,
-  'saved melody volume must be restored during playback controller installation');
-assert.match(playback, /function syncGuitarMix\(\)[\s\S]*state\.playing && state\.musicEnabled && state\.melodyEnabled[\s\S]*currentIsChordScore\(\) && hasMelody\(\)/,
-  'ducking requires active chord melody with recorded-guitar simulation');
-assert.match(playback, /state\.playing = true;[\s\S]*syncGuitarMix\(\)/,
-  'playback must set accompaniment ducking before the first note');
-assert.match(playback, /state\.playing = false;[\s\S]*syncGuitarMix\(\)/,
-  'stopping playback restores full recorded-guitar level');
-assert.match(playback, /getAudioEngine\(\)\?\.stopMelody\(\);\s*stopMelodyScheduler\(\);\s*syncGuitarMix\(\);/,
-  'turning melody off restores accompaniment promptly');
-assert.match(playback, /if \(state\.musicEnabled && state\.playing\) void getAudioEngine\(\)\?\.ensureReady\(\);\s*syncGuitarMix\(\);/,
-  'simulation toggle recalculates the active melody mix');
+assert.doesNotMatch(playback, /data-melody-volume|melodyVolumePanel|setMelodyTrimDb|setMelodyVolume|syncGuitarMix/,
+  'there must be no user-facing volume control or conditional auto-ducking');
+assert.match(audio, /GUITAR_LEVEL_DB = -10/, 'guitar samples must always be -10dB');
+assert.match(audio, /MELODY_GAIN_DB = 10/, 'melody bus should be fixed at +10dB');
+assert.match(audio, /MELODY_LOW_BOOST_MAX_DB = 5/, 'melody should be enhanced smoothly at low pitches');
 assert.match(playback, /const horizon = currentTime \+ 0\.2;/, 'Web Audio lookahead should be 200ms');
 assert.match(playback, /state\.melodyTimer = window\.setInterval\(schedule, 35\)/,
   'MIDI scheduler should run every 35ms while notes remain');
-const controlsCss = await readFile(new URL('../styles/playback-controls.css', import.meta.url), 'utf8');
-assert.match(controlsCss, /\.playback-melody-volume-popup\{[^}]*position:fixed;[^}]*z-index:4000/,
-  'volume popover must be outside card overflow and viewport clipping');
-assert.match(controlsCss, /\.editor-view \.playback-melody-volume-button\{[^}]*width:20px;[^}]*height:26px/,
-  'volume button must remain compact on mobile');
+assert.doesNotMatch(playbackCss, /playback-melody-volume-(?:button|popup|header)/,
+  'the manual melody volume button and popover must be removed from desktop and mobile');
 console.log('MIDI melody and synchronized playback tests passed');
