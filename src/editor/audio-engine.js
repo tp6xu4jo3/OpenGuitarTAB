@@ -18,13 +18,16 @@ export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
 // Four sine partials in one cached PeriodicWave are exactly equivalent to
 // four phase-aligned sine oscillators, with one audio-rate voice per MIDI note.
 export const MELODY_PARTIALS = Object.freeze([1, 0.25, 0.1, 0.04]);
+export const MELODY_LOW_PARTIALS = Object.freeze([1, 0.4, 0.18, 0.05]);
+export const GUITAR_DUCK_DB = -5;
+export const MIX_FADE_SECONDS = 0.03;
+export const MELODY_TRIM_MIN_DB = -6;
+export const MELODY_TRIM_MAX_DB = 6;
 export const MELODY_BASE_LEVEL = 0.07;
 export const MELODY_ATTACK_SECONDS = 0.006;
 export const MELODY_DECAY_RATE = 1.6;
 export const MELODY_RELEASE_SECONDS = 0.065;
 export const MELODY_VOLUME_RAMP_SECONDS = 0.02;
-export const MELODY_DEFAULT_VOLUME_PERCENT = 100;
-export const MELODY_MAX_VOLUME_PERCENT = 400;
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -38,10 +41,14 @@ export function melodyVoiceProfile(pitch, velocity = 80) {
   };
 }
 
-export function melodyHarmonics() {
-  // Disable normalization to preserve the explicitly requested partial amplitudes.
+export function melodyHarmonics(pitch = 72) {
+  const numericPitch = Number(pitch);
+  const lowWeight = clamp((72 - (Number.isFinite(numericPitch) ? numericPitch : 72)) / 24, 0, 1);
   const real = new Float32Array(5);
-  const imag = new Float32Array([0, ...MELODY_PARTIALS]);
+  const imag = new Float32Array(5);
+  for (let i = 0; i < MELODY_PARTIALS.length; i += 1) {
+    imag[i + 1] = MELODY_PARTIALS[i] + (MELODY_LOW_PARTIALS[i] - MELODY_PARTIALS[i]) * lowWeight;
+  }
   return { real, imag };
 }
 
@@ -114,9 +121,11 @@ export class GuitarAudioEngine {
   constructor() {
     this.context = null;
     this.masterGain = null;
+    this.guitarBus = null;
+    this.guitarDucked = false;
     this.melodyBus = null;
-    this.melodyWave = null;
-    this.melodyVolumePercent = MELODY_DEFAULT_VOLUME_PERCENT;
+    this.melodyWaves = new Map();
+    this.melodyTrimDb = 0;
     this.activeVoices = Array(STRING_TUNING.length).fill(null);
     this.samples = new RecordedGuitarSampleBank();
     this.melodyVoices = new Set();
