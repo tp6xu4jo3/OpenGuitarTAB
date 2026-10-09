@@ -62,15 +62,16 @@ assert.match(playback,/const nextAt = wallStart \+ \(nextBeat - startBeat\) \* b
 assert.match(audio,/scheduleMelodyNote\(note, atTime, secondsPerBeat\)/,'melody must use sample-accurate WebAudio start times');
 assert.match(audio,/stopMelody\(\)/,'melody must be able to stop independently of the guitar');
 const melodyControls = playback.slice(playback.indexOf('function syncSoundControls('), playback.indexOf('function setMelodyEnabled('));
-assert.ok(
-  melodyControls.indexOf('buttons.push(upload, input)') < melodyControls.indexOf("buttons.push(soundControlButton('melody', '旋律'"),
-  'the MIDI import control must be immediately before the chord melody toggle'
-);
+assert.match(melodyControls, /if \(chord\) \{[\s\S]*melodyGroup\.className = 'playback-melody-group'[\s\S]*melodyGroup\.append\(upload, input\)[\s\S]*melodyGroup\.appendChild\(soundControlButton\('melody', '旋律', state\.melodyEnabled\)\)[\s\S]*buttons\.push\(melodyGroup\)/s,
+  'the plus and melody toggle must be children of one rounded melody group, in that order');
+assert.doesNotMatch(melodyControls, /buttons\.push\(upload, input\)/,
+  'the MIDI plus must not be a separate sibling outside the melody group');
 assert.match(melodyControls, /upload\.textContent = '\+';/, 'MIDI import and replacement must use only a plus sign');
 assert.match(melodyControls, /upload\.title = hasMelody\(song\) \? '替換主旋律 MIDI' : '匯入主旋律 MIDI'/, 'the plus button must describe whether it imports or replaces MIDI');
 assert.match(melodyControls, /upload\.setAttribute\('aria-label', upload\.title\)/, 'the icon-only control must have an accessible name');
 assert.match(playback, /controls\.querySelector\('#melodyMidiInput'\)\?\.click\(\)/, 'the plus button must still open the MIDI file picker');
 const playbackCss = await readFile(new URL('../styles/playback-controls.css', import.meta.url), 'utf8');
-assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*height:28px;/, 'desktop plus icon should stay compact');
-assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:24px;[^}]*height:25px;/, 'mobile plus icon should remain compact');
+assert.match(playbackCss, /\.playback-melody-group\{[^}]*border:1px solid #ddd;[^}]*border-radius:999px;[^}]*overflow:hidden/, 'MIDI plus and melody toggle must share one pill outline');
+assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*border:0;border-right:1px solid #ddd;[^}]*background:transparent/, 'desktop plus must use an internal divider instead of a separate button outline');
+assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-group \.playback-sound-toggle\{[^}]*padding:0 3px;[^}]*height:26px;[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:20px;[^}]*height:26px;/, 'mobile melody group should keep both controls compact');
 console.log('MIDI melody and synchronized playback tests passed');
