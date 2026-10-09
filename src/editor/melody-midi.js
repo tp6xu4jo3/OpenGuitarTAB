@@ -1,5 +1,5 @@
 // Import Standard MIDI Files into beat-relative melody data owned by one arrangement.
-// Tempo events are intentionally not imported: the score BPM is the single playback tempo.
+// MIDI tempo is inspected only when importing; score BPM remains the single playback clock.
 const MAX_MIDI_BYTES = 2_000_000;
 const MAX_MELODY_NOTES = 20_000;
 
@@ -24,6 +24,7 @@ function readTrack(data, from, end, ticksPerBeat, index) {
   const active = new Map();
   const notes = [];
   const channels = new Set();
+  const tempoChanges = [];
 
   function finish(channel, pitch) {
     const key = `${channel}:${pitch}`;
@@ -66,6 +67,10 @@ function readTrack(data, from, end, ticksPerBeat, index) {
         if (kind === 0x03 && length > 0) {
           trackName = new TextDecoder().decode(data.subarray(offset, offset + length)).slice(0, 80);
         }
+        if (kind === 0x51 && length === 3) {
+          const microseconds = data[offset] * 65536 + data[offset + 1] * 256 + data[offset + 2];
+          if (microseconds > 0) tempoChanges.push({ beat: ticks / ticksPerBeat, bpm: 60000000 / microseconds });
+        }
         offset += length;
         if (kind === 0x2f) break;
       } else {
@@ -93,7 +98,7 @@ function readTrack(data, from, end, ticksPerBeat, index) {
     }
   }
   // A missing note-off is not interpreted as a sustained note until infinity.
-  return { index, name: trackName, notes: notes.sort((a,b)=>a.beat-b.beat || a.pitch-b.pitch), channels: [...channels] };
+  return { index, name: trackName, notes: notes.sort((a,b)=>a.beat-b.beat || a.pitch-b.pitch), channels: [...channels], tempoChanges };
 }
 
 export function readMidiTracks(arrayBuffer) {
@@ -121,17 +126,53 @@ export function readMidiTracks(arrayBuffer) {
     tracks.push(readTrack(data, offset+8, end, ppq, i));
     offset = end;
   }
-  return tracks.filter(track => track.notes.length);
+  const tempos = tracks.flatMap(track => track.tempoChanges).sort((a, b) => a.beat - b.beat);
+  // Standard MIDI defaults to 500000 microseconds per quarter note (120 BPM).
+  const tempoStatus = !tempos.length ? 'implicit-default'
+    : tempos[0].beat > 0 || tempos.some(change => Math.abs(change.bpm - tempos[0].bpm) > 0.01)
+      ? 'variable' : 'constant';
+  const midiBpm = tempoStatus === 'implicit-default' ? 120
+    : tempoStatus === 'constant' ? Math.round(tempos[0].bpm * 1000) / 1000 : null;
+  return tracks.filter(track => track.notes.length).map(({ tempoChanges, ...track }) => ({
+    ...track, midiBpm, tempoStatus
+  }));
 }
 
-export function melodyFromMidiTrack(track, fileName = '') {
+export const MIDI_BEAT_SCALES = [0.5, 1, 2];
+
+export function validateMidiBeatScale(value) {
+  if (value == null) return undefined;
+  const scale = Number(value);
+  if (!MIDI_BEAT_SCALES.includes(scale)) midiError('midiBeatScale僅允許0.5、1、2');
+  return scale;
+}
+
+// One source MIDI beat is converted into this many SCORE beats at import time.
+// After import, the score BPM owns playback speed; changing BPM must never re-scale the notes.
+export function resolveMidiBeatScale({ markedScale, midiBpm, scoreBpm } = {}) {
+  const existing = validateMidiBeatScale(markedScale);
+  if (existing !== undefined) return { scale: existing, reason: 'marked' };
+  const midi = Number(midiBpm);
+  const score = Number(scoreBpm);
+  if (Number.isFinite(midi) && midi > 0 && Number.isFinite(score) && score > 0) {
+    const ratio = midi / score;
+    for (const [expectedRatio, scale] of [[2, 0.5], [1, 1], [0.5, 2]]) {
+      if (Math.abs(ratio / expectedRatio - 1) <= 0.035) return { scale, reason: 'auto' };
+    }
+  }
+  return { scale: null, reason: 'ambiguous' };
+}
+
+export function melodyFromMidiTrack(track, fileName = '', beatScale = 1) {
+  const scale = validateMidiBeatScale(beatScale);
+
   if (!track?.notes?.length) midiError('MIDI沒有可播放的旋律音符');
   if (track.notes.length > MAX_MELODY_NOTES) midiError('旋律音符過多');
   const notes = track.notes
     .filter(note => note.duration > 0 && note.pitch >= 0 && note.pitch <= 127)
     .map(({beat,duration,pitch,velocity}) => ({
-      beat: Math.round(beat * 1000000) / 1000000,
-      duration: Math.round(duration * 1000000) / 1000000,
+      beat: Math.round(beat * scale * 1000000) / 1000000,
+      duration: Math.max(0.000001, Math.round(duration * scale * 1000000) / 1000000),
       pitch,
       velocity
     }));

@@ -75,6 +75,32 @@ Playback invalidation is driven by `ChangeSet.playback`, not render completion. 
 
 Playback reads V3 Events only; it never reads legacy slots or editor input DOM values.
 
+### Chord-chart melody MIDI timing
+
+A chord arrangement stores one optional `melody` (lightweight MIDI note events) and one optional
+`midiBeatScale` directly in the same `song.json`. This scale means *score beats per
+source MIDI quarter-note beat*: `0.5` for half-measure/half-time score notation,
+`1` for normal timing, or `2` for double notation length. For example:
+
+```json
+{ "tempo": 60, "playStyle": "chord", "midiBeatScale": 0.5 }
+```
+
+The MIDI importer checks this marker **before** consulting BPM values. If no marker
+exists, it reads MIDI tempo metadata (or the SMF standard's implicit 120 BPM) and
+automatically chooses `0.5` for MIDI ≈ 2× score BPM, `1` for equal BPM,
+or `2` for MIDI ≈ ½ score BPM (within 3.5%). Ambiguous comparisons require
+an explicit selection. Variable-tempo MIDIs must first be exported as fixed-BPM
+melody tracks because the score playback clock has one BPM.
+
+The importer converts MIDI note `beat` and `duration` **once** to score beats,
+then stores them under `melody.notes`; `midiBeatScale` is the persistent
+annotation for repeat imports, **not a second runtime multiplier**. Playback
+always uses the existing score-BPM clock. If the user changes score BPM from 60
+to 61 with `midiBeatScale: 0.5`, the effective melody BPM changes from 120 to
+122 automatically, without changing saved note positions, MIDI data, or the
+marker. Do not re-detect this ratio on ordinary BPM edits.
+
 ## Tools and notation ownership
 
 - `tools.js` — Tool Registry metadata and command factories.

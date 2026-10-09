@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { readMidiTracks, melodyFromMidiTrack } from '../src/editor/melody-midi.js';
+import { readMidiTracks, melodyFromMidiTrack, normalizeMelody, resolveMidiBeatScale, validateMidiBeatScale } from '../src/editor/melody-midi.js';
 import { cleanSongForWrite } from '../api/index.js';
 import { compactSong } from '../src/core/song-codec.js';
 
@@ -40,13 +40,50 @@ assert.deepEqual(melody.notes.map(note=>[note.beat,note.duration,note.pitch]),[[
 assert.equal(melody.sourceName,'lead.mid');
 assert.equal(melody.format,'midi');
 
+const midiTempo = bpm => {
+  const microseconds = Math.round(60000000 / bpm);
+  return [0, 0xff, 0x51, 0x03, (microseconds >>> 16) & 255, (microseconds >>> 8) & 255, microseconds & 255];
+};
+const explicitTempoTracks = readMidiTracks(midiFile([[...midiTempo(120), ...trackA]]));
+assert.equal(explicitTempoTracks[0].tempoStatus, 'constant');
+assert.equal(explicitTempoTracks[0].midiBpm, 120);
+assert.equal(tracks[0].tempoStatus, 'implicit-default', 'MIDI with no tempo event defaults to 120 BPM');
+assert.equal(tracks[0].midiBpm, 120);
+
+const half = resolveMidiBeatScale({ midiBpm: explicitTempoTracks[0].midiBpm, scoreBpm: 60 });
+assert.deepEqual(half, { scale: 0.5, reason: 'auto' }, '120 BPM MIDI and 60 BPM half-time score must auto-align');
+const aligned = melodyFromMidiTrack(explicitTempoTracks[0], 'lead.mid', half.scale);
+assert.deepEqual(aligned.notes.map(note => [note.beat, note.duration, note.pitch]), [[0, 0.5, 76], [0.5, 0.25, 77]],
+  'start positions and durations must both be halved exactly once during import');
+assert.equal(aligned.notes[1].beat * 60 / 60, 0.5, 'at score BPM 60 the second MIDI note starts half a second after the first');
+assert.ok(Math.abs(aligned.notes[1].beat * 60 / 61 - 30 / 61) < 1e-10,
+  'when editing score BPM from 60 to 61, saved score beat positions stay unchanged; effective MIDI tempo becomes 122');
+assert.deepEqual(resolveMidiBeatScale({ markedScale: 0.5, midiBpm: 120, scoreBpm: 61 }), { scale: 0.5, reason: 'marked' },
+  'the JSON marker must override future BPM guesses when re-importing after changing BPM');
+assert.deepEqual(resolveMidiBeatScale({ midiBpm: 120, scoreBpm: 120 }), { scale: 1, reason: 'auto' });
+assert.deepEqual(resolveMidiBeatScale({ midiBpm: 60, scoreBpm: 120 }), { scale: 2, reason: 'auto' });
+assert.deepEqual(resolveMidiBeatScale({ midiBpm: 117, scoreBpm: 60 }), { scale: 0.5, reason: 'auto' }, 'minor BPM rounding differences should be allowed');
+assert.deepEqual(resolveMidiBeatScale({ midiBpm: 100, scoreBpm: 60 }), { scale: null, reason: 'ambiguous' },
+  'uncertain ratios must request a user choice instead of silently changing alignment');
+assert.throws(() => validateMidiBeatScale(0.25), /midiBeatScale/);
+const changingTempoTracks = readMidiTracks(midiFile([[...midiTempo(120), ...variable(480), ...midiTempo(90).slice(1), ...trackA]]));
+assert.equal(changingTempoTracks[0].tempoStatus, 'variable', 'variable MIDI tempos must be identified, not falsely auto-aligned');
+assert.equal(changingTempoTracks[0].midiBpm, null);
+
+
 const saved=cleanSongForWrite({
   id:'song-a',name:'測試',arrangementName:'和弦',arrangementId:'arr-a',playStyle:'chord',
-  melody,document:{version:3,measures:[{id:'m1',events:[{id:'e1',at:[0,1],duration:[1,1],notes:[{id:'n1',string:0,fret:'1',techniques:[]}],marks:[]}],groups:[],timeSignature:{numerator:4,denominator:4}}],relations:[],layout:{}}
+  tempo: 60, midiBeatScale: 0.5, melody: aligned, document:{version:3,measures:[{id:'m1',events:[{id:'e1',at:[0,1],duration:[1,1],notes:[{id:'n1',string:0,fret:'1',techniques:[]}],marks:[]}],groups:[],timeSignature:{numerator:4,denominator:4}}],relations:[],layout:{}}
 });
-assert.deepEqual(saved.melody,melody,'Drive payload must preserve the compact melody data');
+assert.deepEqual(saved.melody,aligned,'Drive payload must preserve the already-aligned melody data');
+assert.equal(saved.midiBeatScale, 0.5, 'Drive must retain the half-time marker in the same song JSON');
+const tempoEdited = cleanSongForWrite({ ...saved, tempo: 61 });
+assert.equal(tempoEdited.midiBeatScale, 0.5, 'BPM changes must not change the rhythm marker');
+assert.deepEqual(tempoEdited.melody.notes, saved.melody.notes, 'BPM changes must not rescale or mutate imported score beats');
+assert.deepEqual(normalizeMelody(tempoEdited.melody), saved.melody);
 assert.equal(saved.document.measures[0].events[0].notes.length,1,'import must not erase chord score events');
-assert.deepEqual(compactSong(saved).melody,melody,'client persistence must preserve melody events');
+assert.deepEqual(compactSong(saved).melody,aligned,'client persistence must preserve melody events');
+assert.equal(compactSong(saved).midiBeatScale, 0.5, 'client persistence must retain the rhythm marker');
 
 assert.throws(()=>readMidiTracks(new Uint8Array([1,2,3]).buffer),/MIDI/);
 assert.throws(()=>readMidiTracks(midiFile([trackA],0xE728)),/PPQ/,'SMPTE timing is intentionally rejected');
@@ -56,7 +93,13 @@ const audio=await readFile(new URL('../src/editor/audio-engine.js',import.meta.u
 assert.match(playback,/soundControlButton\('music', '模擬'/,'existing music toggle must be relabeled 模擬');
 assert.match(playback,/if \(chord\) \{[\s\S]*melodyGroup\.appendChild\(soundControlButton\('melody', '旋律', state\.melodyEnabled\)\)[\s\S]*buttons\.push\(melodyGroup\)[\s\S]*buttons\.push\(soundControlButton\('music', '模擬'/s,'melody group must appear only for chord charts and to the left of simulation');
 assert.match(playback,/melodyEnabled: false/,'melody must be off by default');
-assert.match(playback,/const melody = melodyFromMidiTrack\(selection, file\.name\)[\s\S]*song\.melody = melody[\s\S]*await window\.persistSong\(song\)/s,'MIDI import must be stored in the existing song persistence flow');
+assert.match(playback,/const inferred = resolveMidiBeatScale\([\s\S]*markedScale: song\.midiBeatScale[\s\S]*midiBpm: selection\.midiBpm[\s\S]*const melody = melodyFromMidiTrack\(selection, file\.name, beatScale\)[\s\S]*song\.midiBeatScale = beatScale[\s\S]*await window\.persistSong\(song\)/s,
+  'MIDI import must honor JSON markers and persist the resolved scale with score-beat-relative melody notes');
+assert.match(playback, /song\.midiBeatScale = beatScale;[\s\S]*song\.tempo = scoreBpm;[\s\S]*await window\.persistSong\(song\)/s,
+  'MIDI import must save the currently displayed score BPM and its beat scale together');
+assert.match(playback, /song\.tempo = originalTempo;/, 'failed MIDI saves must roll back the score BPM');
+assert.match(playback, /tempoStatus === 'variable'/, 'changing-tempo MIDI must not be silently treated as constant');
+assert.doesNotMatch(playback, /note\.beat \*.*midiBeatScale/, 'playback must never apply the same conversion twice');
 assert.match(playback,/startMelodyScheduler\(\)[\s\S]*clock\.audioStartTime \+ \(Number\(note\.beat\) - offset\) \* secondsPerBeat/s,'melody must be scheduled against the shared playback origin');
 assert.match(playback,/const nextAt = wallStart \+ \(nextBeat - startBeat\) \* beatMs/,'score ticks must be corrected against a single origin instead of accumulating setTimeout delay');
 assert.match(audio,/scheduleMelodyNote\(note, atTime, secondsPerBeat\)/,'melody must use sample-accurate WebAudio start times');
