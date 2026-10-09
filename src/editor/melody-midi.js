@@ -127,10 +127,12 @@ export function readMidiTracks(arrayBuffer) {
     offset = end;
   }
   const tempos = tracks.flatMap(track => track.tempoChanges).sort((a, b) => a.beat - b.beat);
-  const tempoStatus = !tempos.length ? 'missing'
+  // Standard MIDI defaults to 500000 microseconds per quarter note (120 BPM).
+  const tempoStatus = !tempos.length ? 'implicit-default'
     : tempos[0].beat > 0 || tempos.some(change => Math.abs(change.bpm - tempos[0].bpm) > 0.01)
       ? 'variable' : 'constant';
-  const midiBpm = tempoStatus === 'constant' ? Math.round(tempos[0].bpm * 1000) / 1000 : null;
+  const midiBpm = tempoStatus === 'implicit-default' ? 120
+    : tempoStatus === 'constant' ? Math.round(tempos[0].bpm * 1000) / 1000 : null;
   return tracks.filter(track => track.notes.length).map(({ tempoChanges, ...track }) => ({
     ...track, midiBpm, tempoStatus
   }));
