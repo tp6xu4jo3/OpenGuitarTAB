@@ -15,9 +15,44 @@ const SLIDE_TARGET_HOLD_SECONDS = 0.045;
 const SLIDE_TRANSITION_LEVEL = 0.9;
 export const MASTER_OUTPUT_DB = -6;
 export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
+// Melody is intentionally mixed separately from the recorded guitar bank.
+// A brighter harmonic profile lets lower notes cut through chords without changing pitch.
+export const MELODY_BASE_LEVEL = 0.24;
+export const MELODY_LOW_LIFT_DB = 3;
+export const MELODY_PRESENCE_DB = 2.5;
+const MELODY_BUS_GAIN = 0.9;
+const MELODY_WAVEFORMS = {
+  low: { partials: 24, rolloff: 1.3 },
+  mid: { partials: 18, rolloff: 1.6 },
+  high: { partials: 12, rolloff: 1.9 }
+};
 let installedEngine = null;
 
 export function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+
+export function melodyVoiceProfile(pitch, velocity = 80) {
+  const midiPitch = clamp(Number(pitch), 0, 127);
+  const midiVelocity = clamp(Number(velocity), 1, 127);
+  // Smooth register-dependent level, avoiding abrupt volume changes at octave boundaries.
+  const lowWeight = clamp((72 - midiPitch) / 24, 0, 1);
+  return {
+    register: midiPitch < 60 ? 'low' : midiPitch < 76 ? 'mid' : 'high',
+    frequency: 440 * 2 ** ((midiPitch - 69) / 12),
+    level: MELODY_BASE_LEVEL
+      * 10 ** ((MELODY_LOW_LIFT_DB * lowWeight) / 20)
+      * (midiVelocity / 127) ** 0.75
+  };
+}
+
+export function melodyHarmonics(register) {
+  const { partials, rolloff } = MELODY_WAVEFORMS[register];
+  const real = new Float32Array(partials + 1);
+  const imag = new Float32Array(partials + 1);
+  for (let harmonic = 1; harmonic <= partials; harmonic += 1) {
+    imag[harmonic] = (harmonic % 2 === 0 ? 0.8 : 1) / harmonic ** rolloff;
+  }
+  return { real, imag };
+}
 
 export function getTempoFromUi() {
   const input = document.getElementById('tempoInput');
@@ -88,6 +123,8 @@ export class GuitarAudioEngine {
   constructor() {
     this.context = null;
     this.masterGain = null;
+    this.melodyBus = null;
+    this.melodyWaves = null;
     this.activeVoices = Array(STRING_TUNING.length).fill(null);
     this.samples = new RecordedGuitarSampleBank();
     this.melodyVoices = new Set();
@@ -111,8 +148,32 @@ export class GuitarAudioEngine {
     compressor.release.value = 0.2;
     masterGain.connect(compressor);
     compressor.connect(context.destination);
+
+    // Shared nodes are constructed once: each note needs only an oscillator and envelope.
+    const melodyBus = context.createGain();
+    melodyBus.gain.value = MELODY_BUS_GAIN;
+    const melodyHighpass = context.createBiquadFilter();
+    melodyHighpass.type = 'highpass';
+    melodyHighpass.frequency.value = 58;
+    melodyHighpass.Q.value = 0.707;
+    const melodyPresence = context.createBiquadFilter();
+    melodyPresence.type = 'peaking';
+    melodyPresence.frequency.value = 1650;
+    melodyPresence.Q.value = 0.85;
+    melodyPresence.gain.value = MELODY_PRESENCE_DB;
+    melodyBus.connect(melodyHighpass);
+    melodyHighpass.connect(melodyPresence);
+    melodyPresence.connect(masterGain);
+
+    this.melodyWaves = Object.fromEntries(
+      Object.keys(MELODY_WAVEFORMS).map(register => {
+        const { real, imag } = melodyHarmonics(register);
+        return [register, context.createPeriodicWave(real, imag)];
+      })
+    );
     this.context = context;
     this.masterGain = masterGain;
+    this.melodyBus = melodyBus;
     return context;
   }
 
@@ -133,27 +194,27 @@ export class GuitarAudioEngine {
   }
 
   scheduleMelodyNote(note, atTime, secondsPerBeat) {
-    if (!this.context || !this.masterGain) return;
+    if (!this.context || !this.melodyBus) return;
     const pitch = Number(note?.pitch);
     const length = Number(note?.duration) * secondsPerBeat;
     if (!Number.isFinite(pitch) || pitch < 0 || pitch > 127 || !(length > 0)) return;
     const start = Math.max(this.context.currentTime + 0.005, Number(atTime));
     const duration = Math.min(8, Math.max(0.03, length));
     const end = start + duration;
-    const velocity = clamp(Number(note?.velocity) || 80, 1, 127) / 127;
+    const voiceProfile = melodyVoiceProfile(pitch, Number(note?.velocity) || 80);
     const oscillator = this.context.createOscillator();
     const envelope = this.context.createGain();
-    oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(440 * 2 ** ((pitch - 69) / 12), start);
-    const attack = Math.min(0.012, duration * 0.2);
-    const release = Math.min(0.09, duration * 0.35);
-    const level = 0.14 * velocity;
+    oscillator.setPeriodicWave(this.melodyWaves[voiceProfile.register]);
+    oscillator.frequency.setValueAtTime(voiceProfile.frequency, start);
+    const attack = Math.min(0.009, duration * 0.2);
+    const release = Math.min(0.085, duration * 0.35);
+    const level = voiceProfile.level;
     envelope.gain.setValueAtTime(0.0001, start);
     envelope.gain.linearRampToValueAtTime(level, start + attack);
     envelope.gain.setValueAtTime(level, Math.max(start + attack, end - release));
     envelope.gain.exponentialRampToValueAtTime(0.0001, end);
     oscillator.connect(envelope);
-    envelope.connect(this.masterGain);
+    envelope.connect(this.melodyBus);
     const voice = { oscillator, envelope };
     this.melodyVoices.add(voice);
     oscillator.onended = () => {
