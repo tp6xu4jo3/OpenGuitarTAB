@@ -117,4 +117,23 @@ const playbackCss = await readFile(new URL('../styles/playback-controls.css', im
 assert.match(playbackCss, /\.playback-melody-group\{[^}]*border:1px solid #ddd;[^}]*border-radius:999px;[^}]*overflow:hidden/, 'MIDI plus and melody toggle must share one pill outline');
 assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*border:0;border-right:1px solid #ddd;[^}]*background:transparent/, 'desktop plus must use an internal divider instead of a separate button outline');
 assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-group \.playback-sound-toggle\{[^}]*padding:0 3px;[^}]*height:26px;[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:20px;[^}]*height:26px;/, 'mobile melody group should keep both controls compact');
+const volumeControls = playback.slice(playback.indexOf('function syncSoundControls('), playback.indexOf('function setMelodyEnabled('));
+assert.match(volumeControls, /melodyGroup\.appendChild\(volumeButton\)/,
+  'volume button belongs inside the existing melody pill, after the melody toggle');
+assert.match(volumeControls, /volumeButton\.setAttribute\('aria-label', '調整旋律音量'\)/,
+  'compact icon-only volume button needs an accessible label');
+assert.match(playback, /range\.min = '0';[\s\S]*range\.max = '400';[\s\S]*range\.step = '1';/,
+  'popup must expose the full 0–400% range');
+assert.match(playback, /range\.addEventListener\('input', \(\) => setMelodyVolumePercent\(range\.value\)\)/,
+  'changing volume must update MIDI gain without reimporting notes');
+assert.match(playback, /state\.melodyVolumePercent = storedMelodyVolume\(\);[\s\S]*getAudioEngine\(\)\?\.setMelodyVolume\(state\.melodyVolumePercent\)/,
+  'saved melody volume must be restored during playback controller installation');
+assert.match(playback, /const horizon = currentTime \+ 0\.2;/, 'Web Audio lookahead should be 200ms');
+assert.match(playback, /state\.melodyTimer = window\.setInterval\(schedule, 35\)/,
+  'MIDI scheduler should run every 35ms while notes remain');
+const controlsCss = await readFile(new URL('../styles/playback-controls.css', import.meta.url), 'utf8');
+assert.match(controlsCss, /\.playback-melody-volume-popup\{[^}]*position:fixed;[^}]*z-index:4000/,
+  'volume popover must be outside card overflow and viewport clipping');
+assert.match(controlsCss, /\.editor-view \.playback-melody-volume-button\{[^}]*width:20px;[^}]*height:26px/,
+  'volume button must remain compact on mobile');
 console.log('MIDI melody and synchronized playback tests passed');
