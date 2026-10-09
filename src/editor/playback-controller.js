@@ -6,7 +6,6 @@ import { readMidiTracks, melodyFromMidiTrack, resolveMidiBeatScale, validateMidi
 
 const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
 const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
-const MELODY_TRIM_KEY = 'openguitartab:playback-melody-trim-db';
 
 let installed = false;
 const state = {
@@ -26,7 +25,6 @@ const state = {
   musicEnabled: true,
   metronomeEnabled: false,
   melodyEnabled: false,
-  melodyTrimDb: 0,
   melodySongId: null,
   melodyTimer: null,
   melodyCursor: 0,
@@ -48,81 +46,6 @@ function storedBoolean(key, fallback) {
 
 function persistBoolean(key, value) {
   try { localStorage.setItem(key, String(Boolean(value))); } catch {}
-}
-
-function storedMelodyTrimDb() {
-  try {
-    const saved = localStorage.getItem(MELODY_TRIM_KEY);
-    if (saved !== null && saved.trim() !== '' && Number.isFinite(Number(saved))) {
-      return clamp(Number(saved), -6, 6);
-    }
-  } catch {}
-  return 0;
-}
-
-let melodyVolumePanel = null;
-let melodyVolumeTrigger = null;
-
-function closeMelodyVolumePanel() {
-  melodyVolumePanel?.remove();
-  melodyVolumeTrigger?.setAttribute('aria-expanded', 'false');
-  melodyVolumePanel = null;
-  melodyVolumeTrigger = null;
-}
-
-function setMelodyTrimDb(value) {
-  state.melodyTrimDb = clamp(Math.round(Number(value) || 0), -6, 6);
-  getAudioEngine()?.setMelodyTrimDb(state.melodyTrimDb);
-  try { localStorage.setItem(MELODY_TRIM_KEY, String(state.melodyTrimDb)); } catch {}
-  const output = melodyVolumePanel?.querySelector('output');
-  if (output) output.textContent = `${state.melodyTrimDb > 0 ? '+' : ''}${state.melodyTrimDb} dB`;
-  return state.melodyTrimDb;
-}
-
-function toggleMelodyVolumePanel(trigger) {
-  if (melodyVolumePanel) {
-    const sameTrigger = melodyVolumeTrigger === trigger;
-    closeMelodyVolumePanel();
-    if (sameTrigger) return;
-  }
-  const panel = document.createElement('div');
-  panel.className = 'playback-melody-volume-popup';
-  panel.setAttribute('role', 'group');
-  panel.setAttribute('aria-label', '旋律音量');
-  const header = document.createElement('div');
-  header.className = 'playback-melody-volume-header';
-  const label = document.createElement('label');
-  label.htmlFor = 'melodyVolumeRange';
-  label.textContent = '旋律微調';
-  const output = document.createElement('output');
-  output.htmlFor = 'melodyVolumeRange';
-  output.textContent = `${state.melodyTrimDb > 0 ? '+' : ''}${state.melodyTrimDb} dB`;
-  header.append(label, output);
-  const range = document.createElement('input');
-  range.id = 'melodyVolumeRange';
-  range.type = 'range';
-  range.min = '-6';
-  range.max = '6';
-  range.step = '1';
-  range.value = String(state.melodyTrimDb);
-  range.setAttribute('aria-label', '旋律音量微調（分貝）');
-  range.addEventListener('input', () => setMelodyTrimDb(range.value));
-  panel.append(header, range);
-  document.body.appendChild(panel);
-
-  const rect = trigger.getBoundingClientRect();
-  const width = panel.offsetWidth;
-  const height = panel.offsetHeight;
-  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
-  const below = rect.bottom + 8;
-  const above = rect.top - height - 8;
-  const top = below + height <= window.innerHeight - 8
-    ? below : Math.max(8, above);
-  panel.style.left = `${Math.round(left)}px`;
-  panel.style.top = `${Math.round(top)}px`;
-  melodyVolumePanel = panel;
-  melodyVolumeTrigger = trigger;
-  trigger.setAttribute('aria-expanded', 'true');
 }
 
 function syncProgressRangeFromIndex(playback) {
@@ -455,12 +378,6 @@ function ensureSoundControls() {
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', '播放聲音');
   controls.addEventListener('click', event => {
-    const volumeButton = event.target.closest?.('[data-melody-volume]');
-    if (volumeButton) {
-      event.preventDefault();
-      toggleMelodyVolumePanel(volumeButton);
-      return;
-    }
     const importButton = event.target.closest?.('[data-melody-upload]');
     if (importButton) {
       event.preventDefault();
@@ -501,7 +418,6 @@ function syncSoundControls(force = false) {
   const editable = chord && !document.getElementById('saveSongButton')?.hidden;
   const mode = chord ? (editable ? 'chord-edit' : 'chord-preview') : 'normal';
   if (force || controls.dataset.mode !== mode) {
-    closeMelodyVolumePanel();
     controls.dataset.mode = mode;
     const buttons = [];
     if (chord) {
@@ -525,16 +441,6 @@ function syncSoundControls(force = false) {
         melodyGroup.append(upload, input);
       }
       melodyGroup.appendChild(soundControlButton('melody', '旋律', state.melodyEnabled));
-      const volumeButton = document.createElement('button');
-      volumeButton.type = 'button';
-      volumeButton.className = 'playback-melody-volume-button';
-      volumeButton.dataset.melodyVolume = 'true';
-      volumeButton.title = '微調旋律音量（−6～+6 dB）';
-      volumeButton.setAttribute('aria-label', '微調旋律音量');
-      volumeButton.setAttribute('aria-haspopup', 'true');
-      volumeButton.setAttribute('aria-expanded', 'false');
-      volumeButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
-      melodyGroup.appendChild(volumeButton);
       buttons.push(melodyGroup);
     }
     buttons.push(soundControlButton('music', '模擬', state.musicEnabled));
@@ -551,13 +457,6 @@ function syncSoundControls(force = false) {
   });
 }
 
-function syncGuitarMix() {
-  getAudioEngine()?.setGuitarDucking(
-    state.playing && state.musicEnabled && state.melodyEnabled
-      && currentIsChordScore() && hasMelody()
-  );
-}
-
 function setMelodyEnabled(enabled) {
   if (enabled && !hasMelody()) {
     window.showToast?.('請先點旋律左邊的 + 匯入 MIDI');
@@ -567,7 +466,6 @@ function setMelodyEnabled(enabled) {
   if (!state.melodyEnabled) {
     getAudioEngine()?.stopMelody();
     stopMelodyScheduler();
-    syncGuitarMix();
   } else if (state.playing) {
     const audio = getAudioEngine();
     void audio?.ensureMelodyReady().then(ready => {
@@ -577,7 +475,6 @@ function setMelodyEnabled(enabled) {
         clock.audioStartTime = audio.context.currentTime - (performance.now() - clock.wallStart) / 1000;
         clock.audioClockActive = true;
       }
-      syncGuitarMix();
       startMelodyScheduler();
     });
   }
@@ -590,7 +487,6 @@ function setMusicEnabled(enabled) {
   persistBoolean(MUSIC_ENABLED_KEY, state.musicEnabled);
   if (!state.musicEnabled) getAudioEngine()?.stopAll();
   if (state.musicEnabled && state.playing) void getAudioEngine()?.ensureReady();
-  syncGuitarMix();
   syncSoundControls();
   return state.musicEnabled;
 }
@@ -754,7 +650,6 @@ async function startPlayback() {
     if (Number.isFinite(sliderIndex)) state.currentIndex = clamp(sliderIndex, 0, playback.entries.length - 1);
     state.preparing = false;
     state.playing = true;
-    syncGuitarMix();
     state.lastCenteredKey = null;
     updatePlayButton();
     if (state.currentIndex === 0 && state.startOffsetBeats === 0) {
@@ -821,7 +716,6 @@ function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true)
   state.playbackClock = null;
   state.preparing = false;
   state.playing = false;
-  syncGuitarMix();
   state.lastCenteredKey = null;
   clearPlayhead();
   if (clearOffset) state.startOffsetBeats = 0;
@@ -840,18 +734,6 @@ export function installPlaybackController() {
   installed = true;
   state.musicEnabled = storedBoolean(MUSIC_ENABLED_KEY, true);
   state.metronomeEnabled = storedBoolean(METRONOME_ENABLED_KEY, false);
-  state.melodyTrimDb = storedMelodyTrimDb();
-  getAudioEngine()?.setMelodyTrimDb(state.melodyTrimDb);
-  document.addEventListener('pointerdown', event => {
-    if (melodyVolumePanel && !melodyVolumePanel.contains(event.target) && !melodyVolumeTrigger?.contains(event.target)) {
-      closeMelodyVolumePanel();
-    }
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeMelodyVolumePanel();
-  });
-  window.addEventListener('resize', closeMelodyVolumePanel);
-  window.addEventListener('scroll', closeMelodyVolumePanel, true);
   Object.assign(window, {
     totalSlots,
     updateProgressRange,
@@ -871,8 +753,6 @@ export function installPlaybackController() {
     setMusicEnabled,
     setMetronomeEnabled,
     setMelodyEnabled,
-    setMelodyTrimDb,
-    get melodyTrimDb() { return state.melodyTrimDb; },
     refreshSoundControls: () => syncSoundControls(true),
     getIndex: () => state.currentIndex,
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
