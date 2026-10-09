@@ -6,6 +6,7 @@
 .playback-sound-toggle[aria-pressed="true"] .playback-sound-indicator{background:#22c55e}
 .playback-melody-group{display:inline-flex;align-items:center;flex:0 0 auto;min-width:0;border:1px solid #ddd;border-radius:999px;background:#f5f5f5;overflow:hidden}
 .playback-melody-group .playback-sound-toggle{height:30px;padding:0 8px;border-radius:0;background:transparent}
+.playback-melody-group .playback-sound-toggle:hover,.playback-melody-group .playback-sound-toggle:focus-visible{background:#e6e6e6}
 .playback-melody-upload{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:30px;padding:0;border:0;border-right:1px solid #ddd;border-radius:0;background:transparent;color:#333;font:inherit;font-size:17px;font-weight:800;line-height:1;white-space:nowrap;cursor:pointer}
 .playback-melody-upload:hover,.playback-melody-upload:focus-visible{background:#e6e6e6;outline:none}
 #melodyMidiInput[hidden]{display:none!important}
