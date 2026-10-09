@@ -95,6 +95,9 @@ assert.match(playback,/if \(chord\) \{[\s\S]*melodyGroup\.appendChild\(soundCont
 assert.match(playback,/melodyEnabled: false/,'melody must be off by default');
 assert.match(playback,/const inferred = resolveMidiBeatScale\([\s\S]*markedScale: song\.midiBeatScale[\s\S]*midiBpm: selection\.midiBpm[\s\S]*const melody = melodyFromMidiTrack\(selection, file\.name, beatScale\)[\s\S]*song\.midiBeatScale = beatScale[\s\S]*await window\.persistSong\(song\)/s,
   'MIDI import must honor JSON markers and persist the resolved scale with score-beat-relative melody notes');
+assert.match(playback, /song\.midiBeatScale = beatScale;[\s\S]*song\.tempo = scoreBpm;[\s\S]*await window\.persistSong\(song\)/s,
+  'MIDI import must save the currently displayed score BPM and its beat scale together');
+assert.match(playback, /song\.tempo = originalTempo;/, 'failed MIDI saves must roll back the score BPM');
 assert.match(playback, /tempoStatus === 'variable'/, 'changing-tempo MIDI must not be silently treated as constant');
 assert.doesNotMatch(playback, /note\.beat \*.*midiBeatScale/, 'playback must never apply the same conversion twice');
 assert.match(playback,/startMelodyScheduler\(\)[\s\S]*clock\.audioStartTime \+ \(Number\(note\.beat\) - offset\) \* secondsPerBeat/s,'melody must be scheduled against the shared playback origin');
