@@ -6,7 +6,7 @@ import { readMidiTracks, melodyFromMidiTrack, resolveMidiBeatScale, validateMidi
 
 const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
 const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
-const MELODY_VOLUME_KEY = 'openguitartab:playback-melody-volume';
+const MELODY_TRIM_KEY = 'openguitartab:playback-melody-trim-db';
 
 let installed = false;
 const state = {
@@ -26,7 +26,7 @@ const state = {
   musicEnabled: true,
   metronomeEnabled: false,
   melodyEnabled: false,
-  melodyVolumePercent: 100,
+  melodyTrimDb: 0,
   melodySongId: null,
   melodyTimer: null,
   melodyCursor: 0,
@@ -50,14 +50,14 @@ function persistBoolean(key, value) {
   try { localStorage.setItem(key, String(Boolean(value))); } catch {}
 }
 
-function storedMelodyVolume() {
+function storedMelodyTrimDb() {
   try {
-    const saved = localStorage.getItem(MELODY_VOLUME_KEY);
+    const saved = localStorage.getItem(MELODY_TRIM_KEY);
     if (saved !== null && saved.trim() !== '' && Number.isFinite(Number(saved))) {
-      return clamp(Number(saved), 0, 400);
+      return clamp(Number(saved), -6, 6);
     }
   } catch {}
-  return 100;
+  return 0;
 }
 
 let melodyVolumePanel = null;
@@ -70,13 +70,13 @@ function closeMelodyVolumePanel() {
   melodyVolumeTrigger = null;
 }
 
-function setMelodyVolumePercent(value) {
-  state.melodyVolumePercent = clamp(Math.round(Number(value) || 0), 0, 400);
-  getAudioEngine()?.setMelodyVolume(state.melodyVolumePercent);
-  try { localStorage.setItem(MELODY_VOLUME_KEY, String(state.melodyVolumePercent)); } catch {}
+function setMelodyTrimDb(value) {
+  state.melodyTrimDb = clamp(Math.round(Number(value) || 0), -6, 6);
+  getAudioEngine()?.setMelodyTrimDb(state.melodyTrimDb);
+  try { localStorage.setItem(MELODY_TRIM_KEY, String(state.melodyTrimDb)); } catch {}
   const output = melodyVolumePanel?.querySelector('output');
-  if (output) output.textContent = `${state.melodyVolumePercent}%`;
-  return state.melodyVolumePercent;
+  if (output) output.textContent = `${state.melodyTrimDb > 0 ? '+' : ''}${state.melodyTrimDb} dB`;
+  return state.melodyTrimDb;
 }
 
 function toggleMelodyVolumePanel(trigger) {
@@ -93,20 +93,20 @@ function toggleMelodyVolumePanel(trigger) {
   header.className = 'playback-melody-volume-header';
   const label = document.createElement('label');
   label.htmlFor = 'melodyVolumeRange';
-  label.textContent = '旋律音量';
+  label.textContent = '旋律微調';
   const output = document.createElement('output');
   output.htmlFor = 'melodyVolumeRange';
-  output.textContent = `${state.melodyVolumePercent}%`;
+  output.textContent = `${state.melodyTrimDb > 0 ? '+' : ''}${state.melodyTrimDb} dB`;
   header.append(label, output);
   const range = document.createElement('input');
   range.id = 'melodyVolumeRange';
   range.type = 'range';
-  range.min = '0';
-  range.max = '400';
+  range.min = '-6';
+  range.max = '6';
   range.step = '1';
-  range.value = String(state.melodyVolumePercent);
-  range.setAttribute('aria-label', '旋律音量百分比');
-  range.addEventListener('input', () => setMelodyVolumePercent(range.value));
+  range.value = String(state.melodyTrimDb);
+  range.setAttribute('aria-label', '旋律音量微調（分貝）');
+  range.addEventListener('input', () => setMelodyTrimDb(range.value));
   panel.append(header, range);
   document.body.appendChild(panel);
 
@@ -529,8 +529,8 @@ function syncSoundControls(force = false) {
       volumeButton.type = 'button';
       volumeButton.className = 'playback-melody-volume-button';
       volumeButton.dataset.melodyVolume = 'true';
-      volumeButton.title = '調整旋律音量（0–400%）';
-      volumeButton.setAttribute('aria-label', '調整旋律音量');
+      volumeButton.title = '微調旋律音量（−6～+6 dB）';
+      volumeButton.setAttribute('aria-label', '微調旋律音量');
       volumeButton.setAttribute('aria-haspopup', 'true');
       volumeButton.setAttribute('aria-expanded', 'false');
       volumeButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
@@ -828,8 +828,8 @@ export function installPlaybackController() {
   installed = true;
   state.musicEnabled = storedBoolean(MUSIC_ENABLED_KEY, true);
   state.metronomeEnabled = storedBoolean(METRONOME_ENABLED_KEY, false);
-  state.melodyVolumePercent = storedMelodyVolume();
-  getAudioEngine()?.setMelodyVolume(state.melodyVolumePercent);
+  state.melodyTrimDb = storedMelodyTrimDb();
+  getAudioEngine()?.setMelodyTrimDb(state.melodyTrimDb);
   document.addEventListener('pointerdown', event => {
     if (melodyVolumePanel && !melodyVolumePanel.contains(event.target) && !melodyVolumeTrigger?.contains(event.target)) {
       closeMelodyVolumePanel();
@@ -859,8 +859,8 @@ export function installPlaybackController() {
     setMusicEnabled,
     setMetronomeEnabled,
     setMelodyEnabled,
-    setMelodyVolumePercent,
-    get melodyVolumePercent() { return state.melodyVolumePercent; },
+    setMelodyTrimDb,
+    get melodyTrimDb() { return state.melodyTrimDb; },
     refreshSoundControls: () => syncSoundControls(true),
     getIndex: () => state.currentIndex,
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
