@@ -828,6 +828,18 @@ export function installPlaybackController() {
   installed = true;
   state.musicEnabled = storedBoolean(MUSIC_ENABLED_KEY, true);
   state.metronomeEnabled = storedBoolean(METRONOME_ENABLED_KEY, false);
+  state.melodyVolumePercent = storedMelodyVolume();
+  getAudioEngine()?.setMelodyVolume(state.melodyVolumePercent);
+  document.addEventListener('pointerdown', event => {
+    if (melodyVolumePanel && !melodyVolumePanel.contains(event.target) && !melodyVolumeTrigger?.contains(event.target)) {
+      closeMelodyVolumePanel();
+    }
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMelodyVolumePanel();
+  });
+  window.addEventListener('resize', closeMelodyVolumePanel);
+  window.addEventListener('scroll', closeMelodyVolumePanel, true);
   Object.assign(window, {
     totalSlots,
     updateProgressRange,
@@ -847,6 +859,8 @@ export function installPlaybackController() {
     setMusicEnabled,
     setMetronomeEnabled,
     setMelodyEnabled,
+    setMelodyVolumePercent,
+    get melodyVolumePercent() { return state.melodyVolumePercent; },
     refreshSoundControls: () => syncSoundControls(true),
     getIndex: () => state.currentIndex,
     setIndex: (index, { updateSlider = true, highlight = true } = {}) => setProgressIndex(index, updateSlider, highlight),
