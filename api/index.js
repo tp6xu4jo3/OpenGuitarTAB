@@ -20,7 +20,7 @@ import {
   removeArtistProfileData
 } from '../src/catalog/media.js';
 import { isDocumentV3, normalizeDocumentV3 } from '../src/editor/model.js';
-import { normalizeMelody } from '../src/editor/melody-midi.js';
+import { normalizeMelody, validateMidiBeatScale } from '../src/editor/melody-midi.js';
 
 const PUBLIC_FOLDER_ID = process.env.PUBLIC_DRIVE_FOLDER_ID || '1_SZt4WOMakWa3aD54W2tYHtdOk44WUUP';
 const TEST_FOLDER_ID = process.env.TEST_DRIVE_FOLDER_ID || '1k11xZcK1irQ5fNtitcLHCq5sgAZoDW0g';
@@ -47,6 +47,7 @@ const SONG_FIELD_ORDER = [
   'tuning',
   'source',
   'playStyle',
+  'midiBeatScale',
   'difficulty',
   'createdAt',
   'updatedAt',
@@ -569,6 +570,7 @@ export function cleanSongForWrite(song) {
     tuning: input.tuning ?? STANDARD_TUNING,
     source: String(input.source || ''),
     playStyle: input.playStyle === 'chord' ? 'chord' : input.playStyle === 'fingerstyle' ? 'fingerstyle' : '',
+    midiBeatScale: validateMidiBeatScale(input.midiBeatScale),
     difficulty: Number.isFinite(Number(input.difficulty))
       ? Math.min(5, Math.max(1, Math.round(Number(input.difficulty))))
       : undefined,
