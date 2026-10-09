@@ -551,6 +551,13 @@ function syncSoundControls(force = false) {
   });
 }
 
+function syncGuitarMix() {
+  getAudioEngine()?.setGuitarDucking(
+    state.playing && state.musicEnabled && state.melodyEnabled
+      && currentIsChordScore() && hasMelody()
+  );
+}
+
 function setMelodyEnabled(enabled) {
   if (enabled && !hasMelody()) {
     window.showToast?.('請先點旋律左邊的 + 匯入 MIDI');
@@ -560,6 +567,7 @@ function setMelodyEnabled(enabled) {
   if (!state.melodyEnabled) {
     getAudioEngine()?.stopMelody();
     stopMelodyScheduler();
+    syncGuitarMix();
   } else if (state.playing) {
     const audio = getAudioEngine();
     void audio?.ensureMelodyReady().then(ready => {
@@ -569,6 +577,7 @@ function setMelodyEnabled(enabled) {
         clock.audioStartTime = audio.context.currentTime - (performance.now() - clock.wallStart) / 1000;
         clock.audioClockActive = true;
       }
+      syncGuitarMix();
       startMelodyScheduler();
     });
   }
@@ -581,6 +590,7 @@ function setMusicEnabled(enabled) {
   persistBoolean(MUSIC_ENABLED_KEY, state.musicEnabled);
   if (!state.musicEnabled) getAudioEngine()?.stopAll();
   if (state.musicEnabled && state.playing) void getAudioEngine()?.ensureReady();
+  syncGuitarMix();
   syncSoundControls();
   return state.musicEnabled;
 }
@@ -744,6 +754,7 @@ async function startPlayback() {
     if (Number.isFinite(sliderIndex)) state.currentIndex = clamp(sliderIndex, 0, playback.entries.length - 1);
     state.preparing = false;
     state.playing = true;
+    syncGuitarMix();
     state.lastCenteredKey = null;
     updatePlayButton();
     if (state.currentIndex === 0 && state.startOffsetBeats === 0) {
@@ -810,6 +821,7 @@ function stopPlayback(resetButton = true, stopVoices = true, clearOffset = true)
   state.playbackClock = null;
   state.preparing = false;
   state.playing = false;
+  syncGuitarMix();
   state.lastCenteredKey = null;
   clearPlayhead();
   if (clearOffset) state.startOffsetBeats = 0;
