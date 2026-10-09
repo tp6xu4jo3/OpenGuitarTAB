@@ -2,7 +2,7 @@ import { getAudioEngine } from './audio-engine.js';
 import { ensureSongDocumentV3 } from './migrate-v2.js';
 import { playbackNoteSchedule } from './playback-articulation.js';
 import { buildPlaybackIndex } from './playback-index.js';
-import { readMidiTracks, melodyFromMidiTrack } from './melody-midi.js';
+import { readMidiTracks, melodyFromMidiTrack, resolveMidiBeatScale, validateMidiBeatScale } from './melody-midi.js';
 
 const MUSIC_ENABLED_KEY = 'openguitartab:playback-music';
 const METRONOME_ENABLED_KEY = 'openguitartab:playback-metronome';
@@ -306,9 +306,13 @@ async function importMelodyMidi(file) {
   try {
     const tracks = readMidiTracks(await file.arrayBuffer());
     if (!tracks.length) throw new Error('MIDI內沒有旋律音符');
+    if (tracks.some(track => track.tempoStatus === 'variable')) {
+      throw new Error('MIDI內含變速，請先匯出固定 BPM 的主旋律 MIDI');
+    }
     const channels = tracks.flatMap(track => track.channels.map(channel => ({
       label: `${track.name} · MIDI通道${channel + 1}`,
-      notes: track.notes.filter(note => note.channel === channel)
+      notes: track.notes.filter(note => note.channel === channel),
+      midiBpm: track.midiBpm
     }))).filter(item => item.notes.length);
     let selection = channels[0];
     if (channels.length > 1) {
@@ -319,19 +323,40 @@ async function importMelodyMidi(file) {
       if (!Number.isInteger(index) || index < 0 || index >= channels.length) throw new Error('請選擇有效的旋律軌道');
       selection = channels[index];
     }
-    const melody = melodyFromMidiTrack(selection, file.name);
+    const scoreBpm = typeof window.getTempo === 'function' ? window.getTempo() : Number(song.tempo);
+    const inferred = resolveMidiBeatScale({
+      markedScale: song.midiBeatScale,
+      midiBpm: selection.midiBpm,
+      scoreBpm
+    });
+    let beatScale = inferred.scale;
+    if (beatScale === null) {
+      const choice = window.prompt(
+        `無法確定MIDI與曲譜的拍點比例（MIDI ${selection.midiBpm ?? '?'} BPM／曲譜 ${scoreBpm} BPM）。請輸入MIDI每拍對應的曲譜拍數：0.5、1或2`,
+        '1'
+      );
+      if (choice === null) return;
+      beatScale = validateMidiBeatScale(choice.trim());
+      if (beatScale === undefined) throw new Error('請選擇有效的節奏比例');
+    }
+    const melody = melodyFromMidiTrack(selection, file.name, beatScale);
     const originalMelody = song.melody;
+    const originalBeatScale = song.midiBeatScale;
     song.melody = melody;
+    song.midiBeatScale = beatScale;
     try {
       if (typeof window.persistSong !== 'function') throw new Error('目前無法儲存旋律');
       await window.persistSong(song);
     } catch (error) {
       song.melody = originalMelody;
+      if (originalBeatScale === undefined) delete song.midiBeatScale;
+      else song.midiBeatScale = originalBeatScale;
       throw error;
     }
     state.melodyEnabled = false;
     syncSoundControls(true);
-    window.showToast?.(`已匯入並儲存 ${melody.notes.length} 個旋律音符；播放旋律預設關閉`);
+    const resolution = inferred.reason === 'auto' ? '自動辨識' : inferred.reason === 'marked' ? '沿用JSON標記' : '手動選擇';
+    window.showToast?.(`已匯入 ${melody.notes.length} 個旋律音符（${resolution}，拍數×${beatScale}）；播放旋律預設關閉`);
   } catch (error) {
     console.error('Melody MIDI import failed', error);
     window.showToast?.(error?.message || '旋律 MIDI 匯入失敗');
