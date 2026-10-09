@@ -1,39 +1,46 @@
 import assert from 'node:assert/strict';
 import {
   GuitarAudioEngine, MASTER_OUTPUT_DB, MELODY_PARTIALS, MELODY_LOW_PARTIALS,
+  GUITAR_LEVEL_DB, MELODY_GAIN_DB, MELODY_LOW_BOOST_MAX_DB,
   MELODY_BASE_LEVEL, MELODY_ATTACK_SECONDS, MELODY_DECAY_RATE,
-  MELODY_RELEASE_SECONDS, MELODY_VOLUME_RAMP_SECONDS,
-  MELODY_TRIM_MIN_DB, MELODY_TRIM_MAX_DB, GUITAR_DUCK_DB,
-  MIX_FADE_SECONDS, melodyVoiceProfile, melodyHarmonics
+  MELODY_RELEASE_SECONDS, melodyVoiceProfile, melodyHarmonics, melodyPitchBoostDb
 } from '../src/editor/audio-engine.js';
 
 assert.equal(MASTER_OUTPUT_DB, -6);
 assert.deepEqual(MELODY_PARTIALS, [1, 0.25, 0.1, 0.04]);
 assert.deepEqual(MELODY_LOW_PARTIALS, [1, 0.4, 0.18, 0.05]);
-assert.equal(GUITAR_DUCK_DB, -5);
-assert.equal(MIX_FADE_SECONDS, 0.03);
-assert.equal(MELODY_TRIM_MIN_DB, -6);
-assert.equal(MELODY_TRIM_MAX_DB, 6);
+assert.equal(GUITAR_LEVEL_DB, -10);
+assert.equal(MELODY_GAIN_DB, 10);
+assert.equal(MELODY_LOW_BOOST_MAX_DB, 5);
 assert.equal(MELODY_BASE_LEVEL, 0.07);
 assert.equal(MELODY_ATTACK_SECONDS, 0.006);
 assert.equal(MELODY_DECAY_RATE, 1.6);
 assert.equal(MELODY_RELEASE_SECONDS, 0.065);
-assert.equal(MELODY_VOLUME_RAMP_SECONDS, 0.02);
-
+assert.equal(melodyPitchBoostDb(48), 5);
+assert.equal(melodyPitchBoostDb(72), 0);
+assert.equal(melodyPitchBoostDb(84), 0);
+assert.ok(Math.abs(melodyPitchBoostDb(60) - 2.5) < 1e-12);
+const pitches = [36, 48, 50, 52, 56, 60, 64, 68, 72, 84, 96];
+for (let i = 1; i < pitches.length; i += 1) {
+  assert.ok(melodyPitchBoostDb(pitches[i]) <= melodyPitchBoostDb(pitches[i - 1]) + 1e-12);
+}
 const low = melodyVoiceProfile(48, 80);
+const middle = melodyVoiceProfile(60, 80);
 const high = melodyVoiceProfile(84, 80);
-assert.equal(low.level, high.level, 'velocity must remain independent of note register');
-assert.ok(Math.abs(low.level - 0.07 * 80 / 127) < 1e-12);
+const base = MELODY_BASE_LEVEL * 80 / 127;
+assert.ok(Math.abs(low.level - base * 10 ** (5 / 20)) < 1e-12);
+assert.ok(Math.abs(middle.level - base * 10 ** (2.5 / 20)) < 1e-12);
+assert.ok(Math.abs(high.level - base) < 1e-12);
+assert.ok(low.level > middle.level && middle.level > high.level);
 assert.ok(Math.abs(low.frequency - 440 * 2 ** ((48 - 69) / 12)) < 1e-9);
 assert.ok(Math.abs(high.frequency - 440 * 2 ** ((84 - 69) / 12)) < 1e-9);
-for (const [pitch, expected] of [[48, MELODY_LOW_PARTIALS], [72, MELODY_PARTIALS], [90, MELODY_PARTIALS]]) {
+assert.equal(melodyVoiceProfile(60, 0).level, 0);
+for (const [pitch, expected] of [[48, MELODY_LOW_PARTIALS], [72, MELODY_PARTIALS]]) {
   const wave = melodyHarmonics(pitch);
-  assert.deepEqual([...wave.real], [0, 0, 0, 0, 0]);
-  expected.forEach((value, i) => assert.ok(Math.abs(wave.imag[i + 1] - value) < 1e-7));
+  assert.deepEqual([...wave.real], [0,0,0,0,0]);
+  expected.forEach((value,i)=>assert.ok(Math.abs(wave.imag[i+1]-value)<1e-7));
 }
-const middle = melodyHarmonics(60);
-assert.ok(Math.abs(middle.imag[2] - 0.325) < 1e-7, 'low-register tone must transition continuously');
-assert.ok(Math.abs(middle.imag[3] - 0.14) < 1e-7);
+assert.ok(Math.abs(melodyHarmonics(60).imag[2] - 0.325) < 1e-7);
 
 const nodes = [];
 function param() {
