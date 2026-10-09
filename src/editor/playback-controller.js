@@ -392,22 +392,29 @@ function syncSoundControls(force = false) {
   if (force || controls.dataset.mode !== mode) {
     controls.dataset.mode = mode;
     const buttons = [];
-    if (editable) {
-      const upload = document.createElement('button');
-      upload.type = 'button';
-      upload.className = 'playback-melody-upload';
-      upload.dataset.melodyUpload = 'true';
-      upload.textContent = '+';
-      upload.title = hasMelody(song) ? '替換主旋律 MIDI' : '匯入主旋律 MIDI';
-      upload.setAttribute('aria-label', upload.title);
-      const input = document.createElement('input');
-      input.id = 'melodyMidiInput';
-      input.type = 'file';
-      input.accept = '.mid,.midi,audio/midi,audio/x-midi';
-      input.hidden = true;
-      buttons.push(upload, input);
+    if (chord) {
+      const melodyGroup = document.createElement('div');
+      melodyGroup.className = 'playback-melody-group';
+      melodyGroup.setAttribute('role', 'group');
+      melodyGroup.setAttribute('aria-label', '旋律與 MIDI 匯入');
+      if (editable) {
+        const upload = document.createElement('button');
+        upload.type = 'button';
+        upload.className = 'playback-melody-upload';
+        upload.dataset.melodyUpload = 'true';
+        upload.textContent = '+';
+        upload.title = hasMelody(song) ? '替換主旋律 MIDI' : '匯入主旋律 MIDI';
+        upload.setAttribute('aria-label', upload.title);
+        const input = document.createElement('input');
+        input.id = 'melodyMidiInput';
+        input.type = 'file';
+        input.accept = '.mid,.midi,audio/midi,audio/x-midi';
+        input.hidden = true;
+        melodyGroup.append(upload, input);
+      }
+      melodyGroup.appendChild(soundControlButton('melody', '旋律', state.melodyEnabled));
+      buttons.push(melodyGroup);
     }
-    if (chord) buttons.push(soundControlButton('melody', '旋律', state.melodyEnabled));
     buttons.push(soundControlButton('music', '模擬', state.musicEnabled));
     buttons.push(soundControlButton('metronome', '節拍器', state.metronomeEnabled));
     controls.replaceChildren(...buttons);
