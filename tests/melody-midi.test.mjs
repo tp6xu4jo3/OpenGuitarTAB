@@ -66,7 +66,7 @@ assert.deepEqual(resolveMidiBeatScale({ midiBpm: 117, scoreBpm: 60 }), { scale: 
 assert.deepEqual(resolveMidiBeatScale({ midiBpm: 100, scoreBpm: 60 }), { scale: null, reason: 'ambiguous' },
   'uncertain ratios must request a user choice instead of silently changing alignment');
 assert.throws(() => validateMidiBeatScale(0.25), /midiBeatScale/);
-const changingTempoTracks = readMidiTracks(midiFile([[...midiTempo(120), ...variable(480), ...midiTempo(90), ...trackA]]));
+const changingTempoTracks = readMidiTracks(midiFile([[...midiTempo(120), ...variable(480), ...midiTempo(90).slice(1), ...trackA]]));
 assert.equal(changingTempoTracks[0].tempoStatus, 'variable', 'variable MIDI tempos must be identified, not falsely auto-aligned');
 assert.equal(changingTempoTracks[0].midiBpm, null);
 
