@@ -87,20 +87,21 @@ class FakeAudioContext {
 }
 globalThis.window = { AudioContext: FakeAudioContext };
 const engine = new GuitarAudioEngine();
-engine.setMelodyTrimDb(0);
 engine.setup();
-assert.equal(engine.melodyBus.gain.value, 1, 'neutral melody trim must be the default');
-assert.equal(engine.guitarBus.gain.value, 1, 'without melody, guitar remains original loudness');
-assert.equal(engine.context.waves.length, 0, 'waveforms are generated only for pitches in use');
+assert.equal(engine.guitarBus.gain.value, 10 ** (-10 / 20),
+  'guitar bus is fixed at -10dB even without MIDI melody');
+assert.ok(Math.abs(engine.melodyBus.gain.value - 10 ** (10 / 20)) < 1e-12,
+  'melody bus is fixed at +10dB');
+assert.equal(engine.context.waves.length, 0, 'sine waves are created on demand');
 const melodyCompressor = engine.melodyBus.connections[0];
-for (const [key, value] of Object.entries({ threshold:-4, knee:6, ratio:3, attack:0.003, release:0.1 })) {
-  assert.equal(melodyCompressor[key].value, value);
+for (const [key,value] of Object.entries({threshold:-4,knee:6,ratio:3,attack:0.003,release:0.1})) {
+  assert.equal(melodyCompressor[key].value,value);
 }
 assert.equal(melodyCompressor.connections[0], engine.masterGain);
 assert.equal(engine.guitarBus.connections[0], engine.masterGain);
 assert.equal(engine.masterGain.connections[0].kind, 'compressor');
 assert.equal(engine.masterGain.connections[0].threshold.value, -10);
-assert.equal(engine.setup(), engine.context, 'one AudioContext and mix graph');
+assert.equal(engine.setup(), engine.context, 'one reusable audio graph');
 
 const start = 10.05;
 engine.scheduleMelodyNote({ pitch:48, duration:1, velocity:80 }, start, 0.5);
