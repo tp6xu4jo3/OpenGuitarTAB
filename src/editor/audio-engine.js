@@ -150,21 +150,25 @@ export class GuitarAudioEngine {
     masterGain.connect(compressor);
     compressor.connect(context.destination);
 
+    // Duck only the recorded guitar, keeping the metronome and master untouched.
+    const guitarBus = context.createGain();
+    guitarBus.gain.value = this.guitarDucked ? 10 ** (GUITAR_DUCK_DB / 20) : 1;
+    guitarBus.connect(masterGain);
+
     const melodyBus = context.createGain();
-    melodyBus.gain.value = this.melodyVolumePercent / 100;
+    melodyBus.gain.value = 10 ** (this.melodyTrimDb / 20);
     const melodyCompressor = context.createDynamicsCompressor();
     melodyCompressor.threshold.value = -4;
     melodyCompressor.knee.value = 6;
-    melodyCompressor.ratio.value = 12;
+    melodyCompressor.ratio.value = 3;
     melodyCompressor.attack.value = 0.003;
     melodyCompressor.release.value = 0.1;
     melodyBus.connect(melodyCompressor);
     melodyCompressor.connect(masterGain);
 
-    const { real, imag } = melodyHarmonics();
-    this.melodyWave = context.createPeriodicWave(real, imag, { disableNormalization: true });
     this.context = context;
     this.masterGain = masterGain;
+    this.guitarBus = guitarBus;
     this.melodyBus = melodyBus;
     return context;
   }
@@ -212,7 +216,14 @@ export class GuitarAudioEngine {
     if (voiceProfile.level <= 0) return;
     const oscillator = this.context.createOscillator();
     const envelope = this.context.createGain();
-    oscillator.setPeriodicWave(this.melodyWave);
+    const notePitch = Math.round(pitch);
+    let wave = this.melodyWaves.get(notePitch);
+    if (!wave) {
+      const { real, imag } = melodyHarmonics(notePitch);
+      wave = this.context.createPeriodicWave(real, imag, { disableNormalization: true });
+      this.melodyWaves.set(notePitch, wave);
+    }
+    oscillator.setPeriodicWave(wave);
     oscillator.frequency.setValueAtTime(voiceProfile.frequency, start);
     const attackEnd = start + Math.min(MELODY_ATTACK_SECONDS, duration);
     const releaseEnd = end + MELODY_RELEASE_SECONDS;
@@ -363,7 +374,7 @@ export class GuitarAudioEngine {
     }
     const { source, basePlaybackRate } = this.connectSample(plan, now, filter, slideSteps);
     filter.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.guitarBus);
 
     const nextDelay = Number(nextSameStringSeconds);
     if (Number.isFinite(nextDelay) && nextDelay > SAME_STRING_SILENCE_BEFORE_ATTACK_SECONDS) {
