@@ -119,7 +119,7 @@ assert.match(playbackCss, /\.playback-melody-upload\{[^}]*width:28px;[^}]*border
 assert.match(playbackCss, /@media\(max-width:760px\)[\s\S]*\.editor-view \.playback-melody-group \.playback-sound-toggle\{[^}]*padding:0 3px;[^}]*height:26px;[\s\S]*\.editor-view \.playback-melody-upload\{[^}]*width:20px;[^}]*height:26px;/, 'mobile melody group should keep both controls compact');
 assert.doesNotMatch(playback, /data-melody-volume|melodyVolumePanel|setMelodyTrimDb|setMelodyVolume|syncGuitarMix/,
   'there must be no user-facing volume control or conditional auto-ducking');
-assert.match(audio, /GUITAR_LEVEL_DB = -10/, 'guitar samples must always be -10dB');
+assert.match(audio, /GUITAR_LEVEL_DB = -6/, 'guitar samples must always be -6dB');
 assert.match(audio, /MELODY_GAIN_DB = 10/, 'melody bus should be fixed at +10dB');
 assert.match(audio, /MELODY_LOW_BOOST_MAX_DB = 5/, 'melody should be enhanced smoothly at low pitches');
 assert.match(playback, /const horizon = currentTime \+ 0\.2;/, 'Web Audio lookahead should be 200ms');
