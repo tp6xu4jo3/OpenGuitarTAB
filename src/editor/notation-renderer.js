@@ -321,7 +321,8 @@ export class NotationRenderer {
         for (const mark of event.marks || []) {
           if (mark.type === 'strum') {
             appendStraightSweep(svg, { x: anchor.x - 14, top, bottom, direction: mark.direction === 'up' ? 'up' : 'down', eventId: event.id });
-            appendTechniqueMarker(markerLayer, markerBuckets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? '↑' : '↓', title: mark.direction === 'up' ? '上刷' : '下刷' });
+            const strengthLabel = { strong: '強刷', normal: '一般', weak: '輕刷' }[mark.strength] || '一般';
+            appendTechniqueMarker(markerLayer, markerBuckets, { node: anchorNode, systemElement, kind: 'mark', id: mark.id, label: mark.direction === 'up' ? '↑' : '↓', title: `${mark.direction === 'up' ? '上刷' : '下刷'} · ${strengthLabel}（${mark.velocity ?? 84}）` });
           }
           if (mark.type === 'arpeggio') {
             appendArpeggio(svg, { x: anchor.x - 14, top, bottom, direction: mark.direction === 'up' ? 'up' : 'down', eventId: event.id });
