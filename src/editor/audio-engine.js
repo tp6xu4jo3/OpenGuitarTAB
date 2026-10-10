@@ -19,7 +19,7 @@ export const MASTER_OUTPUT_GAIN = Math.pow(10, MASTER_OUTPUT_DB / 20);
 // four phase-aligned sine oscillators, with one audio-rate voice per MIDI note.
 export const MELODY_PARTIALS = Object.freeze([1, 0.25, 0.1, 0.04]);
 export const MELODY_LOW_PARTIALS = Object.freeze([1, 0.4, 0.18, 0.05]);
-export const GUITAR_LEVEL_DB = -10;
+export const GUITAR_LEVEL_DB = -6;
 export const MELODY_GAIN_DB = 10;
 export const MELODY_LOW_BOOST_MAX_DB = 5;
 export const MELODY_BASE_LEVEL = 0.07;
@@ -154,7 +154,7 @@ export class GuitarAudioEngine {
     masterGain.connect(compressor);
     compressor.connect(context.destination);
 
-    // Guitar is always -10dB, regardless of whether MIDI melody is enabled.
+    // Guitar is always -6dB, regardless of whether MIDI melody is enabled.
     // Neither metronome nor master output passes through this bus.
     const guitarBus = context.createGain();
     guitarBus.gain.value = 10 ** (GUITAR_LEVEL_DB / 20);
