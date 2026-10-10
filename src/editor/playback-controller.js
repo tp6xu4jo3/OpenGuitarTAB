@@ -567,7 +567,7 @@ function buildNextStringDelayMap(playback, beatMs) {
   return delays;
 }
 
-function playNote(note, beatMs) {
+function playNote(note, beatMs, velocity) {
   if (!state.musicEnabled || !note || /^x$/i.test(String(note.fret))) return;
   const audio = getAudioEngine();
   if (!audio) return;
@@ -583,6 +583,7 @@ function playNote(note, beatMs) {
   const harmonic = (note.techniques || []).some(technique => technique?.type === 'harmonic');
   audio.playNote(string, note.fret, {
     harmonic,
+    velocity,
     slideToFret: slide?.toFret ?? null,
     slideSeconds: slide ? Math.max(0.015, Number(slide.durationBeats || 0) * beatMs / 1000) : 0,
     slideRelationId: slide?.relationId || '',
@@ -594,9 +595,9 @@ function playNote(note, beatMs) {
 
 function playEvent(event, beatMs) {
   if (!state.musicEnabled) return;
-  playbackNoteSchedule(event, beatMs).forEach(({ note, delayMs }) => {
-    if (delayMs <= 2) playNote(note, beatMs);
-    else state.eventTimers.push(window.setTimeout(() => playNote(note, beatMs), delayMs));
+  playbackNoteSchedule(event, beatMs).forEach(({ note, delayMs, velocity }) => {
+    if (delayMs <= 2) playNote(note, beatMs, velocity);
+    else state.eventTimers.push(window.setTimeout(() => playNote(note, beatMs, velocity), delayMs));
   });
 }
 
