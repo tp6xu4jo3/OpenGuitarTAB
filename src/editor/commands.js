@@ -10,6 +10,7 @@ import {
   indexDocument,
   isDocumentV3,
   normalizeDocumentV3,
+  normalizeEventMark,
   normalizeFraction,
   noteBaseFret,
   relationNoteIds
@@ -369,12 +370,24 @@ function addMark(document, command, idFactory) {
   return updateEvent(document, String(command.eventId || ''), event => {
     const raw = cloneValue(command.mark || {});
     const marks = Array.isArray(event.marks) ? cloneValue(event.marks) : [];
-    const mark = { ...raw, id: String(raw.id || idFactory('mk')) };
+    const mark = normalizeEventMark({ ...raw, id: String(raw.id || idFactory('mk')) }, idFactory);
     if (marks.some(item => sameEntityPayload(item, mark))) return event;
     const isSweep = ['strum', 'arpeggio'].includes(mark.type);
     const retained = isSweep ? marks.filter(item => !['strum', 'arpeggio'].includes(item.type)) : marks;
     return { ...event, marks: [...retained, mark] };
   }, { playback: Boolean(layoutKind), layoutKind });
+}
+
+function setMarkStrength(document, markId, strength) {
+  const location = indexDocument(document).markById.get(String(markId || ''));
+  if (!location || location.mark?.type !== 'strum') return { document, changeSet: createChangeSet() };
+  if (!['strong', 'normal', 'weak'].includes(strength)) return { document, changeSet: createChangeSet() };
+  return updateEvent(document, location.eventId, event => ({
+    ...event,
+    marks: (event.marks || []).map(mark => mark.id === markId
+      ? normalizeEventMark({ ...mark, strength })
+      : mark)
+  }), { playback: true });
 }
 
 function deleteMark(document, markId) {
@@ -571,6 +584,7 @@ export function applyCommand(inputDocument, command, { idFactory = createId } = 
     case 'rhythm/32nd/apply':
       return applyRhythmAt(document, command, idFactory, applyThirtySecondAtToMeasure);
     case 'event/mark/add': return addMark(document, command, idFactory);
+    case 'mark/strength/set': return setMarkStrength(document, String(command.markId || ''), command.strength);
     case 'mark/delete': return deleteMark(document, String(command.markId || ''));
     case 'group/add': return addGroup(document, command, idFactory);
     case 'group/delete': return deleteGroup(document, String(command.groupId || ''));
