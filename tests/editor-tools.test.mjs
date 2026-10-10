@@ -55,7 +55,8 @@ for (const [strength, velocity] of Object.entries(STRUM_VELOCITIES)) {
   assert.equal(updatedMark.direction, 'down');
   assert.equal(updatedMark.strength, strength);
   assert.equal(updatedMark.velocity, velocity);
-  assert.ok(updated.changeSet.playback.length, 'a new velocity invalidates cached playback');
+  assert.equal(updated.changeSet.playback.length, strength === 'normal' ? 0 : 1,
+    'playback invalidates only if strength actually changes');
   const saved = cleanSongForWrite({id:'strum-test',name:'測試',playStyle:'chord',document:updated.document});
   const persisted = saved.document.measures[0].events[0].marks[0];
   assert.equal(persisted.strength, strength, 'strength must be in song.json event.marks');
