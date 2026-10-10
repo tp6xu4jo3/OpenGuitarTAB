@@ -107,6 +107,22 @@ marker. Do not re-detect this ratio on ordinary BPM edits.
 - `tool-session.js` — interaction state only; it never writes song data.
 - Note-local behavior belongs in `note.techniques`.
 - Event-local notation belongs in `event.marks`.
+
+Strum marks store their direction and **one canonical sounding strength** directly
+under the owning event in `song.json`:
+
+```json
+{ "id": "mk-1", "type": "strum", "direction": "down", "strength": "strong", "velocity": 104 }
+```
+
+`strength` is one of `strong` (強刷), `normal` (一般), `weak` (輕刷), mapped
+deterministically to `velocity` 104, 84, 64. An old strum with neither field
+normalizes to `normal / 84`. `strength` remains authoritative if the two
+stored fields disagree. The editor defaults to normal; right-click a strum
+technique marker to change strength. The playback schedule carries the chosen
+velocity into the recorded-guitar gain stage; velocity 84 preserves the
+historic normal loudness, and rhythm, string order and other techniques stay
+unchanged. Arpeggio marks do not get strum-strength fields.
 - Grouped rhythm belongs in `measure.groups`.
 - Note-to-note notation such as slide/tie/slur belongs in `document.relations`.
 
