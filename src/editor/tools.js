@@ -20,7 +20,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     target: 'event',
     hint: '點選同一時間位置的和弦，加入向上刷弦',
     command(target) {
-      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'up' } };
+      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'up', strength: 'normal', velocity: 84 } };
     }
   },
   strumDown: {
@@ -30,7 +30,7 @@ export const TOOL_DEFINITIONS = Object.freeze({
     target: 'event',
     hint: '點選同一時間位置的和弦，加入向下刷弦',
     command(target) {
-      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'down' } };
+      return { type: 'event/mark/add', eventId: target.eventId, mark: { type: 'strum', direction: 'down', strength: 'normal', velocity: 84 } };
     }
   },
   arpeggioUp: {
