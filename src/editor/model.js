@@ -1,5 +1,18 @@
 export const DOCUMENT_VERSION = 3;
 export const STRING_COUNT = 6;
+export const STRUM_VELOCITIES = Object.freeze({ strong: 104, normal: 84, weak: 64 });
+
+export function strumVelocity(strength) {
+  return STRUM_VELOCITIES[strength] ?? STRUM_VELOCITIES.normal;
+}
+
+export function normalizeEventMark(mark, idFactory = createId) {
+  const normalized = normalizeOwnedEntity(mark, 'mk', idFactory);
+  if (normalized.type !== 'strum') return normalized;
+  // Strength is authoritative; a stale or conflicting velocity is never persisted.
+  const strength = Object.hasOwn(STRUM_VELOCITIES, normalized.strength) ? normalized.strength : 'normal';
+  return { ...normalized, strength, velocity: strumVelocity(strength) };
+}
 export const ARTIFICIAL_HARMONIC_OFFSET = 12;
 
 export function cloneValue(value) {
@@ -142,7 +155,7 @@ function normalizeEvent(event, idFactory) {
     at: normalizeFraction(event?.at, [0, 1]),
     duration: duration[0] > 0 ? duration : [1, 1],
     notes: Array.isArray(event?.notes) ? event.notes.map(note => normalizeNote(note, idFactory)) : [],
-    marks: Array.isArray(event?.marks) ? event.marks.map(mark => normalizeOwnedEntity(mark, 'mk', idFactory)) : []
+    marks: Array.isArray(event?.marks) ? event.marks.map(mark => normalizeEventMark(mark, idFactory)) : []
   };
 }
 
