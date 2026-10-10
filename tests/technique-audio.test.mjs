@@ -22,6 +22,19 @@ assert.ok(downStrum.at(-1).delayMs > 0 && downStrum.at(-1).delayMs <= 48);
 const upArpeggio = scheduleFor({ type: 'arpeggio', direction: 'up' });
 assert.ok(upArpeggio.at(-1).delayMs > downStrum.at(-1).delayMs);
 assert.equal(upArpeggio.at(-1).delayMs, 190, 'a 120 BPM arpeggio should use the tightened 0.38-beat spread');
+for (const [strength, expectedVelocity] of [['strong', 104], ['normal', 84], ['weak', 64]]) {
+  const scheduled = scheduleFor({type:'strum',direction:'down',strength,velocity:expectedVelocity});
+  assert.deepEqual(scheduled.map(item => item.velocity), [expectedVelocity,expectedVelocity,expectedVelocity],
+    'every note of a strum gets the event velocity');
+  assert.deepEqual(scheduled.map(item => item.note.id), ['low','mid','high'],
+    'strength must not change strum order');
+}
+assert.deepEqual(scheduleFor({type:'strum',direction:'down'}).map(item=>item.velocity), [84,84,84],
+  'legacy strums sound normal');
+assert.deepEqual(plain.map(item => item.velocity), [undefined,undefined,undefined],
+  'ordinary unmarked notes keep their existing sound level');
+assert.deepEqual(upArpeggio.map(item => item.velocity), [undefined,undefined,undefined],
+  'arpeggios retain their previous volume');
 
 assert.equal(stringLevelDb(0), 0);
 assert.equal(stringLevelDb(5), 0, 'relative sample loudness must be mastered into the bank, not patched per string at runtime');
@@ -124,6 +137,14 @@ assert.match(bankSource, /fetch\(SAMPLE_BANK_URL, \{ cache: 'force-cache' \}\)/,
 assert.match(bankSource, /context\.decodeAudioData\(encoded\)/, 'bank must decode once before playback');
 assert.match(audioSource, /MASTER_OUTPUT_DB = -6/,'the output stage must reserve explicit polyphonic headroom');
 assert.match(audioSource, /masterGain\.gain\.value = MASTER_OUTPUT_GAIN/,'all guitar voices and metronome output must pass through the mastered headroom stage');
+assert.match(audioSource, /velocityLevel = clamp\(Number\(velocity\) \|\| 84, 1, 127\) \/ 84/,
+  'strong/normal/weak velocity must scale recorded guitar amplitude relative to original level 84');
+assert.match(audioSource, /const level = \(harmonic \? 0\.86 : 1\) \* velocityLevel/,
+  'velocity scaling must preserve harmonic tone shaping');
+assert.match(controllerSource, /forEach\(\(\{ note, delayMs, velocity \}\) => \{[\s\S]*playNote\(note, beatMs, velocity\)/,
+  'the playback scheduler must forward event mark velocity');
+assert.match(controllerSource, /audio\.playNote\(string, note\.fret, \{\s*harmonic,\s*velocity,/,
+  'recorded guitar samples must receive event velocity even for scheduled strum notes');
 assert.match(audioSource, /plan\.offsetSeconds \+ SAMPLE_ATTACK_PREROLL_SECONDS[\s\S]*SAMPLE_DURATION_SECONDS - SAMPLE_ATTACK_PREROLL_SECONDS/s, 'the physically aligned bank must use one fixed 20 ms safe pre-roll');
 assert.match(audioSource, /basePlaybackRate \* step\.playbackRate/, 'slides must move relative to the selected recorded anchor');
 assert.match(audioSource, /SLIDE_MOTION_SECONDS = 0\.25/, 'normal slides should use a fixed 250 ms motion window');

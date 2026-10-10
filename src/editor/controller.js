@@ -1,7 +1,7 @@
 import { EditorClipboard } from './clipboard.js';
 import { createChangeSet } from './commands.js';
 import { buildSystems } from './layout.js';
-import { compareFractions, fractionKey, normalizeFraction } from './model.js';
+import { compareFractions, fractionKey, indexDocument, normalizeFraction } from './model.js';
 import { NotationRenderer } from './notation-renderer.js';
 import { SparseScoreRenderer } from './renderer.js';
 import { EditorRibbon, RIBBON_SECTIONS } from './ribbon.js';
@@ -216,6 +216,15 @@ function ensureTechniqueContextMenu() {
   remove.dataset.deleteTechnique = 'true';
   remove.setAttribute('role', 'menuitem');
   remove.textContent = '刪除技巧';
+  for (const [strength, label] of [['strong', '強刷'], ['normal', '一般'], ['weak', '輕刷']]) {
+    const choice = document.createElement('button');
+    choice.type = 'button';
+    choice.dataset.strumStrength = strength;
+    choice.setAttribute('role', 'menuitemradio');
+    choice.textContent = label;
+    choice.hidden = true;
+    menu.appendChild(choice);
+  }
   menu.appendChild(remove);
   document.body.appendChild(menu);
   techniqueContextMenu = menu;
@@ -251,10 +260,16 @@ function deleteSelectedTechnique() {
 
 function showTechniqueContextMenu(marker, event) {
   selectTechniqueMarker(marker);
+  const selected = indexDocument(ensureStore()?.getDocument()).markById.get(selectedTechniqueRef?.id)?.mark;
+  const strum = selected?.type === 'strum' ? selected : null;
   const menu = ensureTechniqueContextMenu();
-  menu.style.left = `${Math.max(8, event.clientX)}px`;
-  menu.style.top = `${Math.max(8, event.clientY)}px`;
+  menu.querySelectorAll('[data-strum-strength]').forEach(button => {
+    button.hidden = !strum;
+    button.setAttribute('aria-checked', String(strum?.strength === button.dataset.strumStrength));
+  });
   menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
 }
 
 function clearRelationPreview() {
@@ -381,6 +396,19 @@ function handleChordPlacement(node) {
 
 function installToolInteractions() {
   document.addEventListener('click', event => {
+    const strengthChoice = event.target?.closest?.('[data-strum-strength]');
+    if (strengthChoice && selectedTechniqueRef?.kind === 'mark' && !isEditingBlocked()) {
+      event.preventDefault();
+      const result = dispatchCommand({
+        type: 'mark/strength/set',
+        markId: selectedTechniqueRef.id,
+        strength: strengthChoice.dataset.strumStrength
+      });
+      clearTechniqueSelection();
+      hideTechniqueContextMenu();
+      if (changed(result)) toast('已更新刷奏力度');
+      return;
+    }
     const deleteAction = event.target?.closest?.('[data-delete-technique]');
     if (deleteAction) { event.preventDefault(); deleteSelectedTechnique(); return; }
     const techniqueMarker = event.target?.closest?.('.technique-marker');

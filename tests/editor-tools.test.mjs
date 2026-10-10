@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { applyCommand } from '../src/editor/commands.js';
-import { createDocumentV3, noteDisplayValue } from '../src/editor/model.js';
+import { createDocumentV3, normalizeDocumentV3, noteDisplayValue, STRUM_VELOCITIES } from '../src/editor/model.js';
+import { cleanSongForWrite } from '../api/index.js';
 import { buildPlaybackIndex } from '../src/editor/playback-index.js';
 import { resolveTechniqueTarget } from '../src/editor/technique-rules.js';
 import { TOOL_TARGET_KINDS, ToolSession, toolTargetKind } from '../src/editor/tool-session.js';
@@ -37,6 +38,52 @@ const documentModel = createDocumentV3({ measures: [{
 assert.equal(resolveTechniqueTarget('harmonic',{noteId:'n-bad'},documentModel).ok,false);
 assert.equal(resolveTechniqueTarget('harmonic',{noteId:'n-good'},documentModel).ok,true);
 assert.equal(resolveTechniqueTarget('strumUp',{eventId:'e-a'},documentModel).ok,true);
+assert.deepEqual(STRUM_VELOCITIES, { strong: 104, normal: 84, weak: 64 });
+const strumCommand = definitions.createCommand('strumDown',{ eventId: 'e-a' });
+assert.deepEqual(strumCommand.mark, { type:'strum', direction:'down', strength:'normal', velocity:84 });
+const strongCommand = definitions.createCommand('strumUp',{ eventId: 'e-a' });
+assert.deepEqual(strongCommand.mark, { type:'strum', direction:'up', strength:'normal', velocity:84 });
+const strumAdded = applyCommand(documentModel, strumCommand, {idFactory:idFactory()}).document;
+const addedMark = strumAdded.measures[0].events[0].marks[0];
+assert.equal(addedMark.strength, 'normal');
+assert.equal(addedMark.velocity, 84);
+for (const [strength, velocity] of Object.entries(STRUM_VELOCITIES)) {
+  const updated = applyCommand(strumAdded,
+    {type:'mark/strength/set',markId:addedMark.id,strength}, {idFactory:idFactory()});
+  const updatedMark = updated.document.measures[0].events[0].marks[0];
+  assert.equal(updatedMark.id, addedMark.id, 'strength edits preserve the owned mark ID');
+  assert.equal(updatedMark.direction, 'down');
+  assert.equal(updatedMark.strength, strength);
+  assert.equal(updatedMark.velocity, velocity);
+  assert.equal(updated.changeSet.playback.length, strength === 'normal' ? 0 : 1,
+    'playback invalidates only if strength actually changes');
+  const saved = cleanSongForWrite({id:'strum-test',name:'測試',playStyle:'chord',document:updated.document});
+  const persisted = saved.document.measures[0].events[0].marks[0];
+  assert.equal(persisted.strength, strength, 'strength must be in song.json event.marks');
+  assert.equal(persisted.velocity, velocity, 'velocity must be in song.json event.marks');
+  assert.equal(saved.document.measures[0].events[0].notes.length, 2);
+}
+const invalidStrength = applyCommand(strumAdded, {type:'mark/strength/set',markId:addedMark.id,strength:'extra'});
+assert.equal(invalidStrength.document, strumAdded, 'invalid strength must leave the model unchanged');
+const legacy = normalizeDocumentV3({
+  ...documentModel, measures: documentModel.measures.map(measure => ({
+    ...measure, events: measure.events.map(event => event.id === 'e-a' ? {
+      ...event, marks: [{id:'legacy-strum',type:'strum',direction:'down'}]
+    } : event)
+  }))
+});
+assert.deepEqual(legacy.measures[0].events[0].marks[0],
+  {id:'legacy-strum',type:'strum',direction:'down',strength:'normal',velocity:84},
+  'legacy strum marks without strength gain a deterministic normal default');
+const conflicting = normalizeDocumentV3({
+  ...documentModel, measures: documentModel.measures.map(measure => ({
+    ...measure, events: measure.events.map(event => event.id === 'e-a' ? {
+      ...event, marks: [{id:'conflicting',type:'strum',direction:'up',strength:'weak',velocity:104}]
+    } : event)
+  }))
+});
+assert.equal(conflicting.measures[0].events[0].marks[0].velocity, 64,
+  'strength remains authoritative if imported JSON has inconsistent velocity');
 assert.equal(resolveTechniqueTarget('slide',{fromNoteId:'n-good',toNoteId:'n-next'},documentModel).ok,true);
 
 {
