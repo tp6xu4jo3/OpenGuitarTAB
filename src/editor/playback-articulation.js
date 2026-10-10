@@ -1,3 +1,5 @@
+import { strumVelocity } from './model.js';
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -19,8 +21,9 @@ export function playbackNoteSchedule(event, beatMs) {
   const notes = [...(event?.notes || [])];
   if (!notes.length) return [];
   const mark = primaryArticulationMark(event);
+  const velocity = mark?.type === 'strum' ? strumVelocity(mark.strength) : undefined;
   const order = stringOrder(mark);
-  if (!order || notes.length < 2) return notes.map(note => ({ note, delayMs: 0 }));
+  if (!order || notes.length < 2) return notes.map(note => ({ note, delayMs: 0, velocity }));
 
   notes.sort((left, right) => order * (Number(left.string) - Number(right.string)));
   const durationBeats = Math.max(0.001, Number(event?.durationBeats) || 0.25);
@@ -32,5 +35,5 @@ export function playbackNoteSchedule(event, beatMs) {
   const totalSpreadMs = clamp(Math.min(desiredMs, availableMs), 0, availableMs);
   const stepMs = notes.length > 1 ? totalSpreadMs / (notes.length - 1) : 0;
 
-  return notes.map((note, index) => ({ note, delayMs: stepMs * index }));
+  return notes.map((note, index) => ({ note, delayMs: stepMs * index, velocity }));
 }
