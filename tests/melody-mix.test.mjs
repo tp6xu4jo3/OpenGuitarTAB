@@ -9,7 +9,7 @@ import {
 assert.equal(MASTER_OUTPUT_DB, -6);
 assert.deepEqual(MELODY_PARTIALS, [1, 0.25, 0.1, 0.04]);
 assert.deepEqual(MELODY_LOW_PARTIALS, [1, 0.4, 0.18, 0.05]);
-assert.equal(GUITAR_LEVEL_DB, -10);
+assert.equal(GUITAR_LEVEL_DB, -6);
 assert.equal(MELODY_GAIN_DB, 10);
 assert.equal(MELODY_LOW_BOOST_MAX_DB, 5);
 assert.equal(MELODY_BASE_LEVEL, 0.07);
@@ -88,8 +88,8 @@ class FakeAudioContext {
 globalThis.window = { AudioContext: FakeAudioContext };
 const engine = new GuitarAudioEngine();
 engine.setup();
-assert.equal(engine.guitarBus.gain.value, 10 ** (-10 / 20),
-  'guitar bus is fixed at -10dB even without MIDI melody');
+assert.equal(engine.guitarBus.gain.value, 10 ** (-6 / 20),
+  'guitar bus is fixed at -6dB even without MIDI melody');
 assert.ok(Math.abs(engine.melodyBus.gain.value - 10 ** (10 / 20)) < 1e-12,
   'melody bus is fixed at +10dB');
 assert.equal(engine.context.waves.length, 0, 'sine waves are created on demand');
@@ -126,12 +126,12 @@ assert.equal(engine.context.waves[0].options.disableNormalization, true);
 assert.ok(engine.context.waves[0].imag[2] > engine.context.waves[1].imag[2], 'low notes have clearer upper partials');
 
 assert.equal(engine.guitarBus.gain.events.length, 0,
-  'guitar remains -10dB even if the melody starts/stops');
+  'guitar remains -6dB even if the melody starts/stops');
 assert.equal(engine.melodyBus.gain.events.length, 0,
   'fixed +10dB melody gain is not user-adjustable');
 assert.equal(typeof engine.setGuitarDucking, 'undefined');
 assert.equal(typeof engine.setMelodyTrimDb, 'undefined');
-assert.equal(engine.guitarBus.gain.value, 10 ** (-10 / 20));
+assert.equal(engine.guitarBus.gain.value, 10 ** (-6 / 20));
 engine.stopMelody();
 assert.equal(engine.melodyVoices.size, 0);
 assert.ok(nodes.filter(n => n.kind === 'oscillator').every(n => n.stoppedAt <= 10.02));
