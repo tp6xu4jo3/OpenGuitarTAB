@@ -327,6 +327,7 @@ export class GuitarAudioEngine {
   playNote(stringIndex, fret, {
     capo = getCapoFromUi(),
     harmonic = false,
+    velocity = 84,
     slideToFret = null,
     slideSeconds = 0,
     slideRelationId = '',
@@ -347,7 +348,9 @@ export class GuitarAudioEngine {
     filter.type = harmonic ? 'highpass' : 'lowpass';
     filter.frequency.setValueAtTime(harmonic ? 520 : 15000, now);
     filter.Q.setValueAtTime(harmonic ? 0.75 : 0.35, now);
-    const level = harmonic ? 0.86 : 1;
+    // 84 is the historic normal strum level: existing unmarked notes remain unchanged.
+    const velocityLevel = clamp(Number(velocity) || 84, 1, 127) / 84;
+    const level = (harmonic ? 0.86 : 1) * velocityLevel;
     gain.gain.setValueAtTime(level, now);
     if (slideSteps.length) {
       const firstStep = slideSteps[0];
